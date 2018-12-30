@@ -89,7 +89,8 @@ static void __init setup_initrd(void)
 	extern unsigned long __initramfs_size;
 	unsigned long size;
 
-	if (__initramfs_size > 0) {
+	/* hack, 4.20 removes this code .. */
+	if (__initramfs_size > 512) {
 		initrd_start = (unsigned long)(&__initramfs_start);
 		initrd_end = initrd_start + __initramfs_size;
 	}

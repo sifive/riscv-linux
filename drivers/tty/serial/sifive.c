@@ -115,7 +115,7 @@
 #define SIFIVE_SERIAL_NAME			"sifive-serial"
 
 /* SIFIVE_TTY_PREFIX: tty name prefix for SiFive serial ports */
-#define SIFIVE_TTY_PREFIX			"ttySI"
+#define SIFIVE_TTY_PREFIX			"ttySIF"
 
 /*
  *
