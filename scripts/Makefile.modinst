@@ -76,7 +76,11 @@ quiet_cmd_install = INSTALL $@
 ifdef INSTALL_MOD_STRIP
 
 ifeq ($(INSTALL_MOD_STRIP),1)
+ifeq ($(ARCH),riscv)
+strip-option := --strip-debug --discard-locals
+else
 strip-option := --strip-debug
+endif
 else
 strip-option := $(INSTALL_MOD_STRIP)
 endif
