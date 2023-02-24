@@ -356,7 +356,9 @@ static int ttm_bo_kmap_ttm(struct ttm_buffer_object *bo,
 		map->bo_kmap_type = ttm_bo_map_kmap;
 		map->page = ttm->pages[start_page];
 		map->virtual = kmap(map->page);
-	} else {
+	} else
+#endif
+	{
 		/*
 		 * We need to use vmap to get the desired page protection
 		 * or to make the buffer object look contiguous.
@@ -366,12 +368,6 @@ static int ttm_bo_kmap_ttm(struct ttm_buffer_object *bo,
 		map->virtual = vmap(ttm->pages + start_page, num_pages,
 				    0, prot);
 	}
-#else
-	prot = ttm_io_prot(bo, mem, PAGE_KERNEL);
-	map->bo_kmap_type = ttm_bo_map_vmap;
-	map->virtual = vmap(ttm->pages + start_page, num_pages,
-				0, prot);
-#endif
 	return (!map->virtual) ? -ENOMEM : 0;
 }
 
