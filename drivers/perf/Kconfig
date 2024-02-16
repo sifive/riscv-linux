@@ -207,6 +207,16 @@ config SIFIVE_CCACHE_PMU
 	  for measuring whole-system L2/L3 cache performance using the perf
 	  events subsystem.
 
+config SIFIVE_PL2_PMU
+	tristate "SiFive Private L2 Cache PMU"
+	depends on RISCV || COMPILE_TEST
+	depends on OF
+	help
+	  Support for the Private L2 Cache performance monitoring unit (PMU) on
+	  SiFive platforms. The Private L2 Cache PMU provides up to 64 counters
+	  for measuring per-program or per-hart L2 cache performance using the
+	  perf events subsystem.
+
 config THUNDERX2_PMU
 	tristate "Cavium ThunderX2 SoC PMU UNCORE"
 	depends on ARCH_THUNDER2 || COMPILE_TEST
