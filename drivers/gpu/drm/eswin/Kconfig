@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config DRM_ESWIN
+	tristate "DRM Support for Eswin"
+	depends on DRM
+	select DRM_KMS_HELPER
+	help
+	  Choose this option if you have a Eswin soc chipset.
+	  This driver provides Eswin kernel mode
+	  setting and buffer management. It does not
+	  provide 2D or 3D acceleration.
+
+config ESWIN_VIRTUAL_DISPLAY
+	bool "display content output to debugfs file"
+	depends on DRM_ESWIN
+	select DEBUG_FS
+	help
+	  This is a debug feature which capture video content output
+	  from display controller. Output path is debugfs/dri/connector/.
+	  The content format is ARGB which Alpha is 0 for 8bits.
+	  Disabled in default.
+
+config ESWIN_MMU
+	bool "MMU support for Eswin display controller"
+	depends on DRM_ESWIN
+	help
+	  This is a memory management function which translate virtual address
+	  to physical address. DPU MMU only do address translate, doesn't
+	  support security and shareable.
+
+config ESWIN_DW_HDMI
+    bool "ESWIN specific extensions for Synopsys DW HDMI"
+    depends on DRM_ESWIN
+    select CEC_CORE if CEC_NOTIFIER
+    select DW_HDMI
+    help
+      This selects support for ESWIN SoC specific extensions
+      for the Synopsys DesignWare HDMI driver. If you want to
+      enable HDMI on win2030 based SoC, you should select
+      this option.
+
+config DW_HDMI_I2S_AUDIO
+    bool "Synopsys Designware I2S Audio interface"
+    depends on SND_SOC
+    depends on ESWIN_DW_HDMI
+    select SND_SOC_HDMI_CODEC
+    help
+      Support the I2S Audio interface which is part of the Synopsys
+      Designware HDMI block.
+
+config DW_HDMI_CEC
+    bool "Synopsis Designware CEC interface"
+    depends on ESWIN_DW_HDMI
+    select CEC_CORE
+    select CEC_NOTIFIER
+    help
+      Support the CEC interface which is part of the Synopsys
+      Designware HDMI block.
+
+config DW_HDMI_HDCP
+    bool "Synopsis Designware HDCP interface"
+    depends on ESWIN_DW_HDMI
+    help
+      Support the HDCP interface which is part of the Synopsys
+      Designware HDMI block.
+
+config DW_HDMI_HDCP2
+    tristate "Synopsis Designware HDCP2 interface"
+    select DRM_ESWIN
+    help
+      Support the HDCP2 interface which is part of the Synopsys
+      Designware HDMI block.
