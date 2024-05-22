@@ -29,6 +29,7 @@
 #include <drm/drm_print.h>
 
 #define HWVER_131			0x31333100	/* IP version 1.31 */
+#define HWVER_30313500			0x30313500
 
 #define DSI_VERSION			0x00
 #define VERSION				GENMASK(31, 8)
@@ -781,7 +782,7 @@ static void dw_mipi_dsi_dphy_timing_config(struct dw_mipi_dsi *dsi)
 
 	hw_version = dsi_read(dsi, DSI_VERSION) & VERSION;
 
-	if (hw_version >= HWVER_131) {
+	if (hw_version >= HWVER_131 || hw_version == HWVER_30313500)  {
 		dsi_write(dsi, DSI_PHY_TMR_CFG,
 			  PHY_HS2LP_TIME_V131(timing.data_hs2lp) |
 			  PHY_LP2HS_TIME_V131(timing.data_lp2hs));

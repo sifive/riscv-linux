@@ -1683,9 +1683,9 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				dc_out_dpi0: endpoint@0 {
+				dc_out_dsi: endpoint@0 {
 					reg = <0>;
-					remote-endpoint = <&dsi_input0>;
+					remote-endpoint = <&dsi_input>;
 				};
 
 				dc_out_dpi1: endpoint@1 {
@@ -1693,10 +1693,10 @@
 					remote-endpoint = <&vd_input>;
 				};
 
-                dc_out_hdmi: endpoint@2 {
-                    reg = <2>;
-                    remote-endpoint = <&hdmi_in_dc>;
-                };
+				dc_out_hdmi: endpoint@2 {
+					reg = <2>;
+					remote-endpoint = <&hdmi_in_dc>;
+				};
 			};
 		};
 
@@ -1713,36 +1713,13 @@
 
 		dsi_output: dsi-output {
 			compatible = "eswin,dsi-encoder";
-
-			ports {
-				#address-cells = <1>;
-				#size-cells = <0>;
-
-				/* input */
-				port@0 {
-					#address-cells = <1>;
-					#size-cells = <0>;
-					reg = <0>;
-					dsi_input0: endpoint@0 {
-						reg = <0>;
-						remote-endpoint = <&dc_out_dpi0>;
-					};
-				};
-
-				/* output */
-				port@1 {
-					reg = <1>;
-					dsi_out:endpoint {
-						remote-endpoint = <&mipi_dsi_in>;
-					};
-				};
-			};
+			status = "disabled";
 		};
 
 		dsi_controller: mipi_dsi@50270000 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "eswin,dw-mipi-dsi";
+			compatible = "eswin,dsi";
 			reg = <0x0 0x50270000 0x0 0x10000>;
 			clocks = <&d0_clock EIC7700_CLK_CLK_MIPI_TXESC>;
 			clock-names = "pclk";
@@ -1761,9 +1738,8 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 					reg = <0>;
-
-					mipi_dsi_in: endpoint {
-						remote-endpoint = <&dsi_out>;
+					dsi_input: endpoint {
+						remote-endpoint = <&dc_out_dsi>;
 					};
 				};
 

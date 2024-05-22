@@ -70,3 +70,11 @@ config DW_HDMI_HDCP2
     help
       Support the HDCP2 interface which is part of the Synopsys
       Designware HDMI block.
+
+
+config ESWIN_MIPI_DSI
+    tristate "Eswin mipi dsi and 1080p panel driver"
+    select DRM_ESWIN
+    select DRM_DW_MIPI_DSI
+    help
+      Support mipi dsi 4-lanes panel output

@@ -35,6 +35,8 @@
 #include "dw-hdmi.h"
 #endif
 
+#include "es_mipi_dsi.h"
+
 #define DRV_NAME "es_drm"
 #define DRV_DESC "Eswin DRM driver"
 #define DRV_DATE "20191101"
@@ -345,6 +347,11 @@ static struct platform_driver *drm_sub_drivers[] = {
 #ifdef CONFIG_ESWIN_VIRTUAL_DISPLAY
 	&virtual_display_platform_driver,
 #endif
+
+#ifdef CONFIG_ESWIN_MIPI_DSI
+	&es_mipi_dsi_driver,
+#endif
+
 };
 #define NUM_DRM_DRIVERS                                                        \
 	(sizeof(drm_sub_drivers) / sizeof(struct platform_driver *))
