@@ -67,5 +67,4 @@ extern u8 tv_hdmi_hdcp2_support(struct dw_hdmi *hdmi);
 extern void dw_hdmi_hdcp2_init(struct dw_hdcp2 *hdcp2);
 extern void dw_hdmi_hdcp2_remove(void);
 extern void dw_hdmi_hdcp2_start(int enable);
-extern void get_random_bytes(void *buf, int nbytes);
 #endif

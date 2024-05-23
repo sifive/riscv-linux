@@ -22,11 +22,12 @@
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/spinlock.h>
-#include <linux/soc/eswin/eswin_vendor_storage.h>
+//#include <linux/soc/eswin/eswin_vendor_storage.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <linux/module.h>
-#include "dw_hdmi.h"
+#include <linux/random.h>
+#include "dw-hdmi.h"
 #include "dw_hdmi_hdcp.h"
 
 #define HDCP_KEY_PATH "/usr/hdcp1.4_key/Tx_A2_TestDPK_encrypted"
@@ -484,7 +485,7 @@ static int hdcp_load_keys_cb(struct dw_hdcp *hdcp)
 		return -ENOMEM;
 	}
 #if 1
-	size = eswin_vendor_read(HDMI_HDCP1X_ID, hdcp_vendor_data, 314);
+	// size = eswin_vendor_read(HDMI_HDCP1X_ID, hdcp_vendor_data, 314);
 
 	for (i = 0; i < sizeof(hdcp_vendor_data); i++)
 		hdcp_vendor_data[i] = hdcp_const_data[i];

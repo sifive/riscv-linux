@@ -11,7 +11,7 @@ es_drm-objs := es_dc_hw.o \
 
 es_drm-$(CONFIG_ESWIN_VIRTUAL_DISPLAY) += es_virtual.o
 es_drm-$(CONFIG_ESWIN_MMU) += es_dc_mmu.o
-es_drm-$(CONFIG_ESWIN_DW_HDMI) += eswin_dw_hdmi.o dw_hdmi.o
+es_drm-$(CONFIG_ESWIN_DW_HDMI) += eswin_dw_hdmi.o dw-hdmi.o
 
 es_drm-$(CONFIG_DW_HDMI_I2S_AUDIO) += dw_hdmi_i2s_audio.o
 es_drm-$(CONFIG_DW_HDMI_CEC) += dw_hdmi_cec.o

@@ -9,17 +9,18 @@
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 
+#include <drm/bridge/dw_hdmi.h>
 #include <drm/drm_crtc.h>
 
 #include <sound/hdmi-codec.h>
 
-#include "dw_hdmi.h"
+#include "dw-hdmi.h"
 #include "dw_hdmi_audio.h"
 
 #define DRIVER_NAME "dw-hdmi-i2s-audio"
 
-static inline void hdmi_write(struct dw_hdmi_i2s_audio_data *audio, u8 val,
-			      int offset)
+static inline void hdmi_write(struct dw_hdmi_i2s_audio_data *audio,
+			      u8 val, int offset)
 {
 	struct dw_hdmi *hdmi = audio->hdmi;
 
@@ -44,7 +45,7 @@ static int dw_hdmi_i2s_hw_params(struct device *dev, void *data,
 	u8 inputclkfs = 0;
 
 	/* it cares I2S only */
-	if (fmt->bit_clk_master | fmt->frame_clk_master) {
+	if (fmt->bit_clk_provider | fmt->frame_clk_provider) {
 		dev_err(dev, "unsupported clock settings\n");
 		return -EINVAL;
 	}
@@ -53,8 +54,8 @@ static int dw_hdmi_i2s_hw_params(struct device *dev, void *data,
 	hdmi_write(audio, HDMI_AUD_CONF0_SW_RESET, HDMI_AUD_CONF0);
 	hdmi_write(audio, (u8)~HDMI_MC_SWRSTZ_I2SSWRST_REQ, HDMI_MC_SWRSTZ);
 
-	inputclkfs = HDMI_AUD_INPUTCLKFS_64FS;
-	conf0 = (HDMI_AUD_CONF0_I2S_SELECT | HDMI_AUD_CONF0_I2S_EN0);
+	inputclkfs	= HDMI_AUD_INPUTCLKFS_64FS;
+	conf0		= (HDMI_AUD_CONF0_I2S_SELECT | HDMI_AUD_CONF0_I2S_EN0);
 
 	/* Enable the required i2s lanes */
 	switch (hparms->channels) {
@@ -157,9 +158,9 @@ static int dw_hdmi_i2s_get_dai_id(struct snd_soc_component *component,
 		return ret;
 
 	/*
-     * HDMI sound should be located as reg = <2>
-     * Then, it is sound port 0
-     */
+	 * HDMI sound should be located as reg = <2>
+	 * Then, it is sound port 0
+	 */
 	if (of_ep.port == 2)
 		return 0;
 
@@ -177,11 +178,11 @@ static int dw_hdmi_i2s_hook_plugged_cb(struct device *dev, void *data,
 }
 
 static const struct hdmi_codec_ops dw_hdmi_i2s_ops = {
-	.hw_params = dw_hdmi_i2s_hw_params,
-	.audio_startup = dw_hdmi_i2s_audio_startup,
-	.audio_shutdown = dw_hdmi_i2s_audio_shutdown,
-	.get_eld = dw_hdmi_i2s_get_eld,
-	.get_dai_id = dw_hdmi_i2s_get_dai_id,
+	.hw_params	= dw_hdmi_i2s_hw_params,
+	.audio_startup  = dw_hdmi_i2s_audio_startup,
+	.audio_shutdown	= dw_hdmi_i2s_audio_shutdown,
+	.get_eld	= dw_hdmi_i2s_get_eld,
+	.get_dai_id	= dw_hdmi_i2s_get_dai_id,
 	.hook_plugged_cb = dw_hdmi_i2s_hook_plugged_cb,
 };
 
@@ -192,18 +193,19 @@ static int snd_dw_hdmi_probe(struct platform_device *pdev)
 	struct hdmi_codec_pdata pdata;
 	struct platform_device *platform;
 
-	pdata.ops = &dw_hdmi_i2s_ops;
-	pdata.i2s = 1;
-	pdata.max_i2s_channels = 8;
-	pdata.data = audio;
+	memset(&pdata, 0, sizeof(pdata));
+	pdata.ops		= &dw_hdmi_i2s_ops;
+	pdata.i2s		= 1;
+	pdata.max_i2s_channels	= 8;
+	pdata.data		= audio;
 
 	memset(&pdevinfo, 0, sizeof(pdevinfo));
-	pdevinfo.parent = pdev->dev.parent;
-	pdevinfo.id = PLATFORM_DEVID_AUTO;
-	pdevinfo.name = HDMI_CODEC_DRV_NAME;
-	pdevinfo.data = &pdata;
-	pdevinfo.size_data = sizeof(pdata);
-	pdevinfo.dma_mask = DMA_BIT_MASK(32);
+	pdevinfo.parent		= pdev->dev.parent;
+	pdevinfo.id		= PLATFORM_DEVID_AUTO;
+	pdevinfo.name		= HDMI_CODEC_DRV_NAME;
+	pdevinfo.data		= &pdata;
+	pdevinfo.size_data	= sizeof(pdata);
+	pdevinfo.dma_mask	= DMA_BIT_MASK(32);
 
 	platform = platform_device_register_full(&pdevinfo);
 	if (IS_ERR(platform))
@@ -214,24 +216,23 @@ static int snd_dw_hdmi_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int snd_dw_hdmi_remove(struct platform_device *pdev)
+static void snd_dw_hdmi_remove(struct platform_device *pdev)
 {
 	struct platform_device *platform = dev_get_drvdata(&pdev->dev);
 
 	platform_device_unregister(platform);
-
-	return 0;
 }
 
 struct platform_driver snd_dw_hdmi_driver = {
-    .probe  = snd_dw_hdmi_probe,
-    .remove = snd_dw_hdmi_remove,
-    .driver = {
-        .name = DRIVER_NAME,
-    },
+	.probe	= snd_dw_hdmi_probe,
+	.remove_new = snd_dw_hdmi_remove,
+	.driver	= {
+		.name = DRIVER_NAME,
+	},
 };
 //module_platform_driver(snd_dw_hdmi_driver);
 
+MODULE_AUTHOR("Kuninori Morimoto <kuninori.morimoto.gx@renesas.com>");
 MODULE_DESCRIPTION("Synopsis Designware HDMI I2S ALSA SoC interface");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:" DRIVER_NAME);

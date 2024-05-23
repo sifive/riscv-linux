@@ -146,8 +146,8 @@ static long load_code(hl_device *hl_dev, struct hl_drv_ioc_code __user *arg)
 		return -EBUSY;
 
 	if (randomize_mem) {
-		prandom_bytes(hl_dev->code, hl_dev->code_size);
-		prandom_bytes(hl_dev->data, hl_dev->data_size);
+		get_random_bytes(hl_dev->code, hl_dev->code_size);
+		get_random_bytes(hl_dev->data, hl_dev->data_size);
 	}
 
 	if (copy_from_user(hl_dev->code, &arg->data, head.len) != 0)

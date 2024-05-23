@@ -32,7 +32,7 @@
 #include "es_dc.h"
 #include "es_virtual.h"
 #ifdef CONFIG_ESWIN_DW_HDMI
-#include "dw_hdmi.h"
+#include "dw-hdmi.h"
 #endif
 
 #define DRV_NAME "es_drm"
@@ -215,7 +215,7 @@ static int es_drm_create_properties(struct drm_device *dev)
 		return -ENOMEM;
 	private->connector_id_prop = prop;
 
-	return drm_mode_create_tv_properties(dev, 0, NULL);
+	return drm_mode_create_tv_properties(dev, 0);
 }
 #endif
 

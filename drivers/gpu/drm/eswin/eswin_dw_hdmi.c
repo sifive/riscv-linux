@@ -18,12 +18,14 @@
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
+#include <drm/bridge/dw_hdmi.h>
 
-#include <uapi/drm/drm_mode.h>
-#include <uapi/linux/videodev2.h>
+#include <drm/drm_mode.h>
+#include <linux/videodev2.h>
+#include <linux/media-bus-format.h>
 #include <linux/pm_runtime.h>
 
-#include "dw_hdmi.h"
+#include "dw-hdmi.h"
 #include "es_drv.h"
 #include "es_crtc.h"
 
@@ -385,9 +387,9 @@ static void dw_hdmi_eswin_select_output(struct drm_connector_state *conn_state,
 
 	switch (hdmi->hdmi_output) {
 	case DRM_HDMI_OUTPUT_YCBCR_HQ:
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*color_format = DRM_HDMI_OUTPUT_YCBCR444;
-		else if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		else if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = DRM_HDMI_OUTPUT_YCBCR422;
 		else if (conn_state->connector->ycbcr_420_allowed &&
 			 drm_mode_is_420(info, mode))
@@ -397,9 +399,9 @@ static void dw_hdmi_eswin_select_output(struct drm_connector_state *conn_state,
 		if (conn_state->connector->ycbcr_420_allowed &&
 		    drm_mode_is_420(info, mode))
 			*color_format = DRM_HDMI_OUTPUT_YCBCR420;
-		else if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		else if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = DRM_HDMI_OUTPUT_YCBCR422;
-		else if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		else if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*color_format = DRM_HDMI_OUTPUT_YCBCR444;
 		break;
 	case DRM_HDMI_OUTPUT_YCBCR420:
@@ -408,11 +410,11 @@ static void dw_hdmi_eswin_select_output(struct drm_connector_state *conn_state,
 			*color_format = DRM_HDMI_OUTPUT_YCBCR420;
 		break;
 	case DRM_HDMI_OUTPUT_YCBCR422:
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = DRM_HDMI_OUTPUT_YCBCR422;
 		break;
 	case DRM_HDMI_OUTPUT_YCBCR444:
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*color_format = DRM_HDMI_OUTPUT_YCBCR444;
 		break;
 	case DRM_HDMI_OUTPUT_DEFAULT_RGB:
@@ -421,10 +423,10 @@ static void dw_hdmi_eswin_select_output(struct drm_connector_state *conn_state,
 	}
 
 	if (*color_format == DRM_HDMI_OUTPUT_DEFAULT_RGB &&
-	    info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_30)
+	    info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_30)
 		support_dc = true;
 	if (*color_format == DRM_HDMI_OUTPUT_YCBCR444 &&
-	    info->edid_hdmi_dc_modes &
+	    info->edid_hdmi_rgb444_dc_modes &
 		    (DRM_EDID_HDMI_DC_Y444 | DRM_EDID_HDMI_DC_30))
 		support_dc = true;
 	if (*color_format == DRM_HDMI_OUTPUT_YCBCR422)
@@ -463,7 +465,7 @@ static void dw_hdmi_eswin_select_output(struct drm_connector_state *conn_state,
 		/* BT2020 require color depth at lest 10bit */
 		*color_depth = 10;
 		/* We prefer use YCbCr422 to send 10bit */
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = DRM_HDMI_OUTPUT_YCBCR422;
 	}
 
@@ -885,11 +887,11 @@ static int dw_hdmi_eswin_get_property(struct drm_connector *connector,
 		*val = hdmi->hdmi_output;
 	} else if (property == hdmi->color_depth_capacity) {
 		*val = BIT(ESWIN_HDMI_DEPTH_8);
-		if (info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_30)
+		if (info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_30)
 			*val |= BIT(ESWIN_HDMI_DEPTH_10);
-		if (info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_36)
+		if (info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_36)
 			*val |= BIT(ESWIN_HDMI_DEPTH_12);
-		if (info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_48)
+		if (info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_48)
 			*val |= BIT(ESWIN_HDMI_DEPTH_16);
 		if (info->hdmi.y420_dc_modes & DRM_EDID_YCBCR420_DC_30)
 			*val |= BIT(ESWIN_HDMI_DEPTH_420_10);
@@ -899,12 +901,12 @@ static int dw_hdmi_eswin_get_property(struct drm_connector *connector,
 			*val |= BIT(ESWIN_HDMI_DEPTH_420_16);
 	} else if (property == hdmi->output_format_capacity) {
 		*val = BIT(DRM_HDMI_OUTPUT_DEFAULT_RGB);
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*val |= BIT(DRM_HDMI_OUTPUT_YCBCR444);
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*val |= BIT(DRM_HDMI_OUTPUT_YCBCR422);
 		if (connector->ycbcr_420_allowed &&
-		    info->color_formats & DRM_COLOR_FORMAT_YCRCB420)
+		    info->color_formats & DRM_COLOR_FORMAT_YCBCR420)
 			*val |= BIT(DRM_HDMI_OUTPUT_YCBCR420);
 	} else if (property == config->hdr_output_metadata_property) {
 		*val = state->hdr_output_metadata ?

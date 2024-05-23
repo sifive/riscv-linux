@@ -263,7 +263,6 @@
 
 &dw_hdmi {
 	status = "okay";
-	eswin-plat = <1>;
 	ports {
 		port@2 {
 			reg = <2>;

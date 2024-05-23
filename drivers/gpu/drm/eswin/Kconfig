@@ -66,7 +66,7 @@ config DW_HDMI_HDCP
 
 config DW_HDMI_HDCP2
     tristate "Synopsis Designware HDCP2 interface"
-    select DRM_ESWIN
+    depends on DW_HDMI_HDCP
     help
       Support the HDCP2 interface which is part of the Synopsys
       Designware HDMI block.
