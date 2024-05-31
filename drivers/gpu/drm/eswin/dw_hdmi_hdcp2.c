@@ -61,6 +61,7 @@
  */
 
 #define MAX_HL_DEVICES 16
+#define TROOT_GRIFFIN
 
 static bool randomize_mem = false;
 module_param(randomize_mem, bool, 0);
@@ -344,7 +345,6 @@ static int alloc_dma_areas(hl_device *hl_dev,
 		hl_dev->code_base = info->code_base;
 		hl_dev->code = phys_to_virt(hl_dev->code_base);
 	} else {
-		dma_set_mask_and_coherent(g_dw_hdcp2->dev, DMA_BIT_MASK(32));
 		hl_dev->code =
 			dma_alloc_coherent(g_dw_hdcp2->dev, hl_dev->code_size,
 					   &hl_dev->code_base, GFP_KERNEL);
@@ -387,7 +387,6 @@ static long init(struct file *f, void __user *arg)
 
 	if (copy_from_user(&info, arg, sizeof info) != 0)
 		return -EFAULT;
-
 	hl_dev = alloc_hl_dev_slot(&info);
 	if (!hl_dev)
 		return -EMFILE;
@@ -528,9 +527,8 @@ static long hld_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 static const struct file_operations hld_file_operations = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = hld_ioctl,
-#else
-	.unlocked_ioctl = hld_ioctl,
 #endif
+	.unlocked_ioctl = hld_ioctl,
 	.owner = THIS_MODULE,
 };
 
@@ -708,6 +706,7 @@ static int eswin_hdmi_hdcp2_probe(struct platform_device *pdev)
 	g_dw_hdcp2->start = dw_hdcp2_start;
 	hld_init();
 	dw_hdmi2_hdcp2_clk_enable(hdcp2_dev);
+	dma_set_mask_and_coherent(hdcp2_dev, DMA_BIT_MASK(32));
 	dw_hdmi_hdcp2_init(g_dw_hdcp2);
 	dw_hdmi_hdcp2_start(3);
 

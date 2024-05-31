@@ -1813,6 +1813,7 @@
 				clocks = <&d0_clock EIC7700_CLK_VO_CFG_CLK>,
 					    <&d0_clock EIC7700_CLK_VO_HDMI_IESMCLK>;
 				clock-names ="pclk_hdcp2", "hdcp2_clk_hdmi";
+				dma-noncoherent;
 		};
 
 		d0_usbdrd3_0: usb0@50480000 {
