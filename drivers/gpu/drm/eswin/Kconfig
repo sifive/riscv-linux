@@ -71,6 +71,12 @@ config DW_HDMI_HDCP2
       Support the HDCP2 interface which is part of the Synopsys
       Designware HDMI block.
 
+config DW_HDMI_HDCP1X_ENABLED
+    bool "Synopsis Designware HDCP1X enabled"
+    depends on DW_HDMI_HDCP
+    help
+      Enable/Disable HDCP1X of the Synopsys Designware HDMI block.
+
 
 config ESWIN_MIPI_DSI
     tristate "Eswin mipi dsi and 1080p panel driver"
