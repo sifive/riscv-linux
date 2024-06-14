@@ -22,6 +22,7 @@
 #include <drm/drm_vblank.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_fbdev_generic.h>
 
 #include "es_drv.h"
 #include "es_fb.h"
@@ -276,6 +277,8 @@ static int es_drm_bind(struct device *dev)
 	ret = drm_dev_register(drm_dev, 0);
 	if (ret)
 		goto err_helper;
+
+	drm_fbdev_generic_setup(drm_dev, 32);
 
 	return 0;
 

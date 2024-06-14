@@ -103,7 +103,7 @@ static int es_gem_alloc_buf(struct es_gem_object *es_obj)
 		return 0;
 	}
 
-	es_obj->dma_attrs = DMA_ATTR_WRITE_COMBINE | DMA_ATTR_NO_KERNEL_MAPPING;
+	es_obj->dma_attrs = DMA_ATTR_WRITE_COMBINE;
 
 	if (!is_iommu_enabled(dev))
 		es_obj->dma_attrs |= DMA_ATTR_FORCE_CONTIGUOUS;
@@ -395,6 +395,13 @@ struct sg_table *es_gem_prime_get_sg_table(struct drm_gem_object *obj)
 static int es_gem_prime_vmap(struct drm_gem_object *obj,
 			     struct iosys_map *map)
 {
+	struct es_gem_object *es_obj = to_es_gem_object(obj);
+
+	void * vaddr = es_obj->dma_attrs & DMA_ATTR_NO_KERNEL_MAPPING ?
+		       page_address(es_obj->cookie) : es_obj->cookie;
+
+	iosys_map_set_vaddr(map, vaddr);
+
 	return 0;
 }
 
