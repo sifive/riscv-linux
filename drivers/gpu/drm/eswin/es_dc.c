@@ -977,6 +977,23 @@ const struct component_ops dc_component_ops = {
 	.unbind = dc_unbind,
 };
 
+static void vo_qos_cfg(void)
+{
+	void __iomem *qos;
+
+	#define VO_QOS_CSR	0x50281050UL
+	qos = ioremap(VO_QOS_CSR, 8);
+	if (!qos) {
+		printk("qos ioremap fail---------------\n");
+		return;
+	}
+	writel(0x9, qos);
+	writel(0x9, (char *)qos + 4);
+
+	iounmap(qos);
+	return;
+}
+
 static const struct of_device_id dc_driver_dt_match[] = {
 	{
 		.compatible = "eswin,dc",
@@ -1093,7 +1110,7 @@ static int dc_probe(struct platform_device *pdev)
 	}
 
 	dev_set_drvdata(dev, dc);
-
+	vo_qos_cfg();
 	return component_add(dev, &dc_component_ops);
 }
 
