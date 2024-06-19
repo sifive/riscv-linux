@@ -235,6 +235,13 @@ enum dc_hw_swizzle {
 	SWIZZLE_BGRA,
 };
 
+enum dc_hw_cursor_size {
+	CURSOR_SIZE_32X32 = 0,
+	CURSOR_SIZE_64X64,
+	CURSOR_SIZE_128X128,
+	CURSOR_SIZE_256X256,
+};
+
 enum dc_hw_out {
 	OUT_DPI,
 	OUT_DP,
@@ -362,6 +369,7 @@ struct dc_hw_cursor {
 	u16 y;
 	u16 hot_x;
 	u16 hot_y;
+	u8 size;
 	bool enable;
 	bool dirty;
 };

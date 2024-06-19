@@ -615,17 +615,54 @@ static void update_overlay_plane(struct es_dc *dc, struct es_plane *plane)
 	dc_hw_set_blend(&dc->hw, &blend);
 }
 
+static void update_cursor_size(struct drm_plane_state *state, struct dc_hw_cursor *cursor)
+{
+	u8 size_type;
+
+	switch (state->crtc_w) {
+		case 32:
+			size_type = CURSOR_SIZE_32X32;
+			break;
+		case 64:
+			size_type = CURSOR_SIZE_64X64;
+			break;
+		case 128:
+			size_type = CURSOR_SIZE_128X128;
+			break;
+		case 256:
+			size_type = CURSOR_SIZE_256X256;
+			break;
+		default:
+			size_type = CURSOR_SIZE_32X32;
+			break;
+	}
+
+	cursor->size = size_type;
+}
+
 static void update_cursor_plane(struct es_dc *dc, struct es_plane *plane)
 {
 	struct drm_plane_state *state = plane->base.state;
-	struct drm_framebuffer *drm_fb = state->fb;
 	struct dc_hw_cursor cursor;
 
 	cursor.address = plane->dma_addr[0];
-	cursor.x = state->crtc_x;
-	cursor.y = state->crtc_y;
-	cursor.hot_x = drm_fb->hot_x;
-	cursor.hot_y = drm_fb->hot_y;
+
+	if (state->crtc_x > 0) {
+		cursor.x = state->crtc_x;
+		cursor.hot_x = 0;
+	} else {
+		cursor.hot_x = -state->crtc_x;
+		cursor.x = 0;
+	}
+	if (state->crtc_y > 0) {
+		cursor.y = state->crtc_y;
+		cursor.hot_y = 0;
+	} else {
+		cursor.hot_y = -state->crtc_y;
+		cursor.y = 0;
+	}
+
+	update_cursor_size(state, &cursor);
 	cursor.enable = true;
 
 	dc_hw_update_cursor(&dc->hw, &cursor);

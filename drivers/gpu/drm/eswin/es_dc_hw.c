@@ -1485,8 +1485,9 @@ void dc_hw_commit(struct dc_hw *hw)
 			dc_write(hw, DC_CURSOR_LOCATION,
 				 hw->cursor.x | (hw->cursor.y << 16));
 			dc_write(hw, DC_CURSOR_CONFIG,
-				 (hw->cursor.hot_x << 16) |
-					 (hw->cursor.hot_y << 8) | 0x02);
+				  (hw->cursor.hot_x << 16) |
+				  (hw->cursor.hot_y << 8) |
+				  (hw->cursor.size << 5) | 0x06);
 		} else {
 			dc_write(hw, DC_CURSOR_CONFIG, 0x00);
 		}
