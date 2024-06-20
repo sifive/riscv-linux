@@ -32,7 +32,9 @@ config ESWIN_DW_HDMI
     bool "ESWIN specific extensions for Synopsys DW HDMI"
     depends on DRM_ESWIN
     select CEC_CORE if CEC_NOTIFIER
-    select DW_HDMI
+    select DRM_DISPLAY_HDMI_HELPER
+    select DRM_DISPLAY_HELPER
+    select DRM_KMS_HELPER
     help
       This selects support for ESWIN SoC specific extensions
       for the Synopsys DesignWare HDMI driver. If you want to
