@@ -307,6 +307,10 @@ pgprot_t ttm_io_prot(struct ttm_buffer_object *bo, struct ttm_resource *res,
 		caching = res->bus.caching;
 	}
 
+	/* Downgrade cached mapping for non-snooping devices */
+	if (!bo->bdev->dma_coherent && caching == ttm_cached)
+		caching = ttm_write_combined;
+
 	return ttm_prot_from_caching(caching, tmp);
 }
 EXPORT_SYMBOL(ttm_io_prot);
