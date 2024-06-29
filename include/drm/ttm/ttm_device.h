@@ -226,6 +226,11 @@ struct ttm_device {
 	const struct ttm_device_funcs *funcs;
 
 	/**
+	 * @dma_coherent: if the device backed is dma-coherent.
+	 */
+	bool dma_coherent;
+
+	/**
 	 * @sysman: Resource manager for the system domain.
 	 * Access via ttm_manager_type.
 	 */

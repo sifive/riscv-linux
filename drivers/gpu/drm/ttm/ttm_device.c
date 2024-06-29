@@ -222,6 +222,8 @@ int ttm_device_init(struct ttm_device *bdev, const struct ttm_device_funcs *func
 	list_add_tail(&bdev->device_list, &glob->device_list);
 	mutex_unlock(&ttm_global_mutex);
 
+	bdev->dma_coherent = dev->dma_coherent;
+
 	return 0;
 }
 EXPORT_SYMBOL(ttm_device_init);
