@@ -170,7 +170,7 @@ typedef struct _PMR_DMA_BUF_DATA_
 	IMG_BOOL bPoisonOnFree;
 
 	/* Mapping information. */
-	struct dma_buf_map sMap;
+	struct iosys_map sMap;
 
 	/* Modified by PMR lock/unlock */
 	struct sg_table *psSgTable;
@@ -196,7 +196,7 @@ static IMG_UINT32 g_ui32HashRefCount;
 static int
 DmaBufSetValue(struct dma_buf *psDmaBuf, int iValue, const char *szFunc)
 {
-	struct dma_buf_map sMap;
+	struct iosys_map sMap;
 	int err, err_end_access;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 6, 0))
 	int i;
