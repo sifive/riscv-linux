@@ -1796,7 +1796,7 @@ PVRSRV_ERROR OSChangeSparseMemCPUAddrMap(void **psPageArray,
 
 	if ((psVMA->vm_flags & VM_MIXEDMAP) || bIsLMA)
 	{
-		psVMA->vm_flags |= VM_MIXEDMAP;
+		vm_flags_set(psVMA, VM_MIXEDMAP);
 		bMixedMap = IMG_TRUE;
 	}
 	else
@@ -1818,7 +1818,7 @@ PVRSRV_ERROR OSChangeSparseMemCPUAddrMap(void **psPageArray,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)) */
 				{
 					bMixedMap = IMG_TRUE;
-					psVMA->vm_flags |= VM_MIXEDMAP;
+					vm_flags_set(psVMA, VM_MIXEDMAP);
 					break;
 				}
 			}
