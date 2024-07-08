@@ -22,7 +22,6 @@
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/spinlock.h>
-//#include <linux/soc/eswin/eswin_vendor_storage.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <linux/module.h>
@@ -42,332 +41,6 @@
 #define MAX_DOWNSTREAM_DEVICE_NUM 5
 #define DPK_WR_OK_TIMEOUT_US 30000
 #define HDMI_HDCP1X_ID 5
-
-/* HDCP DCP KEY & SEED */
-const u8 hdcp_const_data[320] = {
-	/* 0     1     2     3     4     5     6    */
-	0x00,
-	0x00,
-	0xf0,
-	0xff,
-	0xff,
-	0x00,
-	0x00,
-	0x00, //KSV
-	0x91,
-	0x71,
-	0x7,
-	0x42,
-	0x86,
-	0xC1,
-	0xD1,
-	0x89,
-	0x0E,
-	0x2D,
-	0xFF,
-	0x92,
-	0x95,
-	0x28,
-	0xF4,
-	0x7D,
-	0x7B,
-	0x1F,
-	0x2A,
-	0xD9,
-	0xBB,
-	0xE4,
-	0xFD,
-	0x10,
-	0x18,
-	0xAA,
-	0xFB,
-	0x99,
-	0x5A,
-	0x83,
-	0x97,
-	0xD5,
-	0xDA,
-	0x85,
-	0x2D,
-	0x52,
-	0x8B,
-	0xB5,
-	0xB2,
-	0x49,
-	0xDC,
-	0x64,
-	0xC6,
-	0x62,
-	0xF0,
-	0xDB,
-	0xAA,
-	0x48,
-	0x2E,
-	0x84,
-	0xAD,
-	0x21,
-	0xCD,
-	0xB9,
-	0xD6,
-	0x47,
-	0xC7,
-	0xD7,
-	0xD1,
-	0x9F,
-	0xD4,
-	0xB1,
-	0x29,
-	0x4E,
-	0x98,
-	0xC6,
-	0xAE,
-	0xA4,
-	0xF5,
-	0xA6,
-	0xFE,
-	0x68,
-	0x3D,
-	0x43,
-	0x97,
-	0x7B,
-	0x52,
-	0xC7,
-	0xA1,
-	0x65,
-	0x7B,
-	0xF9,
-	0x8C,
-	0xCC,
-	0x20,
-	0x8C,
-	0xCB,
-	0x2F,
-	0x7D,
-	0xFA,
-	0xC5,
-	0x80,
-	0xD8,
-	0xDB,
-	0x5A,
-	0x72,
-	0x2D,
-	0xE1,
-	0xA6,
-	0x79,
-	0xF4,
-	0xAE,
-	0x96,
-	0x1D,
-	0xE8,
-	0x28,
-	0x85,
-	0x5F,
-	0xBD,
-	0x64,
-	0xF8,
-	0xBF,
-	0x7A,
-	0xE7,
-	0xFF,
-	0xBC,
-	0x1F,
-	0xC6,
-	0x75,
-	0x56,
-	0xB9,
-	0xF9,
-	0x0F,
-	0x36,
-	0x29,
-	0x5A,
-	0x3B,
-	0xF3,
-	0x76,
-	0x7B,
-	0x8B,
-	0xF8,
-	0xFD,
-	0x13,
-	0x80,
-	0x49,
-	0xAB,
-	0x5C,
-	0x12,
-	0x63,
-	0xB9,
-	0xE7,
-	0x91,
-	0x2A,
-	0xBA,
-	0x82,
-	0xF3,
-	0xCD,
-	0xFA,
-	0xFB,
-	0x4E,
-	0xA7,
-	0xE1,
-	0xBD,
-	0x8B,
-	0xC3,
-	0x24,
-	0xEC,
-	0x31,
-	0xBC,
-	0x1,
-	0xB1,
-	0xCE,
-	0x9A,
-	0x4,
-	0x9C,
-	0x69,
-	0x5D,
-	0xBA,
-	0x3C,
-	0xF7,
-	0x97,
-	0x50,
-	0x88,
-	0xE2,
-	0xA2,
-	0xE1,
-	0x3,
-	0xDB,
-	0x39,
-	0xDD,
-	0x93,
-	0x0A,
-	0x24,
-	0x5C,
-	0x6E,
-	0x17,
-	0xE9,
-	0x1,
-	0x4C,
-	0x25,
-	0xF5,
-	0x9,
-	0x24,
-	0xC6,
-	0x91,
-	0xC6,
-	0x6A,
-	0x7A,
-	0x40,
-	0x89,
-	0x62,
-	0x7F,
-	0xED,
-	0x6B,
-	0x8E,
-	0x5F,
-	0x79,
-	0xAD,
-	0xF2,
-	0x50,
-	0x59,
-	0xC4,
-	0x11,
-	0x2E,
-	0x1,
-	0xC2,
-	0xDC,
-	0x8,
-	0xCE,
-	0xDC,
-	0x51,
-	0x14,
-	0xF4,
-	0x8C,
-	0x3D,
-	0x9E,
-	0xB7,
-	0x16,
-	0xB3,
-	0x9C,
-	0xF3,
-	0x55,
-	0xC0,
-	0xCE,
-	0x74,
-	0x5B,
-	0x19,
-	0x4E,
-	0xF5,
-	0x39,
-	0x37,
-	0xA6,
-	0xEA,
-	0xB5,
-	0x20,
-	0xBF,
-	0xD7,
-	0x79,
-	0x24,
-	0xE2,
-	0x8D,
-	0x13,
-	0xBC,
-	0x38,
-	0x10,
-	0x60,
-	0x93,
-	0xAE,
-	0x70,
-	0xA9,
-	0x66,
-	0x81,
-	0xF3,
-	0x19,
-	0xEC,
-	0x45,
-	0xEC,
-	0xE5,
-	0x5,
-	0x47,
-	0xE4,
-	0x67,
-	0x65,
-	0x4C,
-	0x62,
-	0x1,
-	0x98,
-	0xA3,
-	0x52,
-	//SHA1
-	0x18,
-	0xb4,
-	0x70,
-	0x59,
-	0xfe,
-	0x13,
-	0x38,
-	0xc4,
-	0x15,
-	0xae,
-	0xf0,
-	0x81,
-	0xcb,
-	0x96,
-	0x27,
-	0xe7,
-	0xd9,
-	0x7b,
-	0xc5,
-	0x27,
-	0x20, //seed 0x2020
-	0x20,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-};
 
 /* HDCP Registers */
 #define HDMI_A_KSVMEMCTRL 0x5016
@@ -466,15 +139,11 @@ static void hdcp_modb(struct dw_hdcp *hdcp, u8 data, u8 mask, unsigned int reg)
 
 static int hdcp_load_keys_cb(struct dw_hdcp *hdcp)
 {
-	u32 size;
 	u8 hdcp_vendor_data[320];
-	int i;
-#if 0
-    int j;
-    struct file *fp;
-    loff_t pos = 0;
-    ssize_t nread;
-#endif
+	struct file *fp;
+	loff_t pos = 0;
+	ssize_t nread;
+
 	hdcp->keys = kmalloc(HDCP_KEY_SIZE, GFP_KERNEL);
 	if (!hdcp->keys)
 		return -ENOMEM;
@@ -484,27 +153,11 @@ static int hdcp_load_keys_cb(struct dw_hdcp *hdcp)
 		kfree(hdcp->keys);
 		return -ENOMEM;
 	}
-#if 1
-	// size = eswin_vendor_read(HDMI_HDCP1X_ID, hdcp_vendor_data, 314);
 
-	for (i = 0; i < sizeof(hdcp_vendor_data); i++)
-		hdcp_vendor_data[i] = hdcp_const_data[i];
-	size = 320;
-
-	if (size < (HDCP_KEY_SIZE + HDCP_KEY_SEED_SIZE)) {
-		dev_dbg(hdcp->dev, "HDCP: read size %d\n", size);
-		memset(hdcp->keys, 0, HDCP_KEY_SIZE);
-		memset(hdcp->seeds, 0, HDCP_KEY_SEED_SIZE);
-	} else {
-		memcpy(hdcp->keys, hdcp_vendor_data, HDCP_KEY_SIZE);
-		memcpy(hdcp->seeds, hdcp_vendor_data + HDCP_KEY_SIZE,
-		       HDCP_KEY_SEED_SIZE);
-	}
-#else
 	fp = filp_open(HDCP_KEY_PATH, O_RDONLY, 0644);
 	if (IS_ERR(fp)) {
-		printk("Error, Tx_A2_TestDPK_encrypted.txt doesn't exist.\n");
-		return 0;
+		printk("Error, Tx_A2_TestDPK_encrypted doesn't exist.\n");
+		goto err;
 	}
 
 	nread = kernel_read(fp, hdcp_vendor_data, sizeof(hdcp_vendor_data),
@@ -513,7 +166,8 @@ static int hdcp_load_keys_cb(struct dw_hdcp *hdcp)
 	if (nread != sizeof(hdcp_vendor_data)) {
 		printk("Error, failed to read %ld bytes to non volatile memory area,ret %ld\n",
 		       sizeof(hdcp_vendor_data), nread);
-		return -EIO;
+		filp_close(fp, NULL);
+		goto err;
 	}
 
 	memcpy(hdcp->keys, hdcp_vendor_data, HDCP_KEY_SIZE);
@@ -521,9 +175,13 @@ static int hdcp_load_keys_cb(struct dw_hdcp *hdcp)
 	       HDCP_KEY_SEED_SIZE);
 
 	filp_close(fp, NULL);
-#endif
-
 	return 0;
+err:
+	kfree(hdcp->keys);
+	kfree(hdcp->seeds);
+	hdcp->keys = NULL;
+	hdcp->seeds = NULL;
+	return -EIO;
 }
 
 static int dw_hdmi_hdcp_load_key(struct dw_hdcp *hdcp)
@@ -599,6 +257,7 @@ static int dw_hdmi_hdcp1x_start(struct dw_hdcp *hdcp)
 	int i;
 	int val;
 	u8 An[8];
+	int ret;
 
 	if (!hdcp->enable)
 		return -EPERM;
@@ -607,11 +266,6 @@ static int dw_hdmi_hdcp1x_start(struct dw_hdcp *hdcp)
 	    hdcp->status == DW_HDCP_AUTH_SUCCESS)
 		return 0;
 
-	/* disable the pixel clock*/
-	dev_dbg(hdcp->dev, "start hdcp with disable hdmi pixel clock\n");
-	hdcp_modb(hdcp, HDMI_MC_CLKDIS_PIXELCLK_DISABLE,
-		  HDMI_MC_CLKDIS_PIXELCLK_MASK, HDMI_MC_CLKDIS);
-
 	/* Update An */
 	get_random_bytes(&An, sizeof(An));
 	for (i = 0; i < 8; i++)
@@ -619,8 +273,18 @@ static int dw_hdmi_hdcp1x_start(struct dw_hdcp *hdcp)
 
 	hdcp->write(hdmi, 0x01, HDMI_HDCPREG_ANCONF);
 
-	if (!(hdcp->read(hdmi, HDMI_HDCPREG_RMSTS) & 0x3f))
-		dw_hdmi_hdcp_load_key(hdcp);
+	if (!(hdcp->read(hdmi, HDMI_HDCPREG_RMSTS) & 0x3f)) {
+		ret = dw_hdmi_hdcp_load_key(hdcp);
+		if (ret) {
+			dev_err(hdcp->dev, "load hdcp key failed, ret=%d\n", ret);
+			return ret;
+		}
+	}
+
+	/* disable the pixel clock*/
+	dev_dbg(hdcp->dev, "start hdcp with disable hdmi pixel clock\n");
+	hdcp_modb(hdcp, HDMI_MC_CLKDIS_PIXELCLK_DISABLE,
+		  HDMI_MC_CLKDIS_PIXELCLK_MASK, HDMI_MC_CLKDIS);
 
 	if (hdcp->hdcp2) {
 		for (i = 0; i < 100; i++) {
@@ -879,6 +543,7 @@ static ssize_t hdcp_enable_write(struct device *device,
 {
 	bool enable;
 	struct dw_hdcp *hdcp = g_hdcp;
+	int ret;
 
 	if (!hdcp)
 		return -EINVAL;
@@ -895,7 +560,10 @@ static ssize_t hdcp_enable_write(struct device *device,
 
 			if (hdcp->read(hdcp->hdmi, HDMI_PHY_STAT0) &
 			    HDMI_PHY_HPD) {
-				dw_hdmi_hdcp1x_start(hdcp);
+				ret = dw_hdmi_hdcp1x_start(hdcp);
+				if (ret) {
+					hdcp->enable = 0;
+				}
 			}
 		} else {
 			if (hdcp->status != DW_HDCP_DISABLED) {
