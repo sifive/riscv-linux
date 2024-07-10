@@ -34,7 +34,7 @@
 #include <linux/platform_device.h>
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
-#include <soc/sifive/sifive_l2_cache.h>
+#include <linux/dma-map-ops.h>
 
 #include <linux/clk.h>
 #include <linux/reset.h>
@@ -55,7 +55,7 @@ IMG_UINT64 *cpu_cache_flush_addr = NULL;
 extern void eswin_l2_flush64(phys_addr_t addr, size_t size);
 #else
 void eswin_l2_flush64(phys_addr_t addr, size_t size) {
-		sifive_l2_flush64_range(addr,size);
+	arch_sync_dma_for_device(addr, size, DMA_TO_DEVICE);
 };
 #endif
 void riscv_invalidate_addr(phys_addr_t addr, size_t size,IMG_BOOL virtual) {
