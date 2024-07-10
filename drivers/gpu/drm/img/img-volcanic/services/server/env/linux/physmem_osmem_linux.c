@@ -512,7 +512,13 @@ void LinuxInitPhysmem(void)
 	if (g_psLinuxPagePoolCache)
 	{
 		/* Only create the shrinker if we created the cache OK */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
 		register_shrinker(&g_sShrinker);
+#elif (LINUX_VERSION_CODE < KERNEL_VERSION(6, 7, 0))
+		register_shrinker(&g_sShrinker, "pvr-pp");
+#else
+		shrinker_register(&g_sShrinker);
+#endif
 	}
 
 	OSAtomicWrite(&g_iPoolCleanTasks, 0);
@@ -561,7 +567,11 @@ void LinuxDeinitPhysmem(void)
 	/* Free the page cache */
 	kmem_cache_destroy(g_psLinuxPagePoolCache);
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 7, 0))
 	unregister_shrinker(&g_sShrinker);
+#else
+	shrinker_free(&g_sShrinker);
+#endif
 	_PagePoolUnlock();
 
 	kmem_cache_destroy(g_psLinuxPageArray);
