@@ -218,15 +218,56 @@ static inline u8 to_es_tile_mode(u64 modifier)
 	return (u8)(modifier & 0x1F);
 }
 
+static int es_dc_clk_configs(struct device *dev, bool enable)
+{
+	int ret = 0;
+	struct es_dc *dc = dev_get_drvdata(dev);
+
+	if (enable) {
+		if (dc->dc_clkon) {
+			return 0;
+		}
+
+		ret = clk_prepare_enable(dc->cfg_clk);
+		if (ret < 0) {
+			dev_err(dev, "failed to prepare/enable cfg_clk\n");
+			return ret;
+		}
+
+		ret = clk_prepare_enable(dc->pix_clk);
+		if (ret < 0) {
+			dev_err(dev, "failed to prepare/enable pix_clk\n");
+			return ret;
+		}
+
+		ret = clk_prepare_enable(dc->axi_clk);
+		if (ret < 0) {
+			dev_err(dev, "failed to prepare/enable axi_clk\n");
+			return ret;
+		}
+
+		dc->pix_clk_rate = clk_get_rate(dc->pix_clk);
+		dc->dc_clkon = true;
+	} else {
+		if (!dc->dc_clkon) {
+			return 0;
+		}
+		clk_disable_unprepare(dc->pix_clk);
+		clk_disable_unprepare(dc->axi_clk);
+		clk_disable_unprepare(dc->cfg_clk);
+		dc->dc_clkon = false;
+	}
+
+	return 0;
+}
+
 static void dc_deinit(struct device *dev)
 {
 	struct es_dc *dc = dev_get_drvdata(dev);
 
 	dc_hw_enable_interrupt(&dc->hw, 0);
 	dc_hw_deinit(&dc->hw);
-	clk_disable_unprepare(dc->cfg_clk);
-	clk_disable_unprepare(dc->pix_clk);
-	clk_disable_unprepare(dc->axi_clk);
+	es_dc_clk_configs(dev, false);
 }
 
 static int dc_init(struct device *dev)
@@ -252,41 +293,19 @@ static int dc_init(struct device *dev)
 		}
 	}
 
-	ret = clk_prepare_enable(dc->cfg_clk);
+	ret = es_dc_clk_configs(dev, true);
 	if (ret < 0) {
-		dev_err(dev, "failed to prepare/enable cfg_clk\n");
+		dev_err(dev, "failed to prepare/enable clks\n");
 		return ret;
 	}
-
-	ret = clk_prepare_enable(dc->pix_clk);
-	if (ret < 0) {
-		dev_err(dev, "failed to prepare/enable pix_clk\n");
-		goto err_unprepare_cfg_clk;
-	}
-
-	ret = clk_prepare_enable(dc->axi_clk);
-	if (ret < 0) {
-		dev_err(dev, "failed to prepare/enable axi_clk\n");
-		goto err_unprepare_pix_clk;
-	}
-
-	dc->pix_clk_rate = clk_get_rate(dc->pix_clk);
 
 	ret = dc_hw_init(&dc->hw);
 	if (ret) {
 		dev_err(dev, "failed to init DC HW\n");
-		goto err_unprepare_axi_clk;
+		return ret;
 	}
 
 	return 0;
-
-err_unprepare_axi_clk:
-	clk_disable_unprepare(dc->axi_clk);
-err_unprepare_cfg_clk:
-	clk_disable_unprepare(dc->cfg_clk);
-err_unprepare_pix_clk:
-	clk_disable_unprepare(dc->pix_clk);
-	return ret;
 }
 
 static void es_dc_dump_enable(struct device *dev, dma_addr_t addr,
@@ -335,6 +354,7 @@ static void es_dc_enable(struct device *dev, struct drm_crtc *crtc)
 	display.dither_enable = crtc_state->dither_enable;
 
 	display.enable = true;
+	es_dc_clk_configs(dev, true);
 
 	if (dc->pix_clk_rate != mode->clock) {
 		clk_set_rate(dc->pix_clk, mode->clock * 1000);
@@ -366,6 +386,7 @@ static void es_dc_disable(struct device *dev)
 	display.enable = false;
 
 	dc_hw_setup_display(&dc->hw, &display);
+	es_dc_clk_configs(dev, false);
 }
 
 static bool es_dc_mode_fixup(struct device *dev,

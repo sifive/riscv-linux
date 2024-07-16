@@ -40,6 +40,7 @@ struct es_dc {
 
 	bool first_frame;
 	bool dc_initialized;
+	bool dc_clkon;
 
 	const struct es_dc_funcs *funcs;
 };
