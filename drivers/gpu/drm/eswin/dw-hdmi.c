@@ -51,6 +51,8 @@
 
 #define HDMI14_MAX_TMDSCLK 340000000
 
+#define HDMI_CEC_CLK 32768
+
 static bool hpd_flag = false;
 
 static const u16 csc_coeff_default[3][4] = {
@@ -2066,7 +2068,6 @@ static void hdmi_config_AVI(struct dw_hdmi *hdmi,
 			frame.extended_colorimetry =
 					HDMI_EXTENDED_COLORIMETRY_XV_YCC_709;
 			break;
-
 		case V4L2_YCBCR_ENC_BT2020:
 			if (hdmi->hdmi_data.enc_in_encoding ==
 			    V4L2_YCBCR_ENC_BT2020)
@@ -2076,7 +2077,6 @@ static void hdmi_config_AVI(struct dw_hdmi *hdmi,
 			frame.extended_colorimetry =
 				HDMI_EXTENDED_COLORIMETRY_BT2020;
 			break;
-
 		default: /* Carries no data */
 			frame.colorimetry = HDMI_COLORIMETRY_ITU_601;
 			frame.extended_colorimetry =
@@ -4248,6 +4248,12 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 				ret);
 			goto err_iahb;
 		}
+
+		ret = clk_set_rate(hdmi->cec_clk, HDMI_CEC_CLK);
+		if (ret) {
+			dev_err(hdmi->dev, "Cannot set CEC clock rate, error:%d\n", ret);
+			goto err_iahb;
+		}
 	}
 
 	/* hdmi prstn reset */
@@ -4256,7 +4262,7 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 	if (IS_ERR_OR_NULL(hdmi->rst_hdmi_prstn)) {
 		dev_err(hdmi->dev, "Failed to get hdmi prstn reset handle\n");
 		ret = -EFAULT;
-		goto err_iahb;
+		goto err_cec;
 	}
 
 	/* hdmi phyctl reset */
@@ -4265,7 +4271,7 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 	if (IS_ERR_OR_NULL(hdmi->rst_hdmi_phyrstn)) {
 		dev_err(hdmi->dev, "Failed to get hdmi phyrstn reset handle\n");
 		ret = -EFAULT;
-		goto err_iahb;
+		goto err_cec;
 	}
 
 	/* hdmi rstn reset */
@@ -4274,7 +4280,7 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 	if (IS_ERR_OR_NULL(hdmi->rst_hdmi_rstn)) {
 		dev_err(hdmi->dev, "Failed to get hdmi rstn reset handle\n");
 		ret = -EFAULT;
-		goto err_iahb;
+		goto err_cec;
 	}
 
 	if (hdmi->rst_hdmi_prstn) {
@@ -4303,12 +4309,12 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 		dev_err(dev, "Unsupported HDMI controller (%04x:%02x:%02x)\n",
 			hdmi->version, prod_id0, prod_id1);
 		ret = -ENODEV;
-		goto err_iahb;
+		goto err_cec;
 	}
 
 	ret = dw_hdmi_detect_phy(hdmi);
 	if (ret < 0)
-		goto err_iahb;
+		goto err_cec;
 
 	dev_info(dev, "Detected HDMI TX controller v%x.%03x %s HDCP (%s)\n",
 		 hdmi->version >> 12, hdmi->version & 0xfff,
@@ -4321,14 +4327,14 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		ret = irq;
-		goto err_iahb;
+		goto err_cec;
 	}
 
 	ret = devm_request_threaded_irq(dev, irq, dw_hdmi_hardirq,
 					dw_hdmi_irq, IRQF_SHARED,
 					dev_name(dev), hdmi);
 	if (ret)
-		goto err_iahb;
+		goto err_cec;
 
 	/*
 	 * To prevent overflows in HDMI_IH_FC_STAT2, set the clk regenerator
@@ -4452,9 +4458,10 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 
 	return hdmi;
 
+err_cec:
+	clk_disable_unprepare(hdmi->cec_clk);
 err_iahb:
 	clk_disable_unprepare(hdmi->iahb_clk);
-	clk_disable_unprepare(hdmi->cec_clk);
 err_isfr:
 	clk_disable_unprepare(hdmi->isfr_clk);
 err_res:

@@ -1780,11 +1780,13 @@
 			//pinctrl-0 = <&hdmi_i2c_xfer>;
 			interrupt-parent = <&plic0>;
 			interrupts = <274>;
-			clocks = <&d0_clock EIC7700_CLK_VO_CFG_CLK>, <&d0_clock EIC7700_CLK_VO_PIXEL_CLK>,
-				   <&d0_clock EIC7700_CLK_VO_CEC_CLK>, <&d0_clock EIC7700_CLK_VO_CR_CLK>;
-			clock-names = "iahb", "vpll", "cec", "isfr";
+
+			clocks = <&d0_clock EIC7700_CLK_VO_CFG_CLK>, <&d0_clock EIC7700_CLK_VO_CEC_CLK>,
+				 <&d0_clock EIC7700_CLK_VO_CR_CLK>;
+			clock-names = "iahb", "cec", "isfr";
 			//power-domains = <&power EIC7700_PD_HDCP>;
-			reg-io-width = <4>;
+
+                        reg-io-width = <4>;
 			ddc-i2c-scl-high-time-ns = <4708>;
 			ddc-i2c-scl-low-time-ns = <4916>;
 			#sound-dai-cells = <0>;

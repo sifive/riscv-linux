@@ -57,12 +57,8 @@ enum dw_hdmi_eswin_color_depth {
 struct eswin_hdmi {
 	struct device *dev;
 	struct regmap *regmap;
-	struct drm_encoder encoder;
-	struct clk *vpll_clk;
-	struct clk *hclk_vio;
-	struct clk *dclk;
 	struct dw_hdmi *hdmi;
-	struct phy *phy;
+	struct drm_encoder encoder;
 	u8 id;
 	unsigned long bus_format;
 	unsigned long output_bus_format;
@@ -201,101 +197,6 @@ static struct dw_hdmi_phy_config eswin_phy_config[] = {
 	{ ~0UL, 0x0000, 0x0000, 0x0000 }
 };
 
-static int eswin_hdmi_update_phy_table(struct eswin_hdmi *hdmi, u32 *config,
-				       int phy_table_size)
-{
-	int i;
-
-	if (phy_table_size > ARRAY_SIZE(eswin_phy_config)) {
-		dev_err(hdmi->dev, "phy table array number is out of range\n");
-		return -E2BIG;
-	}
-
-	for (i = 0; i < phy_table_size; i++) {
-		if (config[i * 4] != 0)
-			eswin_phy_config[i].mpixelclock = (u64)config[i * 4];
-		else
-			eswin_phy_config[i].mpixelclock = ~0UL;
-		eswin_phy_config[i].sym_ctr = (u16)config[i * 4 + 1];
-		eswin_phy_config[i].term = (u16)config[i * 4 + 2];
-		eswin_phy_config[i].vlev_ctr = (u16)config[i * 4 + 3];
-	}
-
-	return 0;
-}
-
-static int eswin_hdmi_parse_dt(struct eswin_hdmi *hdmi)
-{
-	struct device_node *np = hdmi->dev->of_node;
-	int ret, val, phy_table_size;
-	u32 *phy_config;
-
-	hdmi->vpll_clk = devm_clk_get(hdmi->dev, "vpll");
-	if (PTR_ERR(hdmi->vpll_clk) == -ENOENT) {
-		hdmi->vpll_clk = NULL;
-	} else if (PTR_ERR(hdmi->vpll_clk) == -EPROBE_DEFER) {
-		return -EPROBE_DEFER;
-	} else if (IS_ERR(hdmi->vpll_clk)) {
-		DRM_DEV_ERROR(hdmi->dev, "failed to get vpll clock\n");
-		return PTR_ERR(hdmi->vpll_clk);
-	}
-
-	hdmi->hclk_vio = devm_clk_get(hdmi->dev, "hclk_vio");
-	if (PTR_ERR(hdmi->hclk_vio) == -ENOENT) {
-		hdmi->hclk_vio = NULL;
-	} else if (PTR_ERR(hdmi->hclk_vio) == -EPROBE_DEFER) {
-		return -EPROBE_DEFER;
-	} else if (IS_ERR(hdmi->hclk_vio)) {
-		dev_err(hdmi->dev, "failed to get hclk_vio clock\n");
-		return PTR_ERR(hdmi->hclk_vio);
-	}
-	hdmi->dclk = devm_clk_get(hdmi->dev, "dclk");
-	if (PTR_ERR(hdmi->dclk) == -ENOENT) {
-		hdmi->dclk = NULL;
-	} else if (PTR_ERR(hdmi->dclk) == -EPROBE_DEFER) {
-		return -EPROBE_DEFER;
-	} else if (IS_ERR(hdmi->dclk)) {
-		dev_err(hdmi->dev, "failed to get dclk\n");
-		return PTR_ERR(hdmi->dclk);
-	}
-
-	ret = clk_prepare_enable(hdmi->vpll_clk);
-	if (ret) {
-		dev_err(hdmi->dev, "Failed to enable HDMI vpll: %d\n", ret);
-		return ret;
-	}
-
-	ret = clk_prepare_enable(hdmi->hclk_vio);
-	if (ret) {
-		dev_err(hdmi->dev, "Failed to eanble HDMI hclk_vio: %d\n", ret);
-		return ret;
-	}
-
-	if (of_get_property(np, "eswin,phy-table", &val)) {
-		phy_config = kmalloc(val, GFP_KERNEL);
-		if (!phy_config) {
-			/* use default table when kmalloc failed. */
-			dev_err(hdmi->dev, "kmalloc phy table failed\n");
-
-			return -ENOMEM;
-		}
-		phy_table_size = val / 16;
-		of_property_read_u32_array(np, "eswin,phy-table", phy_config,
-					   val / sizeof(u32));
-		ret = eswin_hdmi_update_phy_table(hdmi, phy_config,
-						  phy_table_size);
-		if (ret) {
-			kfree(phy_config);
-			return ret;
-		}
-		kfree(phy_config);
-	} else {
-		dev_dbg(hdmi->dev, "use default hdmi phy table\n");
-	}
-
-	return 0;
-}
-
 static enum drm_mode_status
 dw_hdmi_eswin_mode_valid(struct dw_hdmi *hdmi, void *data,
 			 const struct drm_display_info *info,
@@ -316,54 +217,12 @@ dw_hdmi_eswin_mode_valid(struct dw_hdmi *hdmi, void *data,
 	return (valid) ? MODE_OK : MODE_BAD;
 }
 
-static void dw_hdmi_eswin_encoder_disable(struct drm_encoder *encoder)
-{
-	struct eswin_hdmi *hdmi = to_eswin_hdmi(encoder);
-
-	/*
-     * when plug out hdmi it will be switch cvbs and then phy bus width
-     * must be set as 8
-     */
-	if (hdmi->phy)
-		phy_set_bus_width(hdmi->phy, 8);
-	clk_disable_unprepare(hdmi->dclk);
-}
-
 static bool
 dw_hdmi_eswin_encoder_mode_fixup(struct drm_encoder *encoder,
 				 const struct drm_display_mode *mode,
 				 struct drm_display_mode *adj_mode)
 {
 	return true;
-}
-
-static void dw_hdmi_eswin_encoder_mode_set(struct drm_encoder *encoder,
-					   struct drm_display_mode *mode,
-					   struct drm_display_mode *adj_mode)
-{
-	struct eswin_hdmi *hdmi = to_eswin_hdmi(encoder);
-
-	clk_set_rate(hdmi->vpll_clk, adj_mode->clock * 1000);
-}
-
-static void dw_hdmi_eswin_encoder_enable(struct drm_encoder *encoder)
-{
-	struct eswin_hdmi *hdmi = to_eswin_hdmi(encoder);
-	struct drm_crtc *crtc = encoder->crtc;
-
-	if (WARN_ON(!crtc || !crtc->state))
-		return;
-
-	if (hdmi->phy)
-		phy_set_bus_width(hdmi->phy, hdmi->phy_bus_width);
-
-	clk_set_rate(hdmi->vpll_clk,
-		     crtc->state->adjusted_mode.crtc_clock * 1000);
-
-	clk_set_rate(hdmi->dclk, crtc->state->adjusted_mode.crtc_clock * 1000);
-	clk_prepare_enable(hdmi->dclk);
-
-	DRM_DEV_DEBUG(hdmi->dev, "dc output to hdmi\n");
 }
 
 static void dw_hdmi_eswin_select_output(struct drm_connector_state *conn_state,
@@ -561,8 +420,6 @@ dw_hdmi_eswin_encoder_atomic_check(struct drm_encoder *encoder,
 	}
 
 	hdmi->phy_bus_width = bus_width;
-	if (hdmi->phy)
-		phy_set_bus_width(hdmi->phy, bus_width);
 
 	s->encoder_type = DRM_MODE_ENCODER_TMDS;
 
@@ -864,7 +721,7 @@ static int dw_hdmi_eswin_set_property(struct drm_connector *connector,
 			hdmi->video_enable = val;
 		}
 	} else {
-		DRM_ERROR("don't support set %s property\n", property->name);
+		DRM_DEBUG("don't support set %s property\n", property->name);
 		return 0;
 	}
 	return 0;
@@ -950,9 +807,6 @@ static const struct dw_hdmi_property_ops dw_hdmi_eswin_property_ops = {
 static const struct drm_encoder_helper_funcs
 	dw_hdmi_eswin_encoder_helper_funcs = {
 		.mode_fixup = dw_hdmi_eswin_encoder_mode_fixup,
-		.mode_set = dw_hdmi_eswin_encoder_mode_set,
-		.enable = dw_hdmi_eswin_encoder_enable,
-		.disable = dw_hdmi_eswin_encoder_disable,
 		.atomic_check = dw_hdmi_eswin_encoder_atomic_check,
 	};
 
@@ -980,7 +834,7 @@ static int dw_hdmi_eswin_bind(struct device *dev, struct device *master,
 	struct drm_device *drm = data;
 	struct drm_encoder *encoder;
 	struct eswin_hdmi *hdmi;
-	int ret;
+	int ret = 0;
 
 	if (!pdev->dev.of_node)
 		return -ENODEV;
@@ -1010,33 +864,12 @@ static int dw_hdmi_eswin_bind(struct device *dev, struct device *master,
 	if (encoder->possible_crtcs == 0)
 		return -EPROBE_DEFER;
 
-	ret = eswin_hdmi_parse_dt(hdmi);
-	if (ret) {
-		DRM_DEV_ERROR(hdmi->dev, "Unable to parse OF data\n");
-		return ret;
-	}
-
-	ret = clk_prepare_enable(hdmi->vpll_clk);
-	if (ret) {
-		DRM_DEV_ERROR(hdmi->dev, "Failed to enable HDMI vpll: %d\n",
-			      ret);
-		return ret;
-	}
-
 	plat_data->phy_data = hdmi;
 	plat_data->get_input_bus_format = dw_hdmi_eswin_get_input_bus_format;
 	plat_data->get_output_bus_format = dw_hdmi_eswin_get_output_bus_format;
 	plat_data->get_enc_in_encoding = dw_hdmi_eswin_get_enc_in_encoding;
 	plat_data->get_enc_out_encoding = dw_hdmi_eswin_get_enc_out_encoding;
 	plat_data->property_ops = &dw_hdmi_eswin_property_ops;
-
-	hdmi->phy = devm_phy_optional_get(dev, "hdmi");
-	if (IS_ERR(hdmi->phy)) {
-		ret = PTR_ERR(hdmi->phy);
-		if (ret != -EPROBE_DEFER)
-			DRM_DEV_ERROR(hdmi->dev, "failed to get phy\n");
-		return ret;
-	}
 
 	drm_encoder_helper_add(encoder, &dw_hdmi_eswin_encoder_helper_funcs);
 	drm_simple_encoder_init(drm, encoder, DRM_MODE_ENCODER_TMDS);
@@ -1052,7 +885,6 @@ static int dw_hdmi_eswin_bind(struct device *dev, struct device *master,
 	if (IS_ERR(hdmi->hdmi)) {
 		ret = PTR_ERR(hdmi->hdmi);
 		drm_encoder_cleanup(encoder);
-		clk_disable_unprepare(hdmi->vpll_clk);
 	}
 
 	return ret;
@@ -1064,7 +896,6 @@ static void dw_hdmi_eswin_unbind(struct device *dev, struct device *master,
 	struct eswin_hdmi *hdmi = dev_get_drvdata(dev);
 
 	dw_hdmi_unbind(hdmi->hdmi);
-	clk_disable_unprepare(hdmi->vpll_clk);
 }
 
 static const struct component_ops dw_hdmi_eswin_ops = {
@@ -1074,8 +905,6 @@ static const struct component_ops dw_hdmi_eswin_ops = {
 
 static int dw_hdmi_eswin_probe(struct platform_device *pdev)
 {
-	pm_runtime_enable(&pdev->dev);
-	pm_runtime_get_sync(&pdev->dev);
 	return component_add(&pdev->dev, &dw_hdmi_eswin_ops);
 }
 
@@ -1084,13 +913,11 @@ static void dw_hdmi_eswin_shutdown(struct platform_device *pdev)
 	struct eswin_hdmi *hdmi = dev_get_drvdata(&pdev->dev);
 
 	dw_hdmi_suspend(hdmi->hdmi);
-	pm_runtime_put_sync(&pdev->dev);
 }
 
 static int dw_hdmi_eswin_remove(struct platform_device *pdev)
 {
 	component_del(&pdev->dev, &dw_hdmi_eswin_ops);
-	pm_runtime_disable(&pdev->dev);
 	return 0;
 }
 
@@ -1099,7 +926,6 @@ static int __maybe_unused dw_hdmi_eswin_suspend(struct device *dev)
 	struct eswin_hdmi *hdmi = dev_get_drvdata(dev);
 
 	dw_hdmi_suspend(hdmi->hdmi);
-	pm_runtime_put_sync(dev);
 
 	return 0;
 }
