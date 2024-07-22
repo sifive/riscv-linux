@@ -945,6 +945,8 @@ static int dc_bind(struct device *dev, struct device *master, void *data)
 
 	es_drm_update_pitch_alignment(drm_dev, dc_info->pitch_alignment);
 
+	es_dc_clk_configs(dev, false);
+
 	return 0;
 
 err_cleanup_planes:
