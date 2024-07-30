@@ -215,6 +215,15 @@ config AHCI_CEVA
 
 	  If unsure, say N.
 
+config AHCI_ESWIN
+	tristate "Eswin AHCI SATA support"
+	select SATA_HOST
+	help
+	  This option enables support for Eswin AHCI Serial ATA
+	  controllers.
+
+	  If unsure, say N.
+
 config AHCI_MTK
 	tristate "MediaTek AHCI SATA support"
 	depends on ARCH_MEDIATEK || COMPILE_TEST
