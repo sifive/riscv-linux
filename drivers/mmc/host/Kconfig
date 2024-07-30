@@ -214,6 +214,34 @@ config MMC_SDHCI_OF_ESDHC
 
 	  If unsure, say N.
 
+config MMC_SDHCI_OF_ESWIN
+	tristate "SDHCI OF support for the Eswin SDHCI controllers"
+	depends on MMC_SDHCI_PLTFM
+	depends on OF
+	depends on COMMON_CLK
+	select MMC_CQHCI
+	help
+	  This selects the Eswin Secure Digital Host Controller Interface
+	  (SDHCI).
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+config MMC_SDHCI_OF_SDIO_ESWIN
+	tristate "SDHCI OF SDIO support for the Eswin SDHCI controllers"
+	depends on MMC_SDHCI_PLTFM
+	depends on OF
+	depends on COMMON_CLK
+	select MMC_CQHCI
+	help
+	  This selects the Eswin Secure Digital Host Controller Interface
+	  (SDHCI-SDIO).
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
 config MMC_SDHCI_OF_HLWD
 	tristate "SDHCI OF support for the Nintendo Wii SDHCI controllers"
 	depends on MMC_SDHCI_PLTFM
