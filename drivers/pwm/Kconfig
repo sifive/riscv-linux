@@ -231,6 +231,12 @@ config PWM_EP93XX
 	  To compile this driver as a module, choose M here: the module
 	  will be called pwm-ep93xx.
 
+config PWM_ESWIN
+	tristate "ESWIN PWM support"
+	help
+	  Generic PWM framework driver for the PWM controller found on
+	  ESWIN SoCs.
+
 config PWM_FSL_FTM
 	tristate "Freescale FlexTimer Module (FTM) PWM support"
 	depends on HAS_IOMEM
