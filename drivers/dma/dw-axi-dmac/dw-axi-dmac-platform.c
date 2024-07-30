@@ -32,6 +32,13 @@
 #include "dw-axi-dmac.h"
 #include "../dmaengine.h"
 #include "../virt-dma.h"
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+#include <linux/iommu.h>
+#include <linux/mfd/syscon.h>
+#include <linux/bitfield.h>
+#include <linux/regmap.h>
+#include <linux/eic7700-sid-cfg.h>
+#endif
 
 /*
  * The set of bus widths supported by the DMA controller. DW AXI DMAC supports
@@ -50,6 +57,15 @@
 #define AXI_DMA_FLAG_HAS_APB_REGS	BIT(0)
 #define AXI_DMA_FLAG_HAS_RESETS		BIT(1)
 #define AXI_DMA_FLAG_USE_CFG2		BIT(2)
+
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+#define AWSMMUSID	GENMASK(31, 24) // The sid of write operation
+#define AWSMMUSSID	GENMASK(23, 16) // The ssid of write operation
+#define ARSMMUSID	GENMASK(15, 8)	// The sid of read operation
+#define ARSMMUSSID	GENMASK(7, 0)	// The ssid of read operation
+
+static int eswin_dma_sid_cfg(struct device *dev);
+#endif
 
 static inline void
 axi_dma_iowrite32(struct axi_dma_chip *chip, u32 reg, u32 val)
@@ -109,14 +125,26 @@ static inline void axi_chan_config_write(struct axi_dma_chan *chan,
 			 config->hs_sel_dst << CH_CFG_H_HS_SEL_DST_POS |
 			 config->src_per << CH_CFG_H_SRC_PER_POS |
 			 config->dst_per << CH_CFG_H_DST_PER_POS |
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+			 config->prior << CH_CFG_H_PRIORITY_POS |
+			 0xF <<CH_CFG_H_SRC_OSR_LMT_POS |
+			 0xF <<CH_CFG_H_DST_OSR_LMT_POS;
+#else
 			 config->prior << CH_CFG_H_PRIORITY_POS;
+#endif
 	} else {
 		cfg_lo |= config->src_per << CH_CFG2_L_SRC_PER_POS |
 			  config->dst_per << CH_CFG2_L_DST_PER_POS;
 		cfg_hi = config->tt_fc << CH_CFG2_H_TT_FC_POS |
 			 config->hs_sel_src << CH_CFG2_H_HS_SEL_SRC_POS |
 			 config->hs_sel_dst << CH_CFG2_H_HS_SEL_DST_POS |
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+			 config->prior << CH_CFG2_H_PRIORITY_POS |
+			 0xF <<CH_CFG2_H_SRC_OSR_LMT_POS |
+			 0xF <<CH_CFG2_H_DST_OSR_LMT_POS;
+#else
 			 config->prior << CH_CFG2_H_PRIORITY_POS;
+#endif
 	}
 	axi_chan_iowrite32(chan, CH_CFG_L, cfg_lo);
 	axi_chan_iowrite32(chan, CH_CFG_H, cfg_hi);
@@ -125,37 +153,49 @@ static inline void axi_chan_config_write(struct axi_dma_chan *chan,
 static inline void axi_dma_disable(struct axi_dma_chip *chip)
 {
 	u32 val;
+	unsigned long flags;
 
+	spin_lock_irqsave(&chip->lock, flags);
 	val = axi_dma_ioread32(chip, DMAC_CFG);
 	val &= ~DMAC_EN_MASK;
 	axi_dma_iowrite32(chip, DMAC_CFG, val);
+	spin_unlock_irqrestore(&chip->lock, flags);
 }
 
 static inline void axi_dma_enable(struct axi_dma_chip *chip)
 {
 	u32 val;
+	unsigned long flags;
 
+	spin_lock_irqsave(&chip->lock, flags);
 	val = axi_dma_ioread32(chip, DMAC_CFG);
 	val |= DMAC_EN_MASK;
 	axi_dma_iowrite32(chip, DMAC_CFG, val);
+	spin_unlock_irqrestore(&chip->lock, flags);
 }
 
 static inline void axi_dma_irq_disable(struct axi_dma_chip *chip)
 {
 	u32 val;
+	unsigned long flags;
 
+	spin_lock_irqsave(&chip->lock, flags);
 	val = axi_dma_ioread32(chip, DMAC_CFG);
 	val &= ~INT_EN_MASK;
 	axi_dma_iowrite32(chip, DMAC_CFG, val);
+	spin_unlock_irqrestore(&chip->lock, flags);
 }
 
 static inline void axi_dma_irq_enable(struct axi_dma_chip *chip)
 {
 	u32 val;
+	unsigned long flags;
 
+	spin_lock_irqsave(&chip->lock, flags);
 	val = axi_dma_ioread32(chip, DMAC_CFG);
 	val |= INT_EN_MASK;
 	axi_dma_iowrite32(chip, DMAC_CFG, val);
+	spin_unlock_irqrestore(&chip->lock, flags);
 }
 
 static inline void axi_chan_irq_disable(struct axi_dma_chan *chan, u32 irq_mask)
@@ -274,6 +314,20 @@ static void axi_dma_hw_init(struct axi_dma_chip *chip)
 	ret = dma_set_mask_and_coherent(chip->dev, DMA_BIT_MASK(64));
 	if (ret)
 		dev_warn(chip->dev, "Unable to set coherent mask\n");
+
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	if (of_node_name_prefix(chip->dev->of_node, "dma-controller-hsp"))
+	{
+		eswin_dma_sid_cfg(chip->dev);
+	}
+	else
+	{
+		eic7700_aon_sid_cfg(chip->dev);
+	}
+
+	/* TBU power up */
+	eic7700_tbu_power(chip->dev, true);
+#endif
 }
 
 static u32 axi_chan_get_xfer_width(struct axi_dma_chan *chan, dma_addr_t src,
@@ -501,6 +555,9 @@ static void dma_chan_issue_pending(struct dma_chan *dchan)
 	unsigned long flags;
 
 	spin_lock_irqsave(&chan->vc.lock, flags);
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	chan->trigger = true;
+#endif
 	if (vchan_issue_pending(&chan->vc))
 		axi_chan_start_first_queued(chan);
 	spin_unlock_irqrestore(&chan->vc.lock, flags);
@@ -621,25 +678,60 @@ static void write_desc_dar(struct axi_dma_hw_desc *desc, dma_addr_t adr)
 	desc->lli->dar = cpu_to_le64(adr);
 }
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+static void set_desc_src_master(struct axi_dma_hw_desc *desc, struct axi_dma_chan *chan)
+#else
 static void set_desc_src_master(struct axi_dma_hw_desc *desc)
+#endif
 {
 	u32 val;
 
 	/* Select AXI0 for source master */
 	val = le32_to_cpu(desc->lli->ctl_lo);
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	if (chan->chip->dw->hdata->nr_masters > 1)
+	{
+		if(DMA_DEV_TO_MEM == chan->direction || DMA_DEV_TO_DEV == chan->direction) {
+			val |= CH_CTL_L_SRC_MAST;
+		}
+		else
+		{
+			val &= ~CH_CTL_L_SRC_MAST;
+		}
+	}
+	else
+		val &= ~CH_CTL_L_SRC_MAST;
+#else
 	val &= ~CH_CTL_L_SRC_MAST;
+#endif
 	desc->lli->ctl_lo = cpu_to_le32(val);
 }
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+static void set_desc_dest_master(struct axi_dma_hw_desc *hw_desc,
+				 struct axi_dma_chan *chan)
+#else
 static void set_desc_dest_master(struct axi_dma_hw_desc *hw_desc,
 				 struct axi_dma_desc *desc)
+#endif
 {
 	u32 val;
 
 	/* Select AXI1 for source master if available */
 	val = le32_to_cpu(hw_desc->lli->ctl_lo);
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	if (chan->chip->dw->hdata->nr_masters > 1)
+	{
+		if(DMA_MEM_TO_DEV == chan->direction || DMA_DEV_TO_DEV == chan->direction) {
+			val |= CH_CTL_L_DST_MAST;
+		}
+		else
+			val &= ~CH_CTL_L_DST_MAST;
+	}
+#else
 	if (desc->chan->chip->dw->hdata->nr_masters > 1)
 		val |= CH_CTL_L_DST_MAST;
+#endif
 	else
 		val &= ~CH_CTL_L_DST_MAST;
 
@@ -658,6 +750,10 @@ static int dw_axi_dma_set_hw_desc(struct axi_dma_chan *chan,
 	size_t block_ts;
 	u32 ctllo, ctlhi;
 	u32 burst_len;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	u32 src_maxburst;
+	u32 dst_maxburst;
+#endif
 
 	axi_block_ts = chan->chip->dw->hdata->block_size[chan->id];
 
@@ -670,6 +766,11 @@ static int dw_axi_dma_set_hw_desc(struct axi_dma_chan *chan,
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	src_maxburst = chan->chip->dw->hdata->max_msize;
+	dst_maxburst  = chan->chip->dw->hdata->max_msize;
+#endif
+
 	switch (chan->direction) {
 	case DMA_MEM_TO_DEV:
 		reg_width = __ffs(chan->config.dst_addr_width);
@@ -678,6 +779,9 @@ static int dw_axi_dma_set_hw_desc(struct axi_dma_chan *chan,
 			mem_width << CH_CTL_L_SRC_WIDTH_POS |
 			DWAXIDMAC_CH_CTL_L_NOINC << CH_CTL_L_DST_INC_POS |
 			DWAXIDMAC_CH_CTL_L_INC << CH_CTL_L_SRC_INC_POS;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+		dst_maxburst = chan->config.dst_maxburst;
+#endif
 		block_ts = len >> mem_width;
 		break;
 	case DMA_DEV_TO_MEM:
@@ -687,6 +791,9 @@ static int dw_axi_dma_set_hw_desc(struct axi_dma_chan *chan,
 			mem_width << CH_CTL_L_DST_WIDTH_POS |
 			DWAXIDMAC_CH_CTL_L_INC << CH_CTL_L_DST_INC_POS |
 			DWAXIDMAC_CH_CTL_L_NOINC << CH_CTL_L_SRC_INC_POS;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+		src_maxburst = chan->config.src_maxburst;
+#endif
 		block_ts = len >> reg_width;
 		break;
 	default:
@@ -720,12 +827,27 @@ static int dw_axi_dma_set_hw_desc(struct axi_dma_chan *chan,
 	}
 
 	hw_desc->lli->block_ts_lo = cpu_to_le32(block_ts - 1);
-
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	if(is_power_of_2(dst_maxburst) && is_power_of_2(src_maxburst))
+	{
+		dst_maxburst = order_base_2(dst_maxburst)? order_base_2(dst_maxburst) - 1 : 0;
+		src_maxburst = order_base_2(src_maxburst)? order_base_2(src_maxburst) - 1 : 0;
+	}else
+		dev_err(chan->chip->dev, "dst_burst or src_burst error!\n");
+	ctllo |= dst_maxburst << CH_CTL_L_DST_MSIZE_POS |
+		 src_maxburst << CH_CTL_L_SRC_MSIZE_POS;
+#else
 	ctllo |= DWAXIDMAC_BURST_TRANS_LEN_4 << CH_CTL_L_DST_MSIZE_POS |
-		 DWAXIDMAC_BURST_TRANS_LEN_4 << CH_CTL_L_SRC_MSIZE_POS;
+	         DWAXIDMAC_BURST_TRANS_LEN_4 << CH_CTL_L_SRC_MSIZE_POS;
+#endif
 	hw_desc->lli->ctl_lo = cpu_to_le32(ctllo);
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	set_desc_src_master(hw_desc, chan);
+	set_desc_dest_master(hw_desc, chan);
+#else
 	set_desc_src_master(hw_desc);
+#endif
 
 	hw_desc->len = len;
 	return 0;
@@ -926,6 +1048,9 @@ dma_chan_prep_dma_memcpy(struct dma_chan *dchan, dma_addr_t dst_adr,
 	struct axi_dma_hw_desc *hw_desc = NULL;
 	struct axi_dma_desc *desc = NULL;
 	u32 xfer_width, reg, num;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	u32 max_burst_len;
+#endif
 	u64 llp = 0;
 	u8 lms = 0; /* Select AXI0 master for LLI fetching */
 
@@ -933,6 +1058,12 @@ dma_chan_prep_dma_memcpy(struct dma_chan *dchan, dma_addr_t dst_adr,
 		axi_chan_name(chan), &src_adr, &dst_adr, len, flags);
 
 	max_block_ts = chan->chip->dw->hdata->block_size[chan->id];
+
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	max_burst_len = chan->chip->dw->hdata->max_msize;
+	max_burst_len = order_base_2(max_burst_len)? order_base_2(max_burst_len) - 1 : 0;
+#endif
+
 	xfer_width = axi_chan_get_xfer_width(chan, src_adr, dst_adr, len);
 	num = DIV_ROUND_UP(len, max_block_ts << xfer_width);
 	desc = axi_desc_alloc(num);
@@ -983,17 +1114,26 @@ dma_chan_prep_dma_memcpy(struct dma_chan *dchan, dma_addr_t dst_adr,
 		}
 		hw_desc->lli->ctl_hi = cpu_to_le32(reg);
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+		reg = (max_burst_len << CH_CTL_L_DST_MSIZE_POS |
+		       max_burst_len << CH_CTL_L_SRC_MSIZE_POS |
+#else
 		reg = (DWAXIDMAC_BURST_TRANS_LEN_4 << CH_CTL_L_DST_MSIZE_POS |
 		       DWAXIDMAC_BURST_TRANS_LEN_4 << CH_CTL_L_SRC_MSIZE_POS |
+#endif
 		       xfer_width << CH_CTL_L_DST_WIDTH_POS |
 		       xfer_width << CH_CTL_L_SRC_WIDTH_POS |
 		       DWAXIDMAC_CH_CTL_L_INC << CH_CTL_L_DST_INC_POS |
 		       DWAXIDMAC_CH_CTL_L_INC << CH_CTL_L_SRC_INC_POS);
 		hw_desc->lli->ctl_lo = cpu_to_le32(reg);
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+		set_desc_src_master(hw_desc, chan);
+		set_desc_dest_master(hw_desc, chan);
+#else
 		set_desc_src_master(hw_desc);
 		set_desc_dest_master(hw_desc, desc);
-
+#endif
 		hw_desc->len = xfer_len;
 		desc->length += hw_desc->len;
 		/* update the length and addresses for the next loop cycle */
@@ -1203,7 +1343,9 @@ static int dma_chan_terminate_all(struct dma_chan *dchan)
 	spin_lock_irqsave(&chan->vc.lock, flags);
 
 	vchan_get_all_descriptors(&chan->vc, &head);
-
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	chan->trigger = false;
+#endif
 	chan->cyclic = false;
 	spin_unlock_irqrestore(&chan->vc.lock, flags);
 
@@ -1320,8 +1462,9 @@ static int axi_dma_suspend(struct axi_dma_chip *chip)
 	axi_dma_disable(chip);
 
 	clk_disable_unprepare(chip->core_clk);
+#ifndef CONFIG_SOC_SIFIVE_EIC7700
 	clk_disable_unprepare(chip->cfgr_clk);
-
+#endif
 	return 0;
 }
 
@@ -1329,9 +1472,11 @@ static int axi_dma_resume(struct axi_dma_chip *chip)
 {
 	int ret;
 
+#ifndef CONFIG_SOC_SIFIVE_EIC7700
 	ret = clk_prepare_enable(chip->cfgr_clk);
 	if (ret < 0)
 		return ret;
+#endif
 
 	ret = clk_prepare_enable(chip->core_clk);
 	if (ret < 0)
@@ -1357,6 +1502,43 @@ static int __maybe_unused axi_dma_runtime_resume(struct device *dev)
 	return axi_dma_resume(chip);
 }
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+static int eic7700_dma_sel_cfg(struct axi_dma_chan *chan, u32 val)
+{
+	struct axi_dma_chip *chip = chan->chip;
+	struct device *dev = chan->chip->dev;
+	int ret = 0;
+	struct regmap *regmap;
+	int dma_sel_reg;
+	u32 dma_sel = 0;
+
+	regmap = syscon_regmap_lookup_by_phandle(dev->of_node, "eswin,syscfg");
+	if (IS_ERR(regmap)) {
+		dev_err(dev, "No eswin,syscfg phandle specified\n");
+		return -1;
+	}
+
+	ret = of_property_read_u32_index(dev->of_node, "eswin,syscfg", 2,
+					&dma_sel_reg);
+	if (ret) {
+		dev_err(dev, "can't get sid cfg reg offset in sys_con(errno:%d)\n", ret);
+		return ret;
+	}
+	regmap_read(regmap, dma_sel_reg, &dma_sel);
+
+	if (of_node_name_prefix(chip->dev->of_node, "dma-controller-hsp")) {
+		if (val < 32)
+			dma_sel &= ~(1 << val);
+	}
+	else {
+		if (val < 32)
+			dma_sel |= (1 << val);
+	}
+	regmap_write(regmap, dma_sel_reg, dma_sel);
+	return 0;
+}
+#endif
+
 static struct dma_chan *dw_axi_dma_of_xlate(struct of_phandle_args *dma_spec,
 					    struct of_dma *ofdma)
 {
@@ -1370,6 +1552,10 @@ static struct dma_chan *dw_axi_dma_of_xlate(struct of_phandle_args *dma_spec,
 
 	chan = dchan_to_axi_dma_chan(dchan);
 	chan->hw_handshake_num = dma_spec->args[0];
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	if (dma_spec->args_count > 1)
+		eic7700_dma_sel_cfg(chan, dma_spec->args[1]);
+#endif
 	return dchan;
 }
 
@@ -1440,6 +1626,20 @@ static int parse_device_properties(struct axi_dma_chip *chip)
 		chip->dw->hdata->axi_rw_burst_len = tmp;
 	}
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	/* max-size is optional property */
+	ret = device_property_read_u32(dev, "snps,max-msize", &tmp);
+	if (!ret) {
+		if (tmp > 1024)
+			return -EINVAL;
+		if (tmp < 1)
+			return -EINVAL;
+
+		chip->dw->hdata->max_msize = tmp;
+	}else
+		chip->dw->hdata->max_msize = 4;
+#endif
+
 	return 0;
 }
 
@@ -1491,6 +1691,8 @@ static int dw_probe(struct platform_device *pdev)
 	if (IS_ERR(chip->regs))
 		return PTR_ERR(chip->regs);
 
+	spin_lock_init(&chip->lock);
+
 	flags = (uintptr_t)of_device_get_match_data(&pdev->dev);
 	if (flags & AXI_DMA_FLAG_HAS_APB_REGS) {
 		chip->apb_regs = devm_platform_ioremap_resource(pdev, 1);
@@ -1514,10 +1716,31 @@ static int dw_probe(struct platform_device *pdev)
 	if (IS_ERR(chip->core_clk))
 		return PTR_ERR(chip->core_clk);
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	chip->arst = devm_reset_control_get_optional(&pdev->dev, "arst");
+	if (IS_ERR_OR_NULL(chip->arst)) {
+		dev_err(chip->dev, "Failed to get axi reset handle\n");
+		return -EFAULT;
+	}
+	reset_control_deassert(chip->arst);
+
+	chip->prst = devm_reset_control_get_optional(&pdev->dev, "prst");
+	if (IS_ERR_OR_NULL(chip->prst)) {
+		dev_err(chip->dev, "Failed to get ahb reset handle\n");
+		return -EFAULT;
+	}
+	reset_control_deassert(chip->prst);
+#endif
+
+	/*
+	  For EIC7700 SoC, aon dma has separate cfg clk register bit while dma0 havn't.
+	  Since dma cfg clk is default on, so we don't control it
+	*/
+#ifndef CONFIG_SOC_SIFIVE_EIC7700
 	chip->cfgr_clk = devm_clk_get(chip->dev, "cfgr-clk");
 	if (IS_ERR(chip->cfgr_clk))
 		return PTR_ERR(chip->cfgr_clk);
-
+#endif
 	ret = parse_device_properties(chip);
 	if (ret)
 		return ret;
@@ -1550,7 +1773,12 @@ static int dw_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_CYCLIC, dw->dma.cap_mask);
 
 	/* DMA capabilities */
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	dw->dma.chancnt = hdata->nr_channels;
+	dw->dma.max_burst = hdata->max_msize;
+#else
 	dw->dma.max_burst = hdata->axi_rw_burst_len;
+#endif
 	dw->dma.src_addr_widths = AXI_DMA_BUSWIDTHS;
 	dw->dma.dst_addr_widths = AXI_DMA_BUSWIDTHS;
 	dw->dma.directions = BIT(DMA_MEM_TO_MEM);
@@ -1620,37 +1848,96 @@ err_pm_disable:
 	return ret;
 }
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+static int eswin_dma_sid_cfg(struct device *dev)
+{
+	int ret;
+	struct regmap *regmap;
+	int hsp_mmu_dma_reg;
+	u32 rdwr_sid_ssid;
+	u32 sid;
+	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
+
+	/* not behind smmu, use the default reset value(0x0) of the reg as streamID*/
+	if (fwspec == NULL) {
+		dev_dbg(dev, "dev is not behind smmu, skip configuration of sid\n");
+		return 0;
+	}
+	sid = fwspec->ids[0];
+
+	regmap = syscon_regmap_lookup_by_phandle(dev->of_node, "eswin,hsp_sp_csr");
+	if (IS_ERR(regmap)) {
+		dev_dbg(dev, "No hsp_sp_csr phandle specified\n");
+		return 0;
+	}
+
+	ret = of_property_read_u32_index(dev->of_node, "eswin,hsp_sp_csr", 1,
+					&hsp_mmu_dma_reg);
+	if (ret) {
+		dev_err(dev, "can't get dma sid cfg reg offset (%d)\n", ret);
+		return ret;
+	}
+
+	/* make the reading sid the same as writing sid, ssid is fixed to zero */
+	rdwr_sid_ssid  = FIELD_PREP(AWSMMUSID, sid);
+	rdwr_sid_ssid |= FIELD_PREP(ARSMMUSID, sid);
+	rdwr_sid_ssid |= FIELD_PREP(AWSMMUSSID, 0);
+	rdwr_sid_ssid |= FIELD_PREP(ARSMMUSSID, 0);
+	regmap_write(regmap, hsp_mmu_dma_reg, rdwr_sid_ssid);
+
+	ret = eic7700_dynm_sid_enable(dev_to_node(dev));
+	if (ret < 0)
+		dev_err(dev, "failed to config dma streamID(%d)!\n", sid);
+	else
+		dev_dbg(dev, "success to config dma streamID(%d)!\n", sid);
+
+	return ret;
+}
+#endif
+
 static void dw_remove(struct platform_device *pdev)
 {
-	struct axi_dma_chip *chip = platform_get_drvdata(pdev);
-	struct dw_axi_dma *dw = chip->dw;
-	struct axi_dma_chan *chan, *_chan;
-	u32 i;
+    struct axi_dma_chip *chip = platform_get_drvdata(pdev);
+    struct dw_axi_dma *dw = chip->dw;
+    struct axi_dma_chan *chan, *_chan;
+    u32 i;
 
-	/* Enable clk before accessing to registers */
-	clk_prepare_enable(chip->cfgr_clk);
-	clk_prepare_enable(chip->core_clk);
-	axi_dma_irq_disable(chip);
-	for (i = 0; i < dw->hdata->nr_channels; i++) {
-		axi_chan_disable(&chip->dw->chan[i]);
-		axi_chan_irq_disable(&chip->dw->chan[i], DWAXIDMAC_IRQ_ALL);
-	}
-	axi_dma_disable(chip);
+#ifndef CONFIG_SOC_SIFIVE_EIC7700
+    /* Enable clk before accessing to registers */
+    clk_prepare_enable(chip->cfgr_clk);
+#endif
+    clk_prepare_enable(chip->core_clk);
+    axi_dma_irq_disable(chip);
+    for (i = 0; i < dw->hdata->nr_channels; i++) {
+        axi_chan_disable(&chip->dw->chan[i]);
+        axi_chan_irq_disable(&chip->dw->chan[i], DWAXIDMAC_IRQ_ALL);
+    }
+    axi_dma_disable(chip);
 
-	pm_runtime_disable(chip->dev);
-	axi_dma_suspend(chip);
+    pm_runtime_disable(chip->dev);
+    axi_dma_suspend(chip);
 
-	for (i = 0; i < DMAC_MAX_CHANNELS; i++)
-		if (chip->irq[i] > 0)
-			devm_free_irq(chip->dev, chip->irq[i], chip);
+    for (i = 0; i < DMAC_MAX_CHANNELS; i++)
+        if (chip->irq[i] > 0)
+            devm_free_irq(chip->dev, chip->irq[i], chip);
 
-	of_dma_controller_free(chip->dev->of_node);
+    of_dma_controller_free(chip->dev->of_node);
 
-	list_for_each_entry_safe(chan, _chan, &dw->dma.channels,
-			vc.chan.device_node) {
-		list_del(&chan->vc.chan.device_node);
-		tasklet_kill(&chan->vc.task);
-	}
+    list_for_each_entry_safe(chan, _chan, &dw->dma.channels,
+            vc.chan.device_node) {
+#ifndef CONFIG_SOC_SIFIVE_EIC7700
+        list_del(&chan->vc.chan.device_node);
+#endif
+        tasklet_kill(&chan->vc.task);
+    }
+
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	/* TBU power down before reset */
+	eic7700_tbu_power(chip->dev, false);
+
+	reset_control_assert(chip->arst);
+	reset_control_assert(chip->prst);
+#endif
 }
 
 static const struct dev_pm_ops dw_axi_dma_pm_ops = {

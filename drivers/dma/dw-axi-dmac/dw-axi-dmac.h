@@ -15,7 +15,9 @@
 #include <linux/device.h>
 #include <linux/dmaengine.h>
 #include <linux/types.h>
-
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+#include <linux/reset.h>
+#endif
 #include "../virt-dma.h"
 
 #define DMAC_MAX_CHANNELS	32
@@ -30,6 +32,9 @@ struct dw_axi_dma_hcfg {
 	u32	priority[DMAC_MAX_CHANNELS];
 	/* maximum supported axi burst length */
 	u32	axi_rw_burst_len;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	u32	max_msize;
+#endif
 	/* Register map for DMAX_NUM_CHANNELS <= 8 */
 	bool	reg_map_8_channels;
 	bool	restrict_axi_burst_len;
@@ -52,6 +57,9 @@ struct axi_dma_chan {
 	bool				cyclic;
 	/* these other elements are all protected by vc.lock */
 	bool				is_paused;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	bool				trigger;
+#endif
 };
 
 struct dw_axi_dma {
@@ -71,6 +79,11 @@ struct axi_dma_chip {
 	struct clk		*core_clk;
 	struct clk		*cfgr_clk;
 	struct dw_axi_dma	*dw;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	struct reset_control	*arst;
+	struct reset_control	*prst;
+#endif
+	spinlock_t lock;
 };
 
 /* LLI == Linked List Item */
@@ -287,6 +300,10 @@ enum {
 #define CH_CTL_L_SRC_MAST		BIT(0)
 
 /* CH_CFG_H */
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+#define CH_CFG_H_DST_OSR_LMT_POS	27
+#define CH_CFG_H_SRC_OSR_LMT_POS	23
+#endif
 #define CH_CFG_H_PRIORITY_POS		17
 #define CH_CFG_H_DST_PER_POS		12
 #define CH_CFG_H_SRC_PER_POS		7
@@ -326,7 +343,13 @@ enum {
 #define CH_CFG2_H_TT_FC_POS		0
 #define CH_CFG2_H_HS_SEL_SRC_POS	3
 #define CH_CFG2_H_HS_SEL_DST_POS	4
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+#define CH_CFG2_H_PRIORITY_POS		15
+#define CH_CFG2_H_SRC_OSR_LMT_POS	23
+#define CH_CFG2_H_DST_OSR_LMT_POS	27
+#else
 #define CH_CFG2_H_PRIORITY_POS		20
+#endif
 
 /**
  * DW AXI DMA channel interrupts
