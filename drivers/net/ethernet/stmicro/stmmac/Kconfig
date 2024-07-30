@@ -66,6 +66,14 @@ config DWMAC_ANARION
 
 	  This selects the Anarion SoC glue layer support for the stmmac driver.
 
+config DWMAC_EIC7700
+	tristate "Support for Eswin EIC77xx ethernet driver"
+	select CRC32
+	select MII
+	depends on OF && HAS_DMA
+	help
+	  Support for Eswin EIC7700 ethernet driver.
+
 config DWMAC_INGENIC
 	tristate "Ingenic MAC support"
 	default MACH_INGENIC
