@@ -1211,10 +1211,10 @@ static void plane_ex_commit(struct dc_hw *hw)
 				if (i == PRIMARY_PLANE)
 					dc_set_clear(hw,
 						     DC_FRAMEBUFFER_CONFIG_EX,
-						     BIT(6), BIT(8));
+						     0, BIT(8));
 				else
 					dc_set_clear(hw, DC_OVERLAY_CONFIG,
-						     BIT(29), BIT(30));
+						     0, BIT(30));
 			} else {
 				if (i == PRIMARY_PLANE)
 					dc_set_clear(hw,
