@@ -312,7 +312,11 @@ void ttm_resource_init(struct ttm_buffer_object *bo,
 	res->bus.addr = NULL;
 	res->bus.offset = 0;
 	res->bus.is_iomem = false;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	res->bus.caching = ttm_write_combined;
+#else
 	res->bus.caching = ttm_cached;
+#endif
 	res->bo = bo;
 
 	man = ttm_manager_type(bo->bdev, place->mem_type);
@@ -803,10 +807,13 @@ ttm_kmap_iter_linear_io_init(struct ttm_kmap_iter_linear_io *iter_io,
 	} else {
 		iter_io->needs_unmap = true;
 		memset(&iter_io->dmap, 0, sizeof(iter_io->dmap));
+
+#ifndef CONFIG_SOC_SIFIVE_EIC7700
 		if (mem->bus.caching == ttm_write_combined)
 			iosys_map_set_vaddr_iomem(&iter_io->dmap,
 						  ioremap_wc(mem->bus.offset,
 							     mem->size));
+
 		else if (mem->bus.caching == ttm_cached)
 			iosys_map_set_vaddr(&iter_io->dmap,
 					    memremap(mem->bus.offset, mem->size,
@@ -814,6 +821,12 @@ ttm_kmap_iter_linear_io_init(struct ttm_kmap_iter_linear_io *iter_io,
 						     MEMREMAP_WT |
 						     MEMREMAP_WC));
 
+#else
+		if (mem->bus.caching == ttm_write_combined || mem->bus.caching == ttm_cached)
+			iosys_map_set_vaddr_iomem(&iter_io->dmap,
+						  ioremap_wc(mem->bus.offset,
+							     mem->size));
+#endif
 		/* If uncached requested or if mapping cached or wc failed */
 		if (iosys_map_is_null(&iter_io->dmap))
 			iosys_map_set_vaddr_iomem(&iter_io->dmap,

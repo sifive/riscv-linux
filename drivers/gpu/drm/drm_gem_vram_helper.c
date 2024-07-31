@@ -798,7 +798,11 @@ static struct ttm_tt *bo_driver_ttm_tt_create(struct ttm_buffer_object *bo,
 	if (!tt)
 		return NULL;
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	ret = ttm_tt_init(tt, bo, page_flags, ttm_write_combined, 0);
+#else
 	ret = ttm_tt_init(tt, bo, page_flags, ttm_cached, 0);
+#endif
 	if (ret < 0)
 		goto err_ttm_tt_init;
 
