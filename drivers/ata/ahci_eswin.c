@@ -155,7 +155,7 @@ static int eswin_sata_init(struct device *dev)
 	return 0;
 }
 
-static int __init eswin_reset(struct device *dev)
+static int eswin_reset(struct device *dev)
 {
     struct reset_control *asic0_rst;
     struct reset_control *oob_rst;
