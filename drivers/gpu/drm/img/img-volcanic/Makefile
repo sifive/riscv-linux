@@ -74,7 +74,13 @@ WINDOW_SYSTEM=nulldrmws
 #include $(OUT)/config_kernel.mk
 include $(srctree)/$(src)/config_kernel.mk
 
+# Use the logic from kernel's Kbuild.include to select .NOTINTERMEDIATE or .SECONDARY based on make version
+ifneq ($(and $(filter notintermediate, $(.FEATURES)),$(filter-out 4.4,$(MAKE_VERSION))),)
+.NOTINTERMEDIATE:
+else
 .SECONDARY:
+endif
+
 
 define symlink-source-file
 @if [ ! -e $(dir $@) ]; then mkdir -p $(dir $@); fi
