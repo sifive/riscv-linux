@@ -41,7 +41,7 @@
 	#address-cells = <2>;
 	#size-cells = <2>;
 	model = "SiFive HiFive Premier P550";
-	compatible = "sifive,hifive-premier-p550";
+	compatible = "sifive,hifive-premier-p550", "eswin,eic7700";
 
 	aliases {
 		serial0 = &d0_uart0;
