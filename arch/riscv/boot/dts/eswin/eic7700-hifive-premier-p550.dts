@@ -57,18 +57,6 @@
 		timebase-frequency = <RTCCLK_FREQ>;
 	};
 
-	memory@59000000 {
-		device_type = "memory";
-		reg = <0x0 0x59000000 0x0 0x400000>;
-		numa-node-id = <0>;
-	};
-
-	memory@80000000 {
-		device_type = "memory";
-		reg = <0x0 0x80000000 MEMORY_SIZE_H MEMORY_SIZE_L>;
-		numa-node-id = <0>;
-	};
-
 	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
