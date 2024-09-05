@@ -1,0 +1,1205 @@
+#!/usr/bin/make -f
+#
+# debian/rules for Ubuntu linux
+#
+# Use this however you want, just give credit where credit is due.
+#
+# Copyright (c) 2007 Ben Collins <bcollins@ubuntu.com>
+
+# Do not use make's built-in rules and variables
+# (this increases performance and avoids hard-to-debug behaviour)
+MAKEFLAGS += -rR
+
+# Allow to run debian/rules directly without root
+export DEB_RULES_REQUIRES_ROOT := no
+
+.NOTPARALLEL:
+
+# dpkg-buildpackage passes options that are incomptatible
+# with the kernel build.
+unexport CFLAGS
+unexport LDFLAGS
+
+export LC_ALL=C
+export SHELL=/bin/bash -e
+
+PYTHON ?= python3
+export PYTHON
+
+# Used when you need to 'escape' a comma.
+comma = ,
+empty :=
+space := $(empty) $(empty)
+
+#
+# The source package name will be the first token from debian/changelog
+#
+pkg_source := $(shell dpkg-parsechangelog -S source)
+flavour    := $(patsubst linux-%,%,$(pkg_source))
+
+# Get the series
+series := $(shell dpkg-parsechangelog -S distribution)
+series := $(firstword $(subst -,$(space),$(series)))
+
+# Get some version info
+version  := $(shell dpkg-parsechangelog -S version)
+revision := $(lastword $(subst -,$(space),$(version)))
+release  := $(patsubst %-$(revision),%,$(version))
+
+prev_version  := $(shell dpkg-parsechangelog -o1 -c1 -S version)
+prev_revision := $(lastword $(subst -,$(space),$(prev_version)))
+
+# Get upstream version info
+upstream_version    := $(shell sed -n 's/^VERSION = \(.*\)$$/\1/p' Makefile)
+upstream_patchlevel := $(shell sed -n 's/^PATCHLEVEL = \(.*\)$$/\1/p' Makefile)
+upstream_sublevel   := $(shell sed -n 's/^SUBLEVEL = \(.*\)$$/\1/p' Makefile)
+upstream_tag        := v$(upstream_version).$(upstream_patchlevel)$(filter-out .0,.$(upstream_sublevel))
+
+# Get the kernels own extra version to be added to the release signature.
+raw_kernelversion=$(shell make kernelversion)
+
+packages_enabled := $(shell dh_listpackages 2>/dev/null)
+define if_package
+$(if $(filter $(1),$(packages_enabled)),$(2))
+endef
+
+stamp = [ -d $(dir $@) ] || mkdir $(dir $@); touch $@
+
+#
+# do_full_build -- are we doing a full buildd style build, i.e., are we
+#                  building in a PPA
+#
+ifeq ($(wildcard /CurrentlyBuilding),)
+	do_full_build ?= false
+else
+	do_full_build ?= true
+endif
+
+#
+# The debug packages are ginormous, so you probably want to skip
+# building them (as a developer).
+#
+do_dbgsym_package = true
+ifeq ($(do_full_build),false)
+	do_dbgsym_package = false
+endif
+ifeq ($(filter $(DEB_BUILD_OPTIONS),noautodbgsym),noautodbgsym)
+	# Disable debug package builds if we're building in a PPA that has the
+	# 'Build debug symbols' option disabled
+	do_dbgsym_package = false
+endif
+
+abinum		:= $(firstword $(subst .,$(space),$(revision)))
+prev_abinum	:= $(firstword $(subst .,$(space),$(prev_revision)))
+abi_release	:= $(release)-$(abinum)
+uploadnum	:= $(patsubst $(abinum).%,%,$(revision))
+
+DEB_HOST_MULTIARCH = $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+DEB_HOST_GNU_TYPE  = $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+DEB_BUILD_GNU_TYPE = $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_HOST_ARCH      = $(shell dpkg-architecture -qDEB_HOST_ARCH)
+DEB_BUILD_ARCH     = $(shell dpkg-architecture -qDEB_BUILD_ARCH)
+
+CROSS_COMPILE ?= $(DEB_HOST_GNU_TYPE)-
+
+#
+# Set consistent toolchain
+#
+GCC_BUILD_DEPENDS=$(empty) $(gcc), $(gcc)-aarch64-linux-gnu [arm64] <cross>, $(gcc)-arm-linux-gnueabihf [armhf] <cross>, $(gcc)-powerpc64le-linux-gnu [ppc64el] <cross>, $(gcc)-riscv64-linux-gnu [riscv64] <cross>, $(gcc)-s390x-linux-gnu [s390x] <cross>, $(gcc)-x86-64-linux-gnu [amd64] <cross>,
+
+abidir		:= $(CURDIR)/debian/__abi.current/$(arch)
+commonconfdir	:= $(CURDIR)/debian/config
+builddir	:= $(CURDIR)/debian/build
+stampdir	:= $(CURDIR)/debian/stamps
+
+#
+# The binary package name always starts with linux-image-$KVER-$ABI.$UPLOAD_NUM. There
+# are places that you'll find linux-image hard coded, but I guess thats OK since the
+# assumption that the binary package always starts with linux-image will never change.
+#
+pkg_image=linux-image-$(abi_release)
+pkg_modules=linux-modules-$(abi_release)
+pkg_buildinfo=linux-buildinfo-$(abi_release)
+pkg_headers=linux-headers-$(abi_release)
+pkg_lib_rust=$(pkg_source)-lib-rust-$(abi_release)
+pkg_indep_headers=$(pkg_source)-headers-$(abi_release)
+
+#
+# Similarly with the linux-source package, you need not build it as a developer. Its
+# somewhat I/O intensive and utterly useless.
+#
+do_source_package=true
+do_source_package_content=true
+ifeq ($(do_full_build),false)
+do_source_package_content=false
+endif
+
+# common headers normally is built as an indep package, but may be arch
+do_common_headers_indep=true
+
+# build tools
+ifneq ($(wildcard $(CURDIR)/tools),)
+	ifeq ($(do_tools),)
+		ifneq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+			do_tools=false
+		endif
+	endif
+	do_tools?=true
+else
+	do_tools?=false
+endif
+pkg_tools=$(pkg_source)-tools-$(abi_release)
+pkg_tools_common=linux-tools-common
+pkg_tools_flavour=linux-tools-$(abi_release)
+pkg_tools_host=linux-tools-host
+
+# The general flavour specific image package.
+do_flavour_image_package=true
+
+# The general flavour specific header package.
+do_flavour_header_package=true
+
+# DTBs
+do_dtbs=false
+
+# ZSTD compressed kernel modules
+do_zstd_ko=true
+ifeq ($(series),jammy)
+do_zstd_ko=
+endif
+
+# Support parallel=<n> in DEB_BUILD_OPTIONS (see #209008)
+#
+# These 2 environment variables set the -j value of the kernel build. For example,
+# CONCURRENCY_LEVEL=16 fakeroot debian/rules binary-debs
+# or
+# DEB_BUILD_OPTIONS=parallel=16 fakeroot debian/rules binary-debs
+#
+# The default is to use the number of CPUs.
+#
+DEB_BUILD_OPTIONS_PARA = $(subst parallel=,,$(filter parallel=%,$(subst $(comma), ,$(DEB_BUILD_OPTIONS))))
+ifneq (,$(DEB_BUILD_OPTIONS_PARA))
+  CONCURRENCY_LEVEL := $(DEB_BUILD_OPTIONS_PARA)
+endif
+
+ifeq ($(CONCURRENCY_LEVEL),)
+  # Check the environment
+  CONCURRENCY_LEVEL := $(shell echo $$CONCURRENCY_LEVEL)
+  # No? Then build with the number of CPUs on the host.
+  ifeq ($(CONCURRENCY_LEVEL),)
+      CONCURRENCY_LEVEL := $(shell expr `getconf _NPROCESSORS_ONLN` \* 1)
+  endif
+  # Oh hell, give 'em one
+  ifeq ($(CONCURRENCY_LEVEL),)
+    CONCURRENCY_LEVEL := 1
+  endif
+endif
+
+conc_level = -j$(CONCURRENCY_LEVEL)
+
+HOSTCC ?= $(DEB_BUILD_GNU_TYPE)-$(gcc)
+
+kmake = make ARCH=$(build_arch) \
+	CROSS_COMPILE=$(CROSS_COMPILE) \
+	HOSTCC=$(HOSTCC) \
+	CC=$(CROSS_COMPILE)$(gcc) \
+	BINDGEN=bindgen-0.65 \
+	KERNELRELEASE=$(abi_release)-$(flavour) \
+	CONFIG_DEBUG_SECTION_MISMATCH=y \
+	KBUILD_BUILD_VERSION="$(uploadnum)" \
+	CFLAGS_MODULE="-DPKG_ABI=$(abinum)" \
+	PYTHON=$(PYTHON)
+
+# Locking is required in parallel builds to prevent loss of contents
+# of the debian/files.
+lockme = flock -w 60 $(CURDIR)/debian/.LOCK
+
+# Don't fail if a link already exists.
+LN = ln -sf
+
+# selftests that Ubuntu cares about
+ubuntu_selftests = breakpoints cpu-hotplug efivarfs memfd memory-hotplug mount net ptrace seccomp timers powerpc user ftrace
+
+# Pull in package configuration
+include debian/config.mk
+
+# The following targets are for the maintainer only! do not run if you don't
+# know what they do.
+
+.PHONY: help
+help:
+	@echo "These are the targets in addition to the normal debian ones:"
+	@echo
+	@echo "  printenv            : Print some variables used in the build"
+	@echo "  updateconfigs       : Update core arch configs"
+	@echo "  defaultconfigs      : Update core arch configs using defaults"
+	@echo "  genconfigs          : Generate core arch configs in CONFIGS/*"
+	@echo "  editconfigs         : Edit core arch configs"
+	@echo "  compileselftests    : Only compile the selftests listed on ubuntu_selftests variable"
+	@echo "  runselftests        : Run the selftests listed on ubuntu_selftests variable"
+	@echo
+	@echo "Environment variables:"
+	@echo
+	@echo "  CONCURRENCY_LEVEL=X : Use -jX for kernel compile"
+
+configs-targets := updateconfigs defaultconfigs genconfigs editconfigs
+
+.PHONY: $(configs-targets)
+$(configs-targets):
+	dh_testdir
+	kmake='$(kmake)' gcc='$(gcc)' skip_checks=$(do_skip_checks) conc_level=$(conc_level) \
+		$(SHELL) debian/scripts/misc/kernelconfig $@
+
+.PHONY: printenv
+printenv:
+	@dh_testdir
+	@echo "pkg_source                = $(pkg_source)"
+	@echo "series                    = $(series)"
+	@echo "release                   = $(release)"
+	@echo "revision                  = $(revision)"
+	@echo "uploadnum                 = $(uploadnum)"
+	@echo "prev_revision             = $(prev_revision)"
+	@echo "abinum                    = $(abinum)"
+	@echo "upstream_tag              = $(upstream_tag)"
+	@echo "flavour                   = $(flavour)"
+	@echo "pkg_image                 = $(pkg_image)"
+	@echo "pkg_headers               = $(pkg_headers)"
+	@echo "pkg_lib_rust              = $(pkg_lib_rust)"
+	@echo "ubuntu_selftests          = $(ubuntu_selftests)"
+	@echo "arch                      = $(arch)"
+	@echo "kmake                     = $(kmake)"
+	@echo
+	@echo "CONCURRENCY_LEVEL         = $(CONCURRENCY_LEVEL)"
+	@echo "DEB_HOST_GNU_TYPE         = $(DEB_HOST_GNU_TYPE)"
+	@echo "DEB_BUILD_GNU_TYPE        = $(DEB_BUILD_GNU_TYPE)"
+	@echo "DEB_HOST_ARCH             = $(DEB_HOST_ARCH)"
+	@echo "DEB_BUILD_ARCH            = $(DEB_BUILD_ARCH)"
+	@echo
+	@echo "do_skip_checks            = $(do_skip_checks)"
+	@echo "do_full_build             = $(do_full_build)"
+	@echo "do_dbgsym_package         = $(do_dbgsym_package)"
+	@echo "do_dtbs                   = $(do_dtbs)"
+	@echo "do_source_package         = $(do_source_package)"
+	@echo "do_source_package_content = $(do_source_package_content)"
+	@echo "do_flavour_image_package  = $(do_flavour_image_package)"
+	@echo "do_flavour_header_package = $(do_flavour_header_package)"
+	@echo "do_common_headers_indep   = $(do_common_headers_indep)"
+	@echo "do_lib_rust               = $(do_lib_rust)"
+	@echo "do_tools                  = $(do_tools)"
+	@echo "do_tools_common           = $(do_tools_common)"
+	@echo "do_any_tools              = $(do_any_tools)"
+	@echo "do_linux_tools            = $(do_linux_tools)"
+	@echo " do_tools_acpidbg         = $(do_tools_acpidbg)"
+	@echo " do_tools_bpftool         = $(do_tools_bpftool)"
+	@echo " do_tools_cpupower        = $(do_tools_cpupower)"
+	@echo " do_tools_host            = $(do_tools_host)"
+	@echo " do_tools_perf            = $(do_tools_perf)"
+	@echo " do_tools_perf_jvmti      = $(do_tools_perf_jvmti)"
+	@echo " do_tools_perf_python     = $(do_tools_perf_python)"
+	@echo " do_tools_usbip           = $(do_tools_usbip)"
+	@echo " do_tools_x86             = $(do_tools_x86)"
+
+.PHONY: autoreconstruct
+autoreconstruct:
+	# No need for reconstruct for -rc kernels since we don't upload an
+	# orig tarball, so just remove it.
+	if grep -q "^EXTRAVERSION = -rc[0-9]\+$$" Makefile; then \
+		echo "exit 0" >debian/reconstruct; \
+	else \
+		debian/scripts/misc/gen-auto-reconstruct $(upstream_tag) debian/reconstruct debian/source/options; \
+	fi
+
+.PHONY: compileselftests
+compileselftests:
+	# a loop is needed here to fail on errors
+	for test in $(ubuntu_selftests); do \
+		$(kmake) -C tools/testing/selftests TARGETS="$$test"; \
+	done;
+
+.PHONY: runselftests
+runselftests:
+	$(kmake) -C tools/testing/selftests TARGETS="$(ubuntu_selftests)" run_tests
+
+.PHONY: build-sources-with-orig
+build-sources-with-orig: clean
+	dpkg-buildpackage -S -i -I -uc -us -d -sa
+
+.PHONY: build-sources
+build-sources: clean
+	dpkg-buildpackage -S -i -I -uc -us -d
+
+do_linux_tools=$(sort $(filter-out false,$(do_tools_usbip) $(do_tools_cpupower) $(do_tools_perf) $(do_tools_bpftool) $(do_tools_x86)))
+do_tools_perf_jvmti?=false
+do_tools_perf_python?=false
+
+# Indep tools packages may only be built for the main linux source package
+ifeq ($(pkg_source),linux)
+	do_tools_common = true
+	do_tools_host = true
+endif
+
+# The linux-source package may only be built for the linux source package
+# We need to explicitly turn this off here to override any (incorrect)
+# statement in any of the above included makefile snippets
+ifneq ($(pkg_source),linux)
+	do_source_package = false
+endif
+
+# Don't build tools in a cross compile environment.
+ifneq ($(DEB_HOST_ARCH),$(DEB_BUILD_ARCH))
+	do_tools=false
+endif
+
+# Stages -- support both DEB_STAGE=stage1 and DEB_BUILD_PROFILE=bootstrap
+ifeq ($(DEB_STAGE),stage1)
+    DEB_BUILD_PROFILES=stage1
+endif
+ifneq ($(DEB_BUILD_PROFILE),)
+    DEB_BUILD_PROFILES=$(DEB_BUILD_PROFILE)
+endif
+ifneq ($(filter stage1,$(DEB_BUILD_PROFILES)),)
+    do_tools=false
+    do_source_package=false
+    do_flavour_image_package=false
+    do_flavour_header_package=false
+endif
+
+# Disable tools build and packaging if do_tools != true
+ifneq ($(do_tools),true)
+	do_linux_tools=
+	do_tools_common=
+	do_tools_host=
+endif
+
+# Either tools package needs the common source preparation
+do_any_tools=$(sort $(filter-out false,$(do_linux_tools)))
+
+# Debian Build System targets
+.PHONY: binary
+binary: binary-indep binary-arch
+
+.PHONY: build
+build: build-arch build-indep
+
+.PHONY: clean
+clean: debian/control
+	dh_testdir
+	dh_testroot
+	dh_clean
+
+	# normal build junk
+	rm -rf debian/abi
+	rm -rf $(builddir) $(stampdir)
+	rm -rf debian/linux-*/
+
+	# If we have a reconstruct script use it.
+	[ ! -f debian/reconstruct ] || bash debian/reconstruct
+
+.PHONY: distclean
+distclean: clean
+	rm -rf debian/control debian/changelog \
+		debian/control debian/control.stub debian/copyright
+
+# We don't want make removing intermediary stamps
+.SECONDARY :
+
+# TODO this is probably wrong, and should be using $(DEB_HOST_MULTIARCH)
+shlibdeps_opts = $(if $(CROSS_COMPILE),-- -l$(CROSS_COMPILE:%-=/usr/%)/lib)
+
+$(stampdir)/stamp-prepare-%: config-prepare-check-%
+	@echo Debug: $@
+	$(stamp)
+
+$(stampdir)/stamp-prepare-tree-%:
+	@echo Debug: $@
+	install -d $(builddir)/build-$*
+	touch $(builddir)/build-$*/ubuntu-build
+	$(PYTHON) debian/scripts/misc/annotations --export --arch $(arch) --flavour '$*' > $(builddir)/build-$*/.config
+	sed -i 's/.*CONFIG_VERSION_SIGNATURE.*/CONFIG_VERSION_SIGNATURE="Ubuntu $(release)-$(revision)-$* $(raw_kernelversion)"/' $(builddir)/build-$*/.config
+	find $(builddir)/build-$* -name "*.ko" | xargs rm -f
+	$(kmake) O=$(builddir)/build-$* $(conc_level) rustavailable || true
+	$(kmake) O=$(builddir)/build-$* $(conc_level) olddefconfig
+	$(stamp)
+
+# Used by developers as a shortcut to prepare a tree for compilation.
+prepare-%: $(stampdir)/stamp-prepare-%
+	@echo Debug: $@
+# Used by developers to allow efficient pre-building without fakeroot.
+build-%: $(stampdir)/stamp-install-%
+	@echo Debug: $@
+
+# Do the actual build, including image and modules
+$(stampdir)/stamp-build-%: bldimg = $(build_image)
+$(stampdir)/stamp-build-%: $(stampdir)/stamp-prepare-%
+	@echo Debug: $@ build_image $(build_image) bldimg $(bldimg)
+	$(kmake) O=$(builddir)/build-$* $(conc_level) $(bldimg) modules $(if $(filter true,$(do_dtbs)),dtbs)
+
+ifeq ($(do_dbgsym_package),true)
+	# The target scripts_gdb is part of "all", so we need to call it manually
+	if grep -q CONFIG_GDB_SCRIPTS=y $(builddir)/build-$*/.config; then \
+		$(kmake) O=$(builddir)/build-$* $(conc_level) scripts_gdb ; \
+	fi
+endif
+	$(stamp)
+
+define install_control =
+	for which in $(3);							\
+	do									\
+		template="debian/templates/$(2).$$which.in";			\
+		script="debian/$(1).$$which";					\
+		sed -e 's/@abiname@/$(abi_release)/g'				\
+		    -e 's/@localversion@/-$*/g'					\
+		    -e 's/@image-stem@/$(install_file)/g'			\
+			<"$$template" >"$$script";				\
+	done
+endef
+
+# Install the finished build
+$(stampdir)/stamp-install-%: pkgdir_image = $(CURDIR)/debian/$(pkg_image)-$*
+$(stampdir)/stamp-install-%: pkgdir_modules = $(CURDIR)/debian/$(pkg_modules)-$*
+$(stampdir)/stamp-install-%: pkgdir_buildinfo = $(CURDIR)/debian/$(pkg_buildinfo)-$*
+$(stampdir)/stamp-install-%: pkgdir_debug = $(CURDIR)/debian/$(pkg_image)-$*-dbgsym
+$(stampdir)/stamp-install-%: pkgdir_tools = $(CURDIR)/debian/$(pkg_tools_flavour)-$*
+$(stampdir)/stamp-install-%: pkgdir_headers = $(CURDIR)/debian/$(pkg_headers)-$*
+$(stampdir)/stamp-install-%: pkgdir_lib_rust = $(CURDIR)/debian/$(pkg_lib_rust)-$*
+$(stampdir)/stamp-install-%: bindoc = $(pkgdir_modules)/usr/share/doc/$(pkg_image)-$*
+$(stampdir)/stamp-install-%: signingv = $(CURDIR)/debian/$(pkg_image)-signing/$(release)-$(revision)
+$(stampdir)/stamp-install-%: hdrdir = $(pkgdir_headers)/usr/src/$(pkg_headers)-$*
+$(stampdir)/stamp-install-%: rustdir = $(pkgdir_lib_rust)/usr/src/$(pkg_lib_rust)-$*
+$(stampdir)/stamp-install-%: build_dir = $(builddir)/build-$*
+$(stampdir)/stamp-install-%: $(stampdir)/stamp-build-% $(stampdir)/stamp-install-headers
+	@echo Debug: $@ kernel_file $(kernel_file) install_file $(install_file)
+	dh_testdir
+	dh_prep -p$(pkg_image)-$*
+	dh_prep -p$(pkg_modules)-$*
+	dh_prep -p$(pkg_headers)-$*
+ifeq ($(do_lib_rust),true)
+	dh_prep -p$(pkg_lib_rust)-$*
+endif
+ifeq ($(do_dbgsym_package),true)
+	dh_prep -p$(pkg_image)-$*-dbgsym
+endif
+
+	# The main image
+	# compress_file logic required because not all architectures
+	# generate a zImage automatically out of the box
+ifeq ($(compress_file),)
+	install -m600 -D $(builddir)/build-$*/$(kernel_file) \
+		$(pkgdir_image)/boot/$(install_file)-$(abi_release)-$*
+else
+	install -d $(pkgdir_image)/boot
+	gzip -c9v $(builddir)/build-$*/$(kernel_file) > \
+		$(pkgdir_image)/boot/$(install_file)-$(abi_release)-$*
+	chmod 600 $(pkgdir_image)/boot/$(install_file)-$(abi_release)-$*
+endif
+	install -d $(pkgdir_modules)/boot
+	install -m644 $(builddir)/build-$*/.config \
+		$(pkgdir_modules)/boot/config-$(abi_release)-$*
+	install -m600 $(builddir)/build-$*/System.map \
+		$(pkgdir_modules)/boot/System.map-$(abi_release)-$*
+
+ifeq ($(do_dtbs),true)
+	$(kmake) O=$(builddir)/build-$* $(conc_level) dtbs_install \
+		INSTALL_DTBS_PATH=$(pkgdir_modules)/lib/firmware/$(abi_release)-$*/device-tree
+endif
+
+ifeq ($(no_dumpfile),)
+	makedumpfile -g $(pkgdir_modules)/boot/vmcoreinfo-$(abi_release)-$* \
+		-x $(builddir)/build-$*/vmlinux
+	chmod 0600 $(pkgdir_modules)/boot/vmcoreinfo-$(abi_release)-$*
+endif
+
+	$(kmake) O=$(builddir)/build-$* $(conc_level) modules_install $(vdso) \
+		INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=$(pkgdir_modules)
+
+	#
+	# Build module blacklists:
+	#  - blacklist all watchdog drivers (LP:1432837)
+	#
+	install -d $(pkgdir_modules)/lib/modprobe.d
+	echo "# Kernel supplied blacklist for $(pkg_source) $(abi_release)-$* $(arch)" \
+		>$(pkgdir_modules)/lib/modprobe.d/blacklist_$(pkg_source)_$(abi_release)-$*.conf
+	for conf in $(arch)-$* $(arch) common.conf; do \
+		if [ -f debian/modprobe.d/$$conf ]; then \
+			echo "# modprobe.d/$$conf"; \
+			cat debian/modprobe.d/$$conf; \
+		fi; \
+	done >>$(pkgdir_modules)/lib/modprobe.d/blacklist_$(pkg_source)_$(abi_release)-$*.conf
+	echo "# Autogenerated watchdog blacklist" \
+		>>$(pkgdir_modules)/lib/modprobe.d/blacklist_$(pkg_source)_$(abi_release)-$*.conf
+	ls -1 $(pkgdir_modules)/lib/modules/$(abi_release)-$*/kernel/drivers/watchdog/ | \
+		grep -v '^bcm2835_wdt$$' | \
+		sed -e 's/^/blacklist /' -e 's/.ko$$//' | \
+		sort -u \
+		>>$(pkgdir_modules)/lib/modprobe.d/blacklist_$(pkg_source)_$(abi_release)-$*.conf
+
+ifeq ($(no_dumpfile),)
+	makedumpfile -g $(pkgdir_modules)/boot/vmcoreinfo-$(abi_release)-$* \
+		-x $(builddir)/build-$*/vmlinux
+	chmod 0600 $(pkgdir_modules)/boot/vmcoreinfo-$(abi_release)-$*
+endif
+	rm -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/build
+	rm -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/source
+
+	# Some initramfs-tools specific modules
+	install -d $(pkgdir_modules)/lib/modules/$(abi_release)-$*/initrd
+	if [ -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/kernel/drivers/video/vesafb.ko ]; then\
+	  $(LN) $(pkgdir_modules)/lib/modules/$(abi_release)-$*/kernel/drivers/video/vesafb.ko \
+		$(pkgdir_modules)/lib/modules/$(abi_release)-$*/initrd/; \
+	fi
+
+	echo "interest linux-update-$(abi_release)-$*" > "debian/$(pkg_image)-$*.triggers"
+	install -d $(pkgdir_image)/usr/lib/linux/triggers
+	$(call install_control,$(pkg_image)-$*,image,postinst postrm preinst prerm)
+	install -d $(pkgdir_modules)/usr/lib/linux/triggers
+	$(call install_control,$(pkg_modules)-$*,modules,postinst postrm)
+
+ifeq ($(do_dbgsym_package),true)
+	# Debug image is simple
+	install -m644 -D $(builddir)/build-$*/vmlinux \
+		$(pkgdir_debug)/usr/lib/debug/boot/vmlinux-$(abi_release)-$*
+	if [ -d $(builddir)/build-$*/scripts/gdb/linux ]; then \
+		install -m644 -D $(builddir)/build-$*/vmlinux-gdb.py \
+			$(pkgdir_debug)/usr/share/gdb/auto-load/boot/vmlinux-$(abi_release)-$*/vmlinuz-$(abi_release)-$*-gdb.py; \
+	fi
+	$(kmake) O=$(builddir)/build-$* modules_install $(vdso) \
+		INSTALL_MOD_PATH=$(pkgdir_debug)/usr/lib/debug
+	# Add .gnu_debuglink sections only after all/DKMS modules are built.
+	rm -f $(pkgdir_debug)/usr/lib/debug/lib/modules/$(abi_release)-$*/build
+	rm -f $(pkgdir_debug)/usr/lib/debug/lib/modules/$(abi_release)-$*/source
+	rm -f $(pkgdir_debug)/usr/lib/debug/lib/modules/$(abi_release)-$*/modules.*
+	rm -fr $(pkgdir_debug)/usr/lib/debug/lib/firmware
+endif
+ifeq ($(do_tools_bpftool),true)
+	cp $(builddir)/build-$*/vmlinux tools/bpf/bpftool/
+endif
+
+	# The flavour specific headers image
+	# TODO: Would be nice if we didn't have to dupe the original builddir
+	install -d -m755 $(hdrdir)
+	cp $(builddir)/build-$*/.config $(hdrdir)
+	chmod 644 $(hdrdir)/.config
+	$(kmake) O=$(hdrdir) -j1 syncconfig prepare scripts
+	# Makefile may need per-arch-flavour CC settings, which are
+	# normally set via $(kmake) during build
+	rm -f $(hdrdir)/Makefile
+	cp -a $(indep_hdrdir)/Makefile $(hdrdir)/Makefile
+	sed -i 's|\(^HOSTCC	= \)gcc$$|\1$(gcc)|' $(hdrdir)/Makefile
+	sed -i 's|\(^CC		= $$(CROSS_COMPILE)\)gcc$$|\1$(gcc)|' $(hdrdir)/Makefile
+	# Quick check for successful substitutions
+	grep '^HOSTCC	.*$(gcc)$$' $(hdrdir)/Makefile
+	grep '^CC	.*$(gcc)$$' $(hdrdir)/Makefile
+	rm -rf $(hdrdir)/include2 $(hdrdir)/source
+	# Copy over the compilation version.
+	cp "$(builddir)/build-$*/include/generated/compile.h" \
+		"$(hdrdir)/include/generated/compile.h"
+	# Add UTS_UBUNTU_RELEASE_ABI since UTS_RELEASE is difficult to parse.
+	echo "#define UTS_UBUNTU_RELEASE_ABI $(abinum)" >> $(hdrdir)/include/generated/utsrelease.h
+	# Copy over scripts/module.lds for building external modules
+	cp $(builddir)/build-$*/scripts/module.lds $(hdrdir)/scripts
+	# Script to symlink everything up
+	$(SHELL) debian/scripts/link-headers "$(hdrdir)" "$(pkg_indep_headers)" "$*"
+	# The build symlink
+	install -d debian/$(pkg_headers)-$*/lib/modules/$(abi_release)-$*
+	$(LN) /usr/src/$(pkg_headers)-$* \
+		debian/$(pkg_headers)-$*/lib/modules/$(abi_release)-$*/build
+	# And finally the symvers
+	install -m644 $(builddir)/build-$*/Module.symvers \
+		$(hdrdir)/Module.symvers
+
+	# Now the header scripts
+	$(call install_control,$(pkg_headers)-$*,headers,postinst)
+
+	# At the end of the package prep, call the tests
+	DPKG_ARCH="$(arch)" KERN_ARCH="$(build_arch)" FLAVOUR="$*"	\
+	 VERSION="$(abi_release)" REVISION="$(revision)"		\
+	 PREV_REVISION="$(prev_revision)" ABI_NUM="$(abinum)"		\
+	 PREV_ABI_NUM="$(prev_abinum)" BUILD_DIR="$(builddir)/build-$*"	\
+	 INSTALL_DIR="$(pkgdir_modules)" SOURCE_DIR="$(CURDIR)"			\
+	 run-parts -v debian/tests-build
+
+	#
+	# Remove files which are generated at installation by postinst,
+	# except for modules.order and modules.builtin
+	#
+	# NOTE: need to keep this list in sync with postrm
+	#
+	mkdir $(pkgdir_modules)/lib/modules/$(abi_release)-$*/_
+	mv $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.order \
+		$(pkgdir_modules)/lib/modules/$(abi_release)-$*/_
+	if [ -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin ] ; then \
+	    mv $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin \
+		$(pkgdir_modules)/lib/modules/$(abi_release)-$*/_; \
+	fi
+	if [ -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin.modinfo ] ; then \
+	    mv $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin.modinfo \
+		$(pkgdir_modules)/lib/modules/$(abi_release)-$*/_; \
+	fi
+	rm -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.*
+	mv $(pkgdir_modules)/lib/modules/$(abi_release)-$*/_/* \
+		$(pkgdir_modules)/lib/modules/$(abi_release)-$*
+	rmdir $(pkgdir_modules)/lib/modules/$(abi_release)-$*/_
+
+ifeq ($(do_linux_tools),true)
+	# Create the linux-tools tool links
+	install -d $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+ifeq ($(do_tools_usbip),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/usbip $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/usbipd $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+endif
+ifeq ($(do_tools_acpidbg),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/acpidbg $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+endif
+ifeq ($(do_tools_cpupower),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/cpupower $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+endif
+ifeq ($(do_tools_rtla),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/rtla $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+endif
+ifeq ($(do_tools_perf),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/perf $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+ifeq ($(do_tools_perf_jvmti),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/libperf-jvmti.so $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+endif
+endif
+ifeq ($(do_tools_bpftool),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/bpftool $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+endif
+ifeq ($(do_tools_x86),true)
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/x86_energy_perf_policy $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+	$(LN) ../../$(pkg_source)-tools-$(abi_release)/turbostat $(pkgdir_tools)/usr/lib/linux-tools/$(abi_release)-$*
+endif
+endif
+
+ifeq ($(do_dbgsym_package),true)
+	# Add .gnu_debuglink sections to each stripped .ko
+	# pointing to unstripped verson
+	find $(pkgdir_modules) -name '*.ko' | while read path_module ; do \
+		module="/lib/modules/$${path_module#*/lib/modules/}"; \
+		if [[ -f "$(pkgdir_debug)/usr/lib/debug/$$module" ]] ; then \
+			while IFS= read -r -d '' signature < <(tail -c 28 "$$path_module"); do \
+				break; \
+			done; \
+			$(CROSS_COMPILE)objcopy \
+				--add-gnu-debuglink=$(pkgdir_debug)/usr/lib/debug/$$module \
+				$$path_module; \
+		else \
+			echo "WARNING: Missing debug symbols for module '$$module'."; \
+		fi; \
+	done
+endif
+
+	# Build the final ABI information.
+	install -d $(abidir)
+	sed -e 's/^\(.\+\)[[:space:]]\+\(.\+\)[[:space:]]\(.\+\)$$/\3 \2 \1/'	\
+		$(builddir)/build-$*/Module.symvers | sort > $(abidir)/$*
+
+	# Build the final ABI modules information.
+	find $(pkgdir_image) $(pkgdir_modules) \( -name '*.ko' -o -name '*.ko.*' \) | \
+		sed -e 's/.*\/\([^\/]*\)\.ko.*/\1/' | sort > $(abidir)/$*.modules
+
+	# Build the final ABI built-in modules information.
+	if [ -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin ] ; then \
+		sed -e 's/.*\/\([^\/]*\)\.ko/\1/' $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin | \
+			sort > $(abidir)/$*.modules.builtin; \
+	fi
+
+	# Build the final ABI firmware information.
+	find $(pkgdir_image) $(pkgdir_modules) -name \*.ko | \
+	while read ko; do \
+		/sbin/modinfo $$ko | grep ^firmware || true; \
+	done | sort -u >$(abidir)/$*.fwinfo
+
+	# Build the final ABI built-in firmware information.
+	if [ -f $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin.modinfo ] ; then \
+		cat $(pkgdir_modules)/lib/modules/$(abi_release)-$*/modules.builtin.modinfo | \
+			tr '\0' '\n' | sed -n 's/^.*firmware=/firmware: /p' | \
+			sort -u > $(abidir)/$*.fwinfo.builtin; \
+	fi
+
+	# Build the final ABI compiler information.
+	ko=$$(find $(pkgdir_image) $(pkgdir_modules) -name \*.ko | head -1); \
+	readelf -p .comment "$$ko" | gawk ' \
+		($$1 == "[") { \
+			printf("%s", $$3); \
+			for (n=4; n<=NF; n++) { \
+				printf(" %s", $$n); \
+			} \
+			print "" \
+		}' | sort -u >$(abidir)/$*.compiler
+
+	# Build the buildinfo package content.
+	install -d $(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*
+	install -m644 $(builddir)/build-$*/.config \
+		$(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*/config
+	install -m644 $(abidir)/$* \
+		$(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*/abi
+	install -m644 $(abidir)/$*.modules \
+		$(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*/modules
+	install -m644 $(abidir)/$*.fwinfo \
+		$(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*/fwinfo
+	install -m644 $(abidir)/$*.compiler \
+		$(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*/compiler
+	if [ -f $(abidir)/$*.modules.builtin ] ; then \
+		install -m644 $(abidir)/$*.modules.builtin \
+			$(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*/modules.builtin; \
+	fi
+	if [ -f $(abidir)/$*.fwinfo.builtin ] ; then \
+		install -m644 $(abidir)/$*.fwinfo.builtin \
+			$(pkgdir_buildinfo)/usr/lib/linux/$(abi_release)-$*/fwinfo.builtin; \
+	fi
+
+	# Get rid of .o and .cmd artifacts in headers
+	find $(hdrdir) -name \*.o -or -name \*.cmd -exec rm -f {} \;
+	# Strip .so files (e.g., rust/libmacros.so) to reduce size even more
+	find $(hdrdir) -name libmacros.so -exec strip -s {} \;
+
+ifeq ($(do_lib_rust),true)
+	# Generate Rust lib files
+	install -d -m755 $(rustdir)
+	mv $(hdrdir)/rust $(rustdir)
+	# Generate symlink for Rust lib directory in headers
+	$(SHELL) debian/scripts/link-lib-rust "$(hdrdir)" "$(pkg_indep_headers)" "$*"
+endif
+
+ifneq ($(do_full_build),false)
+	# Clean out this flavours build directory.
+	rm -rf $(builddir)/build-$*
+endif
+	$(stamp)
+
+headers_tmp := $(CURDIR)/debian/tmp-headers
+headers_dir := $(CURDIR)/debian/linux-libc-dev
+
+.PHONY: install-arch-headers
+install-arch-headers:
+	@echo Debug: $@
+	dh_testdir
+	dh_testroot
+	$(call if_package, linux-libc-dev, dh_prep -plinux-libc-dev)
+	rm -rf $(headers_tmp) $(headers_dir)
+	$(kmake) O=$(headers_tmp) INSTALL_HDR_PATH=$(headers_dir)/usr $(conc_level) headers_install
+	mkdir $(headers_dir)/usr/include/$(DEB_HOST_MULTIARCH)
+	mv $(headers_dir)/usr/include/asm $(headers_dir)/usr/include/$(DEB_HOST_MULTIARCH)/
+	rm -rf $(headers_tmp)
+
+define dh_all
+	dh_installchangelogs -p$(1)
+	dh_installdocs -p$(1)
+	dh_compress -p$(1)
+	# Compress kernel modules, on mantic+
+	$(if $(do_zstd_ko),find debian/$(1) -name '*.ko' -print0 | xargs -0 -n1 -P $(CONCURRENCY_LEVEL) -r zstd -19 --quiet --rm, true)
+	dh_fixperms -p$(1) -X/boot/
+	dh_shlibdeps -p$(1) $(shlibdeps_opts)
+	dh_installdeb -p$(1)
+	dh_installdebconf -p$(1)
+	$(lockme) dh_gencontrol -p$(1) -- $(2)
+	dh_md5sums -p$(1)
+	dh_builddeb -p$(1)
+endef
+
+.PHONY: binary-arch-headers
+binary-arch-headers: install-arch-headers
+	@echo Debug: $@
+	dh_testdir
+	dh_testroot
+	$(call if_package, linux-libc-dev, $(call dh_all,linux-libc-dev))
+
+binary-%: pkg_debug = $(pkg_image)-$*-dbgsym
+binary-%: pkgdir_debug = $(CURDIR)/debian/$(pkg_debug)
+binary-%: pkgtools = $(pkg_tools_flavour)-$*
+binary-%: checks-%
+	@echo Debug: $@
+	dh_testdir
+	dh_testroot
+
+	$(call dh_all,$(pkg_image)-$*) -- -Znone
+	$(call dh_all,$(pkg_modules)-$*)$(if $(do_zstd_ko), -- -Znone)
+
+	$(call dh_all,$(pkg_buildinfo)-$*)
+	$(call dh_all,$(pkg_headers)-$*)
+ifeq ($(do_lib_rust),true)
+	$(call dh_all,$(pkg_lib_rust)-$*)
+endif
+
+ifeq ($(do_dbgsym_package),true)
+	$(call dh_all,$(pkg_debug)) -- -Zxz
+
+	# Hokay...here's where we do a little twiddling...
+	# Renaming the debug package prevents it from getting into
+	# the primary archive, and therefore prevents this very large
+	# package from being mirrored. It is instead, through some
+	# archive admin hackery, copied to http://ddebs.ubuntu.com.
+	#
+	mv ../$(dbgpkg)_$(release)-$(revision)_$(arch).deb \
+		../$(dbgpkg)_$(release)-$(revision)_$(arch).ddeb
+	$(lockme) sed -i '/^$(dbgpkg)_/s/\.deb /.ddeb /' debian/files
+	# Now, the package wont get into the archive, but it will get put
+	# into the debug system.
+
+	# Clean out the debugging package source directory.
+	rm -rf $(pkgdir_debug)
+endif
+
+ifeq ($(do_linux_tools),true)
+	$(call dh_all,$(pkgtools))
+endif
+
+ifeq ($(do_metas),true)
+	$(call dh_all,linux-headers-$*)
+	$(call dh_all,linux-image-$*)
+ifeq ($(do_linux_tools),true)
+	$(call dh_all,linux-tools-$*)
+endif
+	$(call dh_all,linux-$*)
+endif
+
+#
+# per-architecture packages
+#
+builddirpa = $(builddir)/tools-perarch
+
+$(stampdir)/stamp-prepare-perarch:
+	@echo Debug: $@
+ifeq ($(do_any_tools),true)
+	rm -rf $(builddirpa)
+	install -d $(builddirpa)
+	rsync -a --exclude debian --exclude .git -a ./ $(builddirpa)/
+endif
+	$(stamp)
+
+$(stampdir)/stamp-build-perarch: $(stampdir)/stamp-prepare-perarch install-arch-headers build-arch
+	@echo Debug: $@
+ifeq ($(do_linux_tools),true)
+ifeq ($(do_tools_usbip),true)
+	chmod 755 $(builddirpa)/tools/usb/usbip/autogen.sh
+	cd $(builddirpa)/tools/usb/usbip && ./autogen.sh
+	chmod 755 $(builddirpa)/tools/usb/usbip/configure
+	cd $(builddirpa)/tools/usb/usbip && ./configure --prefix=$(builddirpa)/tools/usb/usbip/bin
+	cd $(builddirpa)/tools/usb/usbip && make install CFLAGS="-g -O2 -static" CROSS_COMPILE=$(CROSS_COMPILE)
+endif
+ifeq ($(do_tools_acpidbg),true)
+	cd $(builddirpa)/tools/power/acpi && make clean && make CFLAGS="-g -O2 -static -I$(builddirpa)/include" CROSS_COMPILE=$(CROSS_COMPILE) acpidbg
+endif
+ifeq ($(do_tools_rtla),true)
+	cd $(builddirpa) && $(kmake) -C tools/tracing/rtla clean && $(kmake) LD=ld -C tools/tracing/rtla static
+endif
+ifeq ($(do_tools_cpupower),true)
+	make -C $(builddirpa)/tools/power/cpupower \
+		CROSS_COMPILE=$(CROSS_COMPILE) \
+		CROSS=$(CROSS_COMPILE) \
+		STATIC=true \
+		CPUFREQ_BENCH=false
+endif
+ifeq ($(do_tools_perf),true)
+	cd $(builddirpa)/tools/perf && \
+		$(kmake) prefix=/usr NO_LIBTRACEEVENT=1 HAVE_CPLUS_DEMANGLE_SUPPORT=1 CROSS_COMPILE=$(CROSS_COMPILE) NO_LIBPERL=1 WERROR=0
+endif
+ifeq ($(do_tools_bpftool),true)
+	mv $(builddirpa)/tools/bpf/bpftool/vmlinux $(builddirpa)/vmlinux
+	$(kmake) NO_LIBTRACEEVENT=1 CROSS_COMPILE=$(CROSS_COMPILE) -C $(builddirpa)/tools/bpf/bpftool
+	rm -f $(builddirpa)/vmlinux
+endif
+ifeq ($(do_tools_x86),true)
+	cd $(builddirpa)/tools/power/x86/x86_energy_perf_policy && make CROSS_COMPILE=$(CROSS_COMPILE)
+	cd $(builddirpa)/tools/power/x86/turbostat && make CROSS_COMPILE=$(CROSS_COMPILE)
+endif
+endif
+	$(stamp)
+
+.PHONY: install-perarch
+install-perarch: pkgdir_tools = $(CURDIR)/debian/$(pkg_tools)
+install-perarch: $(stampdir)/stamp-build-perarch
+	@echo Debug: $@
+	# Add the tools.
+ifeq ($(do_linux_tools),true)
+	install -d $(pkgdir_tools)/usr/lib
+	install -d $(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+ifeq ($(do_tools_usbip),true)
+	install -m755 $(addprefix $(builddirpa)/tools/usb/usbip/bin/sbin/, usbip usbipd) \
+		$(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+endif
+ifeq ($(do_tools_acpidbg),true)
+	install -m755 $(builddirpa)/tools/power/acpi/acpidbg \
+		$(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+endif
+ifeq ($(do_tools_cpupower),true)
+	install -m755 $(builddirpa)/tools/power/cpupower/cpupower \
+		$(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+endif
+ifeq ($(do_tools_rtla),true)
+	install -m755 $(builddirpa)/tools/tracing/rtla/rtla-static \
+		$(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)/rtla
+endif
+ifeq ($(do_tools_perf),true)
+	install -m755 $(builddirpa)/tools/perf/perf $(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+ifeq ($(do_tools_perf_jvmti),true)
+	install -m755 $(builddirpa)/tools/perf/libperf-jvmti.so $(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+endif
+ifeq ($(do_tools_perf_python),true)
+	install -d $(pkgdir_tools)/usr/lib/python3/dist-packages/$(pkg_source)-tools-$(abi_release)
+	install -m755 $(builddirpa)/tools/perf/python/perf*.so $(pkgdir_tools)/usr/lib/python3/dist-packages/$(pkg_source)-tools-$(abi_release)
+endif
+endif
+ifeq ($(do_tools_bpftool),true)
+	install -m755 $(builddirpa)/tools/bpf/bpftool/bpftool $(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+endif
+ifeq ($(do_tools_x86),true)
+	install -m755 \
+		$(addprefix $(builddirpa)/tools/power/x86/, x86_energy_perf_policy/x86_energy_perf_policy turbostat/turbostat) \
+		$(pkgdir_tools)/usr/lib/$(pkg_source)-tools-$(abi_release)
+endif
+endif
+
+.PHONY: binary-perarch
+binary-perarch: install-perarch
+	@echo Debug: $@
+ifeq ($(do_linux_tools),true)
+	$(call dh_all,$(pkg_tools))
+endif
+
+.PHONY: binary-debs
+binary-debs: binary-perarch binary-$(flavour)
+	@echo Debug: $@
+
+build-arch-deps-$(do_flavour_image_package) += $(stampdir)/stamp-install-$(flavour)
+
+.PHONY: build-arch
+build-arch: $(build-arch-deps-true)
+	@echo Debug: $@
+
+binary-arch-deps-$(do_flavour_image_package) += binary-debs
+binary-arch-deps-true += binary-arch-headers
+ifneq ($(do_common_headers_indep),true)
+binary-arch-deps-$(do_flavour_header_package) += binary-headers
+endif
+
+.PHONY: binary-arch
+binary-arch: $(binary-arch-deps-true)
+	@echo Debug: $@
+
+
+.PHONY: build-indep
+build-indep:
+	@echo Debug: $@
+
+# The binary-indep dependency chain is:
+#
+# install-headers <- install-source <- install-tools <- install-indep <- binary-indep
+# install-headers <- binary-headers
+#
+indep_hdrdir = $(CURDIR)/debian/$(pkg_indep_headers)/usr/src/$(pkg_indep_headers)
+
+$(stampdir)/stamp-install-headers: $(stampdir)/stamp-prepare-indep
+	@echo Debug: $@
+	dh_testdir
+
+ifeq ($(do_flavour_header_package),true)
+	install -d $(indep_hdrdir)
+	find . -path './debian' -prune \
+	  -o -path './include/*' -prune \
+	  -o -path './scripts/*' -prune -o -type f \
+	  \( -name 'Makefile*' -o -name 'Kconfig*' -o -name 'Kbuild*' -o \
+	     -name '*.sh' -o -name '*.pl' -o -name '*.lds' \) \
+	  -print | cpio -pd --preserve-modification-time $(indep_hdrdir)
+	cp -a scripts include $(indep_hdrdir)
+	(find arch -name include -type d -print | \
+		xargs -n1 -i: find : -type f) | \
+		cpio -pd --preserve-modification-time $(indep_hdrdir)
+	# Do not ship .o and .cmd artifacts in headers
+	find $(indep_hdrdir) -name \*.o -or -name \*.cmd -exec rm -f {} \;
+endif
+	$(stamp)
+
+install-source: srcpkg = linux-source-$(release)
+install-source: srcdir = $(CURDIR)/debian/$(srcpkg)/usr/src/$(srcpkg)
+install-source: balldir = $(CURDIR)/debian/$(srcpkg)/usr/src/$(srcpkg)/$(srcpkg)
+install-source: $(stampdir)/stamp-prepare-indep
+	@echo Debug: $@
+ifeq ($(do_source_package),true)
+	install -d $(srcdir)
+ifeq ($(do_source_package_content),true)
+	find . -path './debian' -prune \
+		-path './.*' -prune -o -print | \
+		cpio -pd --preserve-modification-time $(balldir)
+	(cd $(srcdir); tar cf - $(srcpkg)) | bzip2 -9c > \
+		$(srcdir)/$(srcpkg).tar.bz2
+	rm -rf $(balldir)
+	$(LN) $(srcpkg)/$(srcpkg).tar.bz2 $(srcdir)/..
+endif
+endif
+
+.PHONY: install-tools
+install-tools: toolspkg = $(pkg_tools_common)
+install-tools: toolsbin = $(CURDIR)/debian/$(toolspkg)/usr/bin
+install-tools: toolssbin = $(CURDIR)/debian/$(toolspkg)/usr/sbin
+install-tools: toolsman = $(CURDIR)/debian/$(toolspkg)/usr/share/man
+install-tools: toolspython = $(CURDIR)/debian/$(toolspkg)/usr/lib/python3/dist-packages
+install-tools: toolsbashcomp = $(CURDIR)/debian/$(toolspkg)/usr/share/bash-completion/completions
+install-tools: hosttoolspkg = $(pkg_tools_host)
+install-tools: hosttoolsbin = $(CURDIR)/debian/$(hosttoolspkg)/usr/bin
+install-tools: hosttoolsman = $(CURDIR)/debian/$(hosttoolspkg)/usr/share/man
+install-tools: hosttoolssystemd = $(CURDIR)/debian/$(hosttoolspkg)/lib/systemd/system
+install-tools: $(stampdir)/stamp-prepare-indep $(stampdir)/stamp-build-perarch
+	@echo Debug: $@
+
+ifeq ($(do_tools_common),true)
+	rm -rf $(builddir)/tools
+	install -d $(builddir)/tools
+	for i in *; do $(LN) $(CURDIR)/$$i $(builddir)/tools/; done
+	rm $(builddir)/tools/tools
+	rsync -a tools/ $(builddir)/tools/tools/
+
+	install -d $(toolsbin)
+	install -d $(toolssbin)
+	install -d $(toolsman)/man1
+	install -d $(toolsman)/man8
+	install -d $(toolsbashcomp)
+	install -d $(toolspython)
+
+	install -m755 debian/tools/generic $(toolsbin)/usbip
+	install -m755 debian/tools/generic $(toolsbin)/usbipd
+	install -m644 $(CURDIR)/tools/usb/usbip/doc/*.8 $(toolsman)/man8/
+
+	install -m755 debian/tools/generic $(toolsbin)/cpupower
+	install -m644 $(CURDIR)/tools/power/cpupower/man/*.1 $(toolsman)/man1/
+
+	install -m755 debian/tools/generic $(toolsbin)/rtla
+
+	install -m755 debian/tools/generic $(toolsbin)/perf
+
+	install -m755 debian/tools/generic $(toolssbin)/bpftool
+	make -C $(builddir)/tools/tools/bpf/bpftool doc
+	install -m644 $(builddir)/tools/tools/bpf/bpftool/Documentation/*.8 \
+		$(toolsman)/man8
+	install -m644 $(builddir)/tools/tools/bpf/bpftool/bash-completion/bpftool \
+		$(toolsbashcomp)
+
+	install -m755 debian/tools/generic $(toolsbin)/x86_energy_perf_policy
+	install -m755 debian/tools/generic $(toolsbin)/turbostat
+
+	cd $(builddir)/tools/tools/perf && make NO_LIBTRACEEVENT=1 man
+	install -m644 $(builddir)/tools/tools/perf/Documentation/*.1 \
+		$(toolsman)/man1
+
+	install -m644 $(CURDIR)/tools/power/x86/x86_energy_perf_policy/*.8 $(toolsman)/man8
+	install -m644 $(CURDIR)/tools/power/x86/turbostat/*.8 $(toolsman)/man8
+
+ifeq ($(do_tools_perf_python),true)
+	# Python wrapper module for python-perf
+	install -d $(toolspython)/perf
+	install -m755 debian/tools/python-perf.py $(toolspython)/perf/__init__.py
+endif
+
+ifeq ($(do_tools_acpidbg),true)
+	install -m755 debian/tools/generic $(toolsbin)/acpidbg
+endif
+
+endif
+
+ifeq ($(do_tools_host),true)
+	install -d $(hosttoolsbin)
+	install -d $(hosttoolsman)/man1
+	install -d $(hosttoolssystemd)
+
+	install -m 755 $(CURDIR)/tools/kvm/kvm_stat/kvm_stat $(hosttoolsbin)/
+	install -m 644 $(CURDIR)/tools/kvm/kvm_stat/kvm_stat.service \
+		$(hosttoolssystemd)/
+
+	cd $(builddir)/tools/tools/kvm/kvm_stat && make NO_LIBTRACEEVENT=1 man
+	install -m644 $(builddir)/tools/tools/kvm/kvm_stat/*.1 \
+		$(hosttoolsman)/man1
+endif
+
+$(stampdir)/stamp-prepare-indep:
+	@echo Debug: $@
+	dh_prep -i
+	$(stamp)
+
+.PHONY: install-indep
+install-indep: $(stampdir)/stamp-install-headers install-source install-tools
+	@echo Debug: $@
+
+# This is just to make it easy to call manually. Normally done in
+# binary-indep target during builds.
+.PHONY: binary-headers
+binary-headers: $(stampdir)/stamp-prepare-indep $(stampdir)/stamp-install-headers
+	@echo Debug: $@
+	dh_installchangelogs -p$(pkg_indep_headers)
+	dh_installdocs -p$(pkg_indep_headers)
+	dh_compress -p$(pkg_indep_headers)
+	dh_fixperms -p$(pkg_indep_headers)
+	dh_installdeb -p$(pkg_indep_headers)
+	$(lockme) dh_gencontrol -p$(pkg_indep_headers)
+	dh_md5sums -p$(pkg_indep_headers)
+	dh_builddeb -p$(pkg_indep_headers)
+
+binary-indep: hosttoolspkg = $(pkg_tools_host)
+binary-indep: install-indep
+	@echo Debug: $@
+	dh_installchangelogs -i
+	dh_installdocs -i
+	dh_compress -i
+	dh_fixperms -i
+ifeq ($(do_tools_host),true)
+	# Keep kvm_stat.service disabled by default (after dh_systemd_enable
+	# and dh_systemd_start:
+	dh_installinit -p$(hosttoolspkg) --no-enable --no-start --name kvm_stat
+endif
+	dh_installdeb -i
+	$(lockme) dh_gencontrol -i
+	dh_md5sums -i
+	dh_builddeb -i
+
+checks-%:
+	@echo Debug: $@
+
+# Check the config against the known options list.
+config-prepare-check-%: $(stampdir)/stamp-prepare-tree-%
+	@echo Debug: $@
+ifneq ($(do_skip_checks),true)
+	$(PYTHON) debian/scripts/misc/annotations -f $(commonconfdir)/annotations \
+		--arch $(arch) --flavour $* --check $(builddir)/build-$*/.config
+endif
+
+control_files := debian/control.stub.in
+ifeq ($(pkg_source),linux)
+	control_files += debian/control.d/linux-libc-dev.stub
+	control_files += debian/control.d/linux-tools-common.stub
+	control_files += debian/control.d/linux-tools-host.stub
+	control_files += debian/control.d/linux-source.stub
+	control_files += debian/control.d/linux-doc.stub
+endif
+
+.PHONY: debian/control
+debian/control:					\
+		$(control_files)			\
+		debian/changelog			\
+		$(wildcard debian/control.d/*)
+	for i in $(control_files); do                                           \
+	  cat $$i;                                                              \
+	  echo "";                                                              \
+	done | sed -e 's/PKGVER/$(release)/g'                                   \
+		-e 's/ARCH/$(arch)/g'						\
+	        -e 's/ABINUM/$(abinum)/g'                                       \
+		-e 's/SRCPKGNAME/$(pkg_source)/g'				\
+		-e 's/=HUMAN=/$(human_arch)/g'					\
+		-e 's/=SERIES=/$(series)/g'                                     \
+		-e 's/\(^Build-Depends:$$\)/\1\n$(GCC_BUILD_DEPENDS)/g'         \
+	  > $@;
+	cat debian/control.d/flavour-control.stub debian/control.d/flavour-buildinfo.stub$(if $(filter true,$(do_metas)), debian/control.d/flavour-meta.stub) | sed	\
+		-e '/^[ 	]*#/d'			\
+		-e 's/FLAVOUR/$(flavour)/g'		\
+		-e 's/DESC/$(desc)/g'			\
+		-e 's/ARCH/$(arch)/g'			\
+		-e 's/SUPPORTED/$(supported)/g'		\
+		-e 's/TARGET/$(target)/g'		\
+		-e 's/BOOTLOADER/$(bootloader)/g' 	\
+		-e 's/=PROVIDES=/$(provides)/g'		\
+		-e 's/=CONFLICTS=/$(conflicts)/g'	\
+		-e 's/PKGVER/$(release)/g'		\
+		-e 's/ABINUM/$(abinum)/g'		\
+		-e 's/SRCPKGNAME/$(pkg_source)/g'	\
+		-e 's/=HUMAN=/$(human_arch)/g'		\
+		-e 's/=SERIES=/$(series)/g'		\
+		>> $@
