@@ -1,0 +1,6 @@
+linux-premier (6.6.21-1.1) noble; urgency=medium
+
+  First build of the SiFive kernel for the HiFive Premier P550 board featuring
+  the ESWIN EIC7700 SoC.
+
+ -- Emil Renner Berthing <emil.renner.berthing@canonical.com>  Mon, 02 Sep 2024 12:36:52 +0200
