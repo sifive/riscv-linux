@@ -1,0 +1,36 @@
+Package: linux-headers-FLAVOUR
+Architecture: ARCH
+Section: kernel
+Depends: ${misc:Depends}, linux-headers-PKGVER-ABINUM-FLAVOUR
+Description: Linux kernel headers for DESC
+ This package will always depend on the latest FLAVOUR kernel headers
+ available.
+
+Package: linux-image-FLAVOUR
+Architecture: ARCH
+Section: kernel
+Provides: wireguard-modules (= 1.0.0)
+Depends: ${misc:Depends}, linux-image-PKGVER-ABINUM-FLAVOUR, linux-modules-PKGVER-ABINUM-FLAVOUR, linux-firmware
+Description: Linux kernel image for DESC
+ This package will always depend on the latest FLAVOUR kernel image
+ available.
+
+Package: linux-tools-FLAVOUR
+Architecture: ARCH
+Section: kernel
+Provides: linux-tools
+Depends: ${misc:Depends}, linux-tools-PKGVER-ABINUM-FLAVOUR
+Description: Linux kernel tools for DESC
+ This package will always depend on the latest FLAVOUR kernel tools
+ available.
+
+Package: linux-FLAVOUR
+Architecture: ARCH
+Section: kernel
+Provides: ${test:provides-full-preferred}
+Depends: ${misc:Depends}, linux-image-FLAVOUR (= ${binary:Version}), linux-headers-FLAVOUR (= ${binary:Version})
+Recommends: linux-tools-PKGVER-ABINUM-FLAVOUR, ubuntu-kernel-accessories
+Description: Complete Linux kernel and headers for DESC
+ This package will always depend on the latest complete FLAVOUR Linux kernel
+ and headers.
+
