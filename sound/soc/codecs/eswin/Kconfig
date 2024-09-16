@@ -1,5 +1,5 @@
 menuconfig ESWIN_SND_SOC_CODECS
-	bool "ESWIN CODEC drivers"
+	tristate "ESWIN CODEC drivers"
 	default n
 	help
 	  Say Y or M if you want to add support for codecs attached to
@@ -9,7 +9,7 @@ menuconfig ESWIN_SND_SOC_CODECS
 #if ESWIN_SND_SOC_CODECS
 
 config ESWIN_SND_ES8388_CODEC
-	bool "ESWIN Audio es8388 codec"
+	tristate "ESWIN Audio es8388 codec"
 	depends on ESWIN_SND_SOC_CODECS
 	default n
 	help
