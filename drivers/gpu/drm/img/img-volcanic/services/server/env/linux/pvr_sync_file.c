@@ -826,7 +826,7 @@ int pvr_sync_init(void)
 
 err_ioctl_init:
 	pvr_fence_context_destroy(pvr_sync_data.foreign_fence_context);
-	pvr_fence_cleanup();
+	pvr_fence_cleanup(pvr_sync_data.foreign_fence_context);
 err_out:
 	return err;
 }
@@ -835,7 +835,7 @@ void pvr_sync_deinit(void)
 {
 	pvr_sync_ioctl_deinit();
 	pvr_fence_context_destroy(pvr_sync_data.foreign_fence_context);
-	pvr_fence_cleanup();
+	pvr_fence_cleanup(pvr_sync_data.foreign_fence_context);
 }
 
 enum PVRSRV_ERROR_TAG pvr_sync_device_init(struct device *dev)

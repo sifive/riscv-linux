@@ -353,8 +353,6 @@ void PVRSRVDeviceDeinit(PVRSRV_DEVICE_NODE *psDeviceNode)
 #if defined(SUPPORT_DMA_TRANSFER)
 	PVRSRVDeInitialiseDMA(psDeviceNode);
 #endif
-
-	pvr_fence_cleanup();
 }
 
 /**************************************************************************/ /*!

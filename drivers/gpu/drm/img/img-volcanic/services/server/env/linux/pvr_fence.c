@@ -354,6 +354,7 @@ pvr_fence_context_create_internal(struct workqueue_struct *fence_status_wq,
 	atomic_set(&fctx->fence_seqno, 0);
 	INIT_WORK(&fctx->check_status_work, pvr_fence_context_check_status);
 	INIT_WORK(&fctx->destroy_work, destroy_callback);
+	fctx->destroy_wq = create_workqueue("destroy-wq");
 	spin_lock_init(&fctx->list_lock);
 	INIT_LIST_HEAD(&fctx->signal_list);
 	INIT_LIST_HEAD(&fctx->fence_list);
@@ -506,7 +507,7 @@ static void pvr_fence_context_destroy_kref(struct kref *kref)
 
 	trace_pvr_fence_context_destroy_kref(fctx);
 
-	schedule_work(&fctx->destroy_work);
+	queue_work(fctx->destroy_wq, &fctx->destroy_work);
 }
 
 /**

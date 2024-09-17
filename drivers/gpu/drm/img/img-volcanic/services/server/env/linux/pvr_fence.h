@@ -47,7 +47,7 @@
 #include <linux/version.h>
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0))
-static inline void pvr_fence_cleanup(void)
+static inline void pvr_fence_cleanup(struct pvr_fence_context *ctx)
 {
 }
 #else
@@ -97,6 +97,8 @@ struct pvr_fence_context {
 	struct list_head deferred_free_list;
 
 	struct kref kref;
+
+	struct workqueue_struct *destroy_wq;
 	struct work_struct destroy_work;
 };
 
@@ -188,13 +190,10 @@ u32 pvr_fence_dump_info_on_stalled_ufos(struct pvr_fence_context *fctx,
 					u32 nr_ufos,
 					u32 *vaddrs);
 
-static inline void pvr_fence_cleanup(void)
+static inline void pvr_fence_cleanup(struct pvr_fence_context *ctx)
 {
-	/*
-	 * Ensure all PVR fence contexts have been destroyed, by flushing
-	 * the global workqueue.
-	 */
-	flush_scheduled_work();
+	flush_workqueue(ctx->destroy_wq);
+	destroy_workqueue(ctx->destroy_wq);
 }
 
 #if defined(PVR_FENCE_DEBUG)
