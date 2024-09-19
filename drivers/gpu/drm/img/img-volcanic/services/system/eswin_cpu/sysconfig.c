@@ -60,7 +60,7 @@ void eswin_l2_flush64(phys_addr_t addr, size_t size) {
 #endif
 void riscv_invalidate_addr(phys_addr_t addr, size_t size,IMG_BOOL virtual) {
 
- printk(KERN_ALERT "eswin:%s not implement now start 0x%x size=0x%x\n",__func__,addr,size);	
+ printk(KERN_ALERT "eswin:%s not implement now start 0x%llx size=0x%lx\n",__func__,addr,size);
 }
 void riscv_flush_addr(IMG_UINT64 cpuaddr,IMG_UINT64 bytes_size, IMG_BOOL virtual)
 {
@@ -179,8 +179,6 @@ static PHYS_HEAP_FUNCTIONS gsPhysHeapFuncs =
 	UMAPhysHeapCpuPAddrToDevPAddr,
 	/* pfnDevPAddrToCpuPAddr */
 	UMAPhysHeapDevPAddrToCpuPAddr,
-	/* pfnGetRegionId */
-	NULL,
 };
 
 static PVRSRV_ERROR PhysHeapsCreate(PHYS_HEAP_CONFIG **ppasPhysHeapsOut,
