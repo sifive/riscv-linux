@@ -214,11 +214,7 @@ static inline struct axi_dma_chan *dchan_to_axi_dma_chan(struct dma_chan *dchan)
 #define UNUSED_CHANNEL		0x3F /* Set unused DMA channel to 0x3F */
 #define DMA_APB_HS_SEL_BIT_SIZE	0x08 /* HW handshake bits per channel */
 #define DMA_APB_HS_SEL_MASK	0xFF /* HW handshake select masks */
-#ifdef CONFIG_SOC_SIFIVE_EIC7700
-#define MAX_BLOCK_SIZE		0x80000 /* 1024 blocks * 512 bytes data width */
-#else
 #define MAX_BLOCK_SIZE		0x1000 /* 1024 blocks * 4 bytes data width */
-#endif
 #define DMA_REG_MAP_CH_REF	0x08 /* Channel count to choose register map */
 
 /* DMAC_CFG */
