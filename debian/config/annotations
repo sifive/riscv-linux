@@ -1261,6 +1261,7 @@ CONFIG_BOSCH_BNO055_I2C                         policy<{'riscv64': 'm'}>
 CONFIG_BOSCH_BNO055_SERIAL                      policy<{'riscv64': 'm'}>
 CONFIG_BPF                                      policy<{'riscv64': 'y'}>
 CONFIG_BPFILTER                                 policy<{'riscv64': 'y'}>
+CONFIG_BPFILTER_UMH                             policy<{'riscv64': 'm'}>
 CONFIG_BPF_EVENTS                               policy<{'riscv64': 'y'}>
 CONFIG_BPF_JIT                                  policy<{'riscv64': 'y'}>
 CONFIG_BPF_JIT_ALWAYS_ON                        policy<{'riscv64': 'y'}>
@@ -2075,6 +2076,7 @@ CONFIG_DEBUG_GPIO                               policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_INFO_BTF                           policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_INFO_COMPRESSED_NONE               policy<{'riscv64': 'y'}>
 CONFIG_DEBUG_INFO_COMPRESSED_ZLIB               policy<{'riscv64': 'n'}>
+CONFIG_DEBUG_INFO_COMPRESSED_ZSTD               policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_INFO_DWARF4                        policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_INFO_DWARF5                        policy<{'riscv64': 'y'}>
 CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT       policy<{'riscv64': 'n'}>
@@ -6466,9 +6468,7 @@ CONFIG_RAID_ATTRS                               policy<{'riscv64': 'm'}>
 CONFIG_RANDOM32_SELFTEST                        policy<{'riscv64': 'n'}>
 CONFIG_RANDOMIZE_BASE                           policy<{'riscv64': 'y'}>
 CONFIG_RANDOM_KMALLOC_CACHES                    policy<{'riscv64': 'y'}>
-CONFIG_RANDSTRUCT_FULL                          policy<{'riscv64': 'n'}>
 CONFIG_RANDSTRUCT_NONE                          policy<{'riscv64': 'y'}>
-CONFIG_RANDSTRUCT_PERFORMANCE                   policy<{'riscv64': 'n'}>
 CONFIG_RAPIDIO                                  policy<{'riscv64': 'y'}>
 CONFIG_RAPIDIO_CHMAN                            policy<{'riscv64': 'm'}>
 CONFIG_RAPIDIO_CPS_GEN2                         policy<{'riscv64': 'm'}>
@@ -7043,6 +7043,7 @@ CONFIG_RXKAD                                    policy<{'riscv64': 'y'}>
 CONFIG_RXPERF                                   policy<{'riscv64': 'm'}>
 CONFIG_S2IO                                     policy<{'riscv64': 'm'}>
 CONFIG_SAMPLES                                  policy<{'riscv64': 'y'}>
+CONFIG_SAMPLE_AUXDISPLAY                        policy<{'riscv64': 'n'}>
 CONFIG_SAMPLE_CONFIGFS                          policy<{'riscv64': 'n'}>
 CONFIG_SAMPLE_KDB                               policy<{'riscv64': 'n'}>
 CONFIG_SAMPLE_KFIFO                             policy<{'riscv64': 'n'}>
@@ -7056,6 +7057,7 @@ CONFIG_SAMPLE_VFIO_MDEV_MBOCHS                  policy<{'riscv64': 'n'}>
 CONFIG_SAMPLE_VFIO_MDEV_MDPY                    policy<{'riscv64': 'n'}>
 CONFIG_SAMPLE_VFIO_MDEV_MDPY_FB                 policy<{'riscv64': 'n'}>
 CONFIG_SAMPLE_VFIO_MDEV_MTTY                    policy<{'riscv64': 'n'}>
+CONFIG_SAMPLE_WATCHDOG                          policy<{'riscv64': 'n'}>
 CONFIG_SATA_ACARD_AHCI                          policy<{'riscv64': 'm'}>
 CONFIG_SATA_AHCI                                policy<{'riscv64': 'm'}>
 CONFIG_SATA_DWC                                 policy<{'riscv64': 'm'}>
