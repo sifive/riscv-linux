@@ -1,3 +1,9 @@
+linux-premier (6.6.21-3.1) noble; urgency=medium
+
+  * Reverted compiler configs
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Fri, 27 Sep 2024 04:55:26 +0000
+
 linux-premier (6.6.21-2.1) noble; urgency=medium
 
   * Kernel for Hifive-premier-p550 board
