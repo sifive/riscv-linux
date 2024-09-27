@@ -1,3 +1,9 @@
+linux-premier (6.6.21-4.1) noble; urgency=medium
+
+  * Reverted configs to fix config-check build errors
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Fri, 27 Sep 2024 08:43:33 +0000
+
 linux-premier (6.6.21-3.1) noble; urgency=medium
 
   * Reverted compiler configs
