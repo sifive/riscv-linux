@@ -886,9 +886,10 @@ CONFIG_ASYNC_RAID6_TEST                         policy<{'riscv64': 'n'}>
 CONFIG_ASYNC_TX_DMA                             policy<{'riscv64': 'y'}>
 CONFIG_ASYNC_XOR                                policy<{'riscv64': 'm'}>
 CONFIG_AS_HAS_INSN                              policy<{'riscv64': 'y'}>
+CONFIG_AS_HAS_NON_CONST_LEB128                  policy<{'riscv64': 'y'}>
 CONFIG_AS_HAS_OPTION_ARCH                       policy<{'riscv64': 'y'}>
 CONFIG_AS_IS_GNU                                policy<{'riscv64': 'y'}>
-CONFIG_AS_VERSION                               policy<{'riscv64': '24000'}>
+CONFIG_AS_VERSION                               policy<{'riscv64': '24100'}>
 CONFIG_AT76C50X_USB                             policy<{'riscv64': 'm'}>
 CONFIG_AT803X_PHY                               policy<{'riscv64': 'm'}>
 CONFIG_ATA                                      policy<{'riscv64': 'y'}>
@@ -1471,6 +1472,8 @@ CONFIG_CB710_DEBUG                              policy<{'riscv64': 'n'}>
 CONFIG_CB710_DEBUG_ASSUMPTIONS                  policy<{'riscv64': 'y'}>
 CONFIG_CC10001_ADC                              policy<{'riscv64': 'm'}>
 CONFIG_CCS811                                   policy<{'riscv64': 'm'}>
+CONFIG_CC_CAN_LINK                              policy<{'riscv64': 'y'}>
+CONFIG_CC_CAN_LINK_STATIC                       policy<{'riscv64': 'y'}>
 CONFIG_CC_HAS_ASM_GOTO_OUTPUT                   policy<{'riscv64': 'y'}>
 CONFIG_CC_HAS_ASM_GOTO_TIED_OUTPUT              policy<{'riscv64': 'y'}>
 CONFIG_CC_HAS_ASM_INLINE                        policy<{'riscv64': 'y'}>
@@ -1489,7 +1492,7 @@ CONFIG_CC_IS_GCC                                policy<{'riscv64': 'y'}>
 CONFIG_CC_NO_ARRAY_BOUNDS                       policy<{'riscv64': 'y'}>
 CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE              policy<{'riscv64': 'y'}>
 CONFIG_CC_OPTIMIZE_FOR_SIZE                     policy<{'riscv64': 'n'}>
-CONFIG_CC_VERSION_TEXT                          policy<{'riscv64': '"riscv64-unknown-linux-gnu-gcc (g2ee5e430018) 12.2.0"'}>
+CONFIG_CC_VERSION_TEXT                          policy<{'riscv64': '"riscv64-linux-gnu-gcc-13 (Ubuntu 13.2.0-6ubuntu1) 13.2.0"'}>
 CONFIG_CDNS_I3C_MASTER                          policy<{'riscv64': 'm'}>
 CONFIG_CDROM                                    policy<{'riscv64': 'y'}>
 CONFIG_CDROM_PKTCDVD                            policy<{'riscv64': 'n'}>
@@ -3074,10 +3077,8 @@ CONFIG_GAMEPORT_FM801                           policy<{'riscv64': 'm'}>
 CONFIG_GARP                                     policy<{'riscv64': 'm'}>
 CONFIG_GCC11_NO_ARRAY_BOUNDS                    policy<{'riscv64': 'y'}>
 CONFIG_GCC_ASM_GOTO_OUTPUT_WORKAROUND           policy<{'riscv64': 'y'}>
-CONFIG_GCC_PLUGINS                              policy<{'riscv64': 'y'}>
-CONFIG_GCC_PLUGIN_LATENT_ENTROPY                policy<{'riscv64': 'n'}>
 CONFIG_GCC_SUPPORTS_DYNAMIC_FTRACE              policy<{'riscv64': 'y'}>
-CONFIG_GCC_VERSION                              policy<{'riscv64': '120200'}>
+CONFIG_GCC_VERSION                              policy<{'riscv64': '130200'}>
 CONFIG_GCOV_KERNEL                              policy<{'riscv64': 'n'}>
 CONFIG_GDB_SCRIPTS                              policy<{'riscv64': 'y'}>
 CONFIG_GEMINI_ETHERNET                          policy<{'riscv64': 'm'}>
@@ -6002,8 +6003,9 @@ CONFIG_PAGE_REPORTING                           policy<{'riscv64': 'y'}>
 CONFIG_PAGE_SIZE_LESS_THAN_256KB                policy<{'riscv64': 'y'}>
 CONFIG_PAGE_SIZE_LESS_THAN_64KB                 policy<{'riscv64': 'y'}>
 CONFIG_PAGE_TABLE_CHECK                         policy<{'riscv64': 'n'}>
+CONFIG_PAHOLE_HAS_LANG_EXCLUDE                  policy<{'riscv64': 'y'}>
 CONFIG_PAHOLE_HAS_SPLIT_BTF                     policy<{'riscv64': 'y'}>
-CONFIG_PAHOLE_VERSION                           policy<{'riscv64': '121'}>
+CONFIG_PAHOLE_VERSION                           policy<{'riscv64': '125'}>
 CONFIG_PALMAS_GPADC                             policy<{'riscv64': 'm'}>
 CONFIG_PANEL                                    policy<{'riscv64': 'm'}>
 CONFIG_PANEL_CHANGE_MESSAGE                     policy<{'riscv64': 'n'}>
@@ -7030,6 +7032,7 @@ CONFIG_RTW89_DEBUGMSG                           policy<{'riscv64': 'y'}>
 CONFIG_RTW89_PCI                                policy<{'riscv64': 'm'}>
 CONFIG_RT_MUTEXES                               policy<{'riscv64': 'y'}>
 CONFIG_RUNTIME_TESTING_MENU                     policy<{'riscv64': 'y'}>
+CONFIG_RUST_IS_AVAILABLE                        policy<{'riscv64': 'y'}>
 CONFIG_RV                                       policy<{'riscv64': 'y'}>
 CONFIG_RV_MON_WWNR                              policy<{'riscv64': 'y'}>
 CONFIG_RV_REACTORS                              policy<{'riscv64': 'y'}>
