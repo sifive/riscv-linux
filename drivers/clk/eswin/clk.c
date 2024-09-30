@@ -282,6 +282,14 @@ static int eswin_calc_pll(u32 *frac_val, u32 *postdiv1_val,
 	return ret;
 }
 
+static bool cpu_no_boost_1_6ghz = false;
+static int __init cpu_no_boost_1_6ghz_setup(char *__unused)
+{
+	cpu_no_boost_1_6ghz = true;
+	return 1;
+}
+__setup("cpu_no_boost_1_6ghz", cpu_no_boost_1_6ghz_setup);
+
 #define to_pll_clk(_hw) container_of(_hw, struct eswin_clk_pll, hw)
 static int clk_pll_set_rate(struct clk_hw *hw,
 			    unsigned long rate,
@@ -299,6 +307,7 @@ static int clk_pll_set_rate(struct clk_hw *hw,
 	char clk_cpu_mux_name[50] = {0};
 	char clk_cpu_lp_pll_name[50] = {0};
 	char clk_cpu_pll_name[50] = {0};
+	enum voltage_level cpu_target_volatge;
 
 	ret = eswin_calc_pll(&frac_val, &postdiv1_val, &fbdiv_val, &refdiv_val, (u64)rate, clk);
 	if (ret) {
@@ -349,15 +358,32 @@ static int clk_pll_set_rate(struct clk_hw *hw,
 		switch (rate) {
 			case CLK_FREQ_1800M:
 			case CLK_FREQ_1700M:
-			case CLK_FREQ_1600M:
-				ret = eswin_clk_set_cpu_volatge(clk->cpu_voltage_gpio, VOLTAGE_0_9V);
+				cpu_target_volatge = VOLTAGE_0_9V;
+				ret = eswin_clk_set_cpu_volatge(clk->cpu_voltage_gpio, cpu_target_volatge);
 				if (ret) {
-					pr_warn("Failed to change cpu volatge to 0.9V, not support rate %ld\n",  rate);
+					pr_warn("failed to change cpu volatge to %d mV, not support rate %ld\n",
+						cpu_target_volatge, rate);
 					goto switch_back;
 				} else {
-					if (clk->cpu_current_volatge != VOLTAGE_0_9V) {
-						pr_info("Cpu volatge change to 0.9V, target rate %ld\n", rate);
-						clk->cpu_current_volatge = VOLTAGE_0_9V;
+					if (clk->cpu_current_volatge != cpu_target_volatge) {
+						pr_info("cpu volatge change to %d mV, target rate %ld\n",
+							cpu_target_volatge, rate);
+						clk->cpu_current_volatge = cpu_target_volatge;
+					}
+				}
+				break;
+			case CLK_FREQ_1600M:
+				cpu_target_volatge = true == cpu_no_boost_1_6ghz ? VOLTAGE_0_8V : VOLTAGE_0_9V;
+				ret = eswin_clk_set_cpu_volatge(clk->cpu_voltage_gpio, cpu_target_volatge);
+				if (ret) {
+					pr_warn("failed to change cpu volatge to %d mV, not support rate %ld\n",
+						cpu_target_volatge , rate);
+					goto switch_back;
+				} else {
+					if (clk->cpu_current_volatge != cpu_target_volatge) {
+						pr_info("cpu volatge change to %d mV, target rate %ld\n",
+							cpu_target_volatge, rate);
+						clk->cpu_current_volatge = cpu_target_volatge;
 					}
 				}
 				break;
@@ -365,7 +391,8 @@ static int clk_pll_set_rate(struct clk_hw *hw,
 				ret = eswin_clk_set_cpu_volatge(clk->cpu_voltage_gpio, VOLTAGE_0_8V);
 				if (!ret) {
 					if (clk->cpu_current_volatge != VOLTAGE_0_8V) {
-						pr_info("cpu volatge change to 0.8V, target rate %ld\n", rate);
+						pr_info("cpu volatge change to %d mV, target rate %ld\n",
+							VOLTAGE_0_8V, rate);
 						clk->cpu_current_volatge = VOLTAGE_0_8V;
 					}
 				}
@@ -653,7 +680,7 @@ void eswin_clk_register_pll(struct eswin_pll_clock *clks,
 
 		p_clk->hw.init = &init;
 		p_clk->cpu_voltage_gpio = cpu_voltage_gpio;
-
+		p_clk->cpu_current_volatge = VOLTAGE_0_8V;
 		clk = clk_register(dev, &p_clk->hw);
 		if (IS_ERR(clk)) {
 			devm_kfree(dev, p_clk);
