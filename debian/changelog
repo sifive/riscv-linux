@@ -1,3 +1,9 @@
+linux-premier (6.6.21-5.1) noble; urgency=medium
+
+  * Fixed desktop freeze and i2s crash issue
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Thu, 10 Oct 2024 11:33:02 +0000
+
 linux-premier (6.6.21-4.1) noble; urgency=medium
 
   * Reverted configs to fix config-check build errors
