@@ -238,7 +238,7 @@ CONFIG_KGDB_SERIAL_CONSOLE                      policy<{'riscv64': 'y'}>
 CONFIG_KGDB_SERIAL_CONSOLE                      note<'early debugging support'>
 
 CONFIG_KVM                                      policy<{'riscv64': 'y'}>
-CONFIG_KVM                                      note<'TODO: update note'>
+CONFIG_KVM                                      note<'LP: #1532886'>
 
 CONFIG_LATENCYTOP                               policy<{'riscv64': 'y'}>
 CONFIG_LATENCYTOP                               note<'LP: #2051342'>
@@ -262,10 +262,10 @@ CONFIG_MMC_BLOCK                                policy<{'riscv64': 'y'}>
 CONFIG_MMC_BLOCK                                note<'boot essential on armhf/arm64'>
 
 CONFIG_MMC_SDHCI                                policy<{'riscv64': 'y'}>
-CONFIG_MMC_SDHCI                                note<'TODO: update note'>
+CONFIG_MMC_SDHCI                                note<'installation essential on omap/highbank'>
 
 CONFIG_MMC_SDHCI_PLTFM                          policy<{'riscv64': 'y'}>
-CONFIG_MMC_SDHCI_PLTFM                          note<'TODO: update note'>
+CONFIG_MMC_SDHCI_PLTFM                          note<'boot essential on highbank'>
 
 CONFIG_MODULE_COMPRESS_ZSTD                     policy<{'riscv64': 'y'}>
 CONFIG_MODULE_COMPRESS_ZSTD                     note<'LP: #2028568'>
@@ -878,13 +878,7 @@ CONFIG_ASM_MODVERSIONS                          policy<{'riscv64': 'y'}>
 CONFIG_ASN1                                     policy<{'riscv64': 'y'}>
 CONFIG_ASN1_ENCODER                             policy<{'riscv64': 'y'}>
 CONFIG_ASSOCIATIVE_ARRAY                        policy<{'riscv64': 'y'}>
-CONFIG_ASYNC_CORE                               policy<{'riscv64': 'm'}>
-CONFIG_ASYNC_MEMCPY                             policy<{'riscv64': 'm'}>
-CONFIG_ASYNC_PQ                                 policy<{'riscv64': 'm'}>
-CONFIG_ASYNC_RAID6_RECOV                        policy<{'riscv64': 'm'}>
-CONFIG_ASYNC_RAID6_TEST                         policy<{'riscv64': 'n'}>
 CONFIG_ASYNC_TX_DMA                             policy<{'riscv64': 'y'}>
-CONFIG_ASYNC_XOR                                policy<{'riscv64': 'm'}>
 CONFIG_AS_HAS_INSN                              policy<{'riscv64': 'y'}>
 CONFIG_AS_HAS_NON_CONST_LEB128                  policy<{'riscv64': 'y'}>
 CONFIG_AS_HAS_OPTION_ARCH                       policy<{'riscv64': 'y'}>
@@ -2207,7 +2201,7 @@ CONFIG_DM_EBS                                   policy<{'riscv64': 'm'}>
 CONFIG_DM_ERA                                   policy<{'riscv64': 'm'}>
 CONFIG_DM_FLAKEY                                policy<{'riscv64': 'm'}>
 CONFIG_DM_INIT                                  policy<{'riscv64': 'y'}>
-CONFIG_DM_INTEGRITY                             policy<{'riscv64': 'm'}>
+CONFIG_DM_INTEGRITY                             policy<{'riscv64': 'n'}>
 CONFIG_DM_LOG_USERSPACE                         policy<{'riscv64': 'm'}>
 CONFIG_DM_LOG_WRITES                            policy<{'riscv64': 'm'}>
 CONFIG_DM_MIRROR                                policy<{'riscv64': 'm'}>
@@ -2217,7 +2211,7 @@ CONFIG_DM_MULTIPATH_IOA                         policy<{'riscv64': 'm'}>
 CONFIG_DM_MULTIPATH_QL                          policy<{'riscv64': 'm'}>
 CONFIG_DM_MULTIPATH_ST                          policy<{'riscv64': 'm'}>
 CONFIG_DM_PERSISTENT_DATA                       policy<{'riscv64': 'm'}>
-CONFIG_DM_RAID                                  policy<{'riscv64': 'm'}>
+CONFIG_DM_RAID                                  policy<{'riscv64': 'n'}>
 CONFIG_DM_SNAPSHOT                              policy<{'riscv64': 'm'}>
 CONFIG_DM_SWITCH                                policy<{'riscv64': 'm'}>
 CONFIG_DM_THIN_PROVISIONING                     policy<{'riscv64': 'm'}>
@@ -3797,7 +3791,7 @@ CONFIG_INITRAMFS_FORCE                          policy<{'riscv64': 'n'}>
 CONFIG_INITRAMFS_PRESERVE_MTIME                 policy<{'riscv64': 'y'}>
 CONFIG_INITRAMFS_SOURCE                         policy<{'riscv64': '""'}>
 CONFIG_INIT_ENV_ARG_LIMIT                       policy<{'riscv64': '32'}>
-CONFIG_INIT_ON_ALLOC_DEFAULT_ON                 policy<{'riscv64': 'y'}>
+CONFIG_INIT_ON_ALLOC_DEFAULT_ON                 policy<{'riscv64': 'n'}>
 CONFIG_INIT_ON_FREE_DEFAULT_ON                  policy<{'riscv64': 'n'}>
 CONFIG_INIT_STACK_ALL_PATTERN                   policy<{'riscv64': 'n'}>
 CONFIG_INIT_STACK_ALL_ZERO                      policy<{'riscv64': 'y'}>
@@ -4660,10 +4654,10 @@ CONFIG_MD_CLUSTER                               policy<{'riscv64': 'm'}>
 CONFIG_MD_FAULTY                                policy<{'riscv64': 'm'}>
 CONFIG_MD_LINEAR                                policy<{'riscv64': 'm'}>
 CONFIG_MD_MULTIPATH                             policy<{'riscv64': 'm'}>
-CONFIG_MD_RAID0                                 policy<{'riscv64': 'm'}>
-CONFIG_MD_RAID1                                 policy<{'riscv64': 'm'}>
-CONFIG_MD_RAID10                                policy<{'riscv64': 'm'}>
-CONFIG_MD_RAID456                               policy<{'riscv64': 'm'}>
+CONFIG_MD_RAID0                                 policy<{'riscv64': 'n'}>
+CONFIG_MD_RAID1                                 policy<{'riscv64': 'n'}>
+CONFIG_MD_RAID10                                policy<{'riscv64': 'n'}>
+CONFIG_MD_RAID456                               policy<{'riscv64': 'n'}>
 CONFIG_MEDIATEK_GE_PHY                          policy<{'riscv64': 'm'}>
 CONFIG_MEDIATEK_GE_SOC_PHY                      policy<{'riscv64': 'n'}>
 CONFIG_MEDIATEK_MT6360_ADC                      policy<{'riscv64': 'm'}>
