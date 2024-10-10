@@ -28,7 +28,7 @@
  */
 #define MEMORY_SIZE_H		0x4
 #define MEMORY_SIZE_L		0x0
-#define CMA_SIZE		0x10000000
+#define CMA_SIZE		0x20000000
 
 #include "eic7700.dtsi"
 #include "hifive-premier-p550-pinctrl.dtsi"
@@ -242,7 +242,7 @@
 };
 
 &virtual_display {
-    status = "okay";
+    status = "disabled";
 };
 
 &dsi_output {
