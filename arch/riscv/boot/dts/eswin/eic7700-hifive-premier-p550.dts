@@ -373,7 +373,7 @@
 
 &sdio1 {
 	/* wifi module */
-	status = "disabled";
+	status = "okay";
 	delay_code = <0x29>;
 	drive-impedance-ohm = <33>;
 	enable-cmd-pullup;
