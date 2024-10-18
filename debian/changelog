@@ -1,3 +1,9 @@
+linux-premier (6.6.21-6.1) noble; urgency=medium
+
+  * Enabled sdio1 and optimized configs
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Fri, 18 Oct 2024 16:40:56 +0000
+
 linux-premier (6.6.21-5.1) noble; urgency=medium
 
   * Fixed desktop freeze and i2s crash issue
