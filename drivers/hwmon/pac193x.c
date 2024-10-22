@@ -761,7 +761,7 @@ static int pac193x_probe(struct i2c_client *client)
 		dev_err(dev, "can not get energy_acc_count:%d\n", ret);
 		data->energy_acc_count = 0;
 	}
-	ret = of_property_read_u32_array(dev->of_node, "sense_resistances",
+	ret = of_property_read_u32_array(dev->of_node, "shunt_resistors",
 					 data->sense_resistances,
 					 PAC193X_MAX_CHAN_CNT);
 	if (0 != ret) {
