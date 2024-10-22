@@ -1678,6 +1678,10 @@ static int dw_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_SLAVE, dw->dma.cap_mask);
 	dma_cap_set(DMA_CYCLIC, dw->dma.cap_mask);
 
+	if (of_node_name_prefix(chip->dev->of_node, "dma-controller-aon")) {
+		dma_cap_set(DMA_PRIVATE, dw->dma.cap_mask);
+	}
+
 	/* DMA capabilities */
 #ifdef CONFIG_SOC_SIFIVE_EIC7700
 	dw->dma.chancnt = hdata->nr_channels;
