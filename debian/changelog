@@ -1,3 +1,9 @@
+linux-premier (6.6.21-7.1) noble; urgency=medium
+
+  * Optimized configs, fixed usb boot issue and bootlog errors
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Wed, 23 Oct 2024 17:14:07 +0000
+
 linux-premier (6.6.21-6.1) noble; urgency=medium
 
   * Enabled sdio1 and optimized configs
