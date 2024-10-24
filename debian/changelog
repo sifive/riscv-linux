@@ -1,3 +1,9 @@
+linux-premier (6.6.21-8.1) noble; urgency=medium
+
+  * Disabled kernel debug configs 
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Thu, 24 Oct 2024 08:04:20 +0000
+
 linux-premier (6.6.21-7.1) noble; urgency=medium
 
   * Optimized configs, fixed usb boot issue and bootlog errors
