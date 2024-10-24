@@ -1649,17 +1649,10 @@ CONFIG_DEBUG_FS_ALLOW_ALL                       policy<{'riscv64': 'y'}>
 CONFIG_DEBUG_FS_ALLOW_NONE                      policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_FS_DISALLOW_MOUNT                  policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_GPIO                               policy<{'riscv64': 'n'}>
-CONFIG_DEBUG_INFO                               policy<{'riscv64': 'y'}>
-CONFIG_DEBUG_INFO_BTF                           policy<{'riscv64': 'n'}>
-CONFIG_DEBUG_INFO_COMPRESSED_NONE               policy<{'riscv64': 'y'}>
-CONFIG_DEBUG_INFO_COMPRESSED_ZLIB               policy<{'riscv64': 'n'}>
-CONFIG_DEBUG_INFO_COMPRESSED_ZSTD               policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_INFO_DWARF4                        policy<{'riscv64': 'n'}>
-CONFIG_DEBUG_INFO_DWARF5                        policy<{'riscv64': 'y'}>
+CONFIG_DEBUG_INFO_DWARF5                        policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT       policy<{'riscv64': 'n'}>
-CONFIG_DEBUG_INFO_NONE                          policy<{'riscv64': 'n'}>
-CONFIG_DEBUG_INFO_REDUCED                       policy<{'riscv64': 'n'}>
-CONFIG_DEBUG_INFO_SPLIT                         policy<{'riscv64': 'n'}>
+CONFIG_DEBUG_INFO_NONE                          policy<{'riscv64': 'y'}>
 CONFIG_DEBUG_IRQFLAGS                           policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_KERNEL_DC                          policy<{'riscv64': 'n'}>
 CONFIG_DEBUG_KMEMLEAK                           policy<{'riscv64': 'n'}>
@@ -2369,7 +2362,6 @@ CONFIG_GCC_ASM_GOTO_OUTPUT_WORKAROUND           policy<{'riscv64': 'y'}>
 CONFIG_GCC_SUPPORTS_DYNAMIC_FTRACE              policy<{'riscv64': 'y'}>
 CONFIG_GCC_VERSION                              policy<{'riscv64': '130200'}>
 CONFIG_GCOV_KERNEL                              policy<{'riscv64': 'n'}>
-CONFIG_GDB_SCRIPTS                              policy<{'riscv64': 'y'}>
 CONFIG_GEMINI_ETHERNET                          policy<{'riscv64': 'm'}>
 CONFIG_GENERIC_ADC_BATTERY                      policy<{'riscv64': 'n'}>
 CONFIG_GENERIC_ADC_THERMAL                      policy<{'riscv64': 'n'}>
@@ -4660,8 +4652,6 @@ CONFIG_PAGE_REPORTING                           policy<{'riscv64': 'y'}>
 CONFIG_PAGE_SIZE_LESS_THAN_256KB                policy<{'riscv64': 'y'}>
 CONFIG_PAGE_SIZE_LESS_THAN_64KB                 policy<{'riscv64': 'y'}>
 CONFIG_PAGE_TABLE_CHECK                         policy<{'riscv64': 'n'}>
-CONFIG_PAHOLE_HAS_LANG_EXCLUDE                  policy<{'riscv64': 'y'}>
-CONFIG_PAHOLE_HAS_SPLIT_BTF                     policy<{'riscv64': 'y'}>
 CONFIG_PAHOLE_VERSION                           policy<{'riscv64': '125'}>
 CONFIG_PANEL                                    policy<{'riscv64': 'm'}>
 CONFIG_PANEL_CHANGE_MESSAGE                     policy<{'riscv64': 'n'}>
