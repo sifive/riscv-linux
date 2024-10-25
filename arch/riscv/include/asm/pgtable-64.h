@@ -213,19 +213,20 @@ static inline pud_t pfn_pud(unsigned long pfn, pgprot_t prot)
 	return __pud((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 }
 
-static inline unsigned long _pud_pfn(pud_t pud)
+#define pud_pfn pud_pfn
+static inline unsigned long pud_pfn(pud_t pud)
 {
 	return __page_val_to_pfn(pud_val(pud));
 }
 
 static inline pmd_t *pud_pgtable(pud_t pud)
 {
-	return (pmd_t *)pfn_to_virt(__page_val_to_pfn(pud_val(pud)));
+	return (pmd_t *)pfn_to_virt(pud_pfn(pud));
 }
 
 static inline struct page *pud_page(pud_t pud)
 {
-	return pfn_to_page(__page_val_to_pfn(pud_val(pud)));
+	return pfn_to_page(pud_pfn(pud));
 }
 
 #define mm_p4d_folded  mm_p4d_folded
@@ -255,11 +256,6 @@ static inline pmd_t pfn_pmd(unsigned long pfn, pgprot_t prot)
 	ALT_THEAD_PMA(prot_val);
 
 	return __pmd((pfn << _PAGE_PFN_SHIFT) | prot_val);
-}
-
-static inline unsigned long _pmd_pfn(pmd_t pmd)
-{
-	return __page_val_to_pfn(pmd_val(pmd));
 }
 
 #define mk_pmd(page, prot)    pfn_pmd(page_to_pfn(page), prot)
@@ -316,7 +312,7 @@ static inline p4d_t pfn_p4d(unsigned long pfn, pgprot_t prot)
 	return __p4d((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 }
 
-static inline unsigned long _p4d_pfn(p4d_t p4d)
+static inline unsigned long p4d_pfn(p4d_t p4d)
 {
 	return __page_val_to_pfn(p4d_val(p4d));
 }
@@ -324,7 +320,7 @@ static inline unsigned long _p4d_pfn(p4d_t p4d)
 static inline pud_t *p4d_pgtable(p4d_t p4d)
 {
 	if (pgtable_l4_enabled)
-		return (pud_t *)pfn_to_virt(__page_val_to_pfn(p4d_val(p4d)));
+		return (pud_t *)pfn_to_virt(p4d_pfn(p4d));
 
 	return (pud_t *)pud_pgtable((pud_t) { p4d_val(p4d) });
 }
@@ -332,7 +328,7 @@ static inline pud_t *p4d_pgtable(p4d_t p4d)
 
 static inline struct page *p4d_page(p4d_t p4d)
 {
-	return pfn_to_page(__page_val_to_pfn(p4d_val(p4d)));
+	return pfn_to_page(p4d_pfn(p4d));
 }
 
 #define pud_index(addr) (((addr) >> PUD_SHIFT) & (PTRS_PER_PUD - 1))
@@ -378,10 +374,15 @@ static inline void pgd_clear(pgd_t *pgd)
 		set_pgd(pgd, __pgd(0));
 }
 
+static inline unsigned long pgd_pfn(pgd_t pgd)
+{
+	return __page_val_to_pfn(pgd_val(pgd));
+}
+
 static inline p4d_t *pgd_pgtable(pgd_t pgd)
 {
 	if (pgtable_l5_enabled)
-		return (p4d_t *)pfn_to_virt(__page_val_to_pfn(pgd_val(pgd)));
+		return (p4d_t *)pfn_to_virt(pgd_pfn(pgd));
 
 	return (p4d_t *)p4d_pgtable((p4d_t) { pgd_val(pgd) });
 }
@@ -389,9 +390,8 @@ static inline p4d_t *pgd_pgtable(pgd_t pgd)
 
 static inline struct page *pgd_page(pgd_t pgd)
 {
-	return pfn_to_page(__page_val_to_pfn(pgd_val(pgd)));
+	return pfn_to_page(pgd_pfn(pgd));
 }
-#define pgd_page(pgd)	pgd_page(pgd)
 
 #define p4d_index(addr) (((addr) >> P4D_SHIFT) & (PTRS_PER_P4D - 1))
 
