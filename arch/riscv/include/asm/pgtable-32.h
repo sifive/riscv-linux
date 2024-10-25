@@ -33,4 +33,8 @@
 					  _PAGE_WRITE | _PAGE_EXEC |	\
 					  _PAGE_USER | _PAGE_GLOBAL))
 
+#define pud_pfn(pud)				(pmd_pfn((pmd_t){ pud }))
+#define p4d_pfn(p4d)				(pud_pfn((pud_t){ p4d }))
+#define pgd_pfn(pgd)				(p4d_pfn((p4d_t){ pgd }))
+
 #endif /* _ASM_RISCV_PGTABLE_32_H */
