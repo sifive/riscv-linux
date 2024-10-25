@@ -258,19 +258,19 @@ static inline pgd_t pfn_pgd(unsigned long pfn, pgprot_t prot)
 	return __pgd((pfn << _PAGE_PFN_SHIFT) | prot_val);
 }
 
-static inline unsigned long _pgd_pfn(pgd_t pgd)
+static inline unsigned long pmd_pfn(pmd_t pmd)
 {
-	return __page_val_to_pfn(pgd_val(pgd));
+	return __page_val_to_pfn(pmd_val(pmd));
 }
 
 static inline struct page *pmd_page(pmd_t pmd)
 {
-	return pfn_to_page(__page_val_to_pfn(pmd_val(pmd)));
+	return pfn_to_page(pmd_pfn(pmd));
 }
 
 static inline unsigned long pmd_page_vaddr(pmd_t pmd)
 {
-	return (unsigned long)pfn_to_virt(__page_val_to_pfn(pmd_val(pmd)));
+	return (unsigned long)pfn_to_virt(pmd_pfn(pmd));
 }
 
 static inline pte_t pmd_pte(pmd_t pmd)
@@ -671,21 +671,6 @@ static inline pmd_t pmd_mkhuge(pmd_t pmd)
 static inline pmd_t pmd_mkinvalid(pmd_t pmd)
 {
 	return __pmd(pmd_val(pmd) & ~(_PAGE_PRESENT|_PAGE_PROT_NONE));
-}
-
-#define __pmd_to_phys(pmd)  (__page_val_to_pfn(pmd_val(pmd)) << PAGE_SHIFT)
-
-static inline unsigned long pmd_pfn(pmd_t pmd)
-{
-	return ((__pmd_to_phys(pmd) & PMD_MASK) >> PAGE_SHIFT);
-}
-
-#define __pud_to_phys(pud)  (__page_val_to_pfn(pud_val(pud)) << PAGE_SHIFT)
-
-#define pud_pfn pud_pfn
-static inline unsigned long pud_pfn(pud_t pud)
-{
-	return ((__pud_to_phys(pud) & PUD_MASK) >> PAGE_SHIFT);
 }
 
 static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
