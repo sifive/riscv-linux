@@ -24,8 +24,14 @@
 #include <dt-bindings/reset/eic7700-syscrg.h>
 #include <dt-bindings/clock/eic7700-clock.h>
 #include <dt-bindings/interconnect/eic7700.h>
+#include <dt-bindings/riscv/physical-memory.h>
 
 / {
+	riscv,physical-memory-regions =
+		<0x000 0x00000000 0x200 0x00000000 (PMA_RW | PMA_IO) 0x0>,
+		<0x000 0x80000000 0x00f 0x80000000 (PMA_RWXA | PMA_NONCOHERENT_MEMORY) 0x0>,
+		<0x0c0 0x00000000 0x010 0x00000000 (PMA_RWX | PMA_NONCACHEABLE_MEMORY | PMR_ALIAS(1)) 0x0>;
+
     compatible = "eswin,eic7700";
 	d0_cpu_opp_table: opp-table0 {
 		compatible = "operating-points-v2";
