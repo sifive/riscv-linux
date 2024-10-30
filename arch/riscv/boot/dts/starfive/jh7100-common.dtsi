@@ -9,8 +9,14 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/pinctrl-starfive-jh7100.h>
+#include <dt-bindings/riscv/physical-memory.h>
 
 / {
+	riscv,physical-memory-regions =
+		<0x00 0x00000000 0x40 0x00000000 (PMA_RW | PMA_IO) 0x0>,
+		<0x00 0x80000000 0x08 0x00000000 (PMA_RWXA | PMA_NONCOHERENT_MEMORY) 0x0>,
+		<0x10 0x00000000 0x08 0x00000000 (PMA_RWX | PMA_NONCACHEABLE_MEMORY | PMR_ALIAS(1)) 0x0>;
+
 	aliases {
 		serial0 = &uart3;
 	};
