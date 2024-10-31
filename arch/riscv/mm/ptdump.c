@@ -142,7 +142,7 @@ static const struct prot_bits pte_bits[] = {
 	}, {
 #endif
 #ifdef CONFIG_RISCV_ISA_SVPBMT
-		.mask = _PAGE_MTMASK_SVPBMT,
+		.mask = _PAGE_MTMASK,
 		.set = "MT(%s)",
 		.clear = "  ..  ",
 	}, {
@@ -218,10 +218,10 @@ static void dump_prot(struct pg_state *st)
 			if (pte_bits[i].mask == _PAGE_SOFT)
 				sprintf(s, pte_bits[i].set, val >> 8);
 #ifdef CONFIG_RISCV_ISA_SVPBMT
-			else if (pte_bits[i].mask == _PAGE_MTMASK_SVPBMT) {
-				if (val == _PAGE_NOCACHE_SVPBMT)
+			else if (pte_bits[i].mask == _PAGE_MTMASK) {
+				if (val == _PAGE_NOCACHE)
 					sprintf(s, pte_bits[i].set, "NC");
-				else if (val == _PAGE_IO_SVPBMT)
+				else if (val == _PAGE_IO)
 					sprintf(s, pte_bits[i].set, "IO");
 				else
 					sprintf(s, pte_bits[i].set, "??");
@@ -282,9 +282,12 @@ static void note_page(struct ptdump_state *pt_st, unsigned long addr,
 		      int level, u64 val)
 {
 	struct pg_state *st = container_of(pt_st, struct pg_state, ptdump);
-	u64 pa = PFN_PHYS(pte_pfn(__pte(val)));
 	u64 prot = 0;
+	u64 pa;
 
+	ALT_UNFIX_MT(val);
+
+	pa = PFN_PHYS(pte_pfn(__pte(val)));
 	if (level >= 0)
 		prot = val & pg_level[level].mask;
 
