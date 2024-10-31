@@ -109,9 +109,8 @@ static int __split_linear_mapping_pmd(pud_t *pudp,
 			continue;
 
 		if (pmd_leaf(pmdp_get(pmdp))) {
+			pte_t pte = pmd_pte(pmdp_get(pmdp));
 			struct page *pte_page;
-			unsigned long pfn = _pmd_pfn(pmdp_get(pmdp));
-			pgprot_t prot = __pgprot(pmd_val(pmdp_get(pmdp)) & ~_PAGE_PFN_MASK);
 			pte_t *ptep_new;
 			int i;
 
@@ -121,7 +120,8 @@ static int __split_linear_mapping_pmd(pud_t *pudp,
 
 			ptep_new = (pte_t *)page_address(pte_page);
 			for (i = 0; i < PTRS_PER_PTE; ++i, ++ptep_new)
-				set_pte(ptep_new, pfn_pte(pfn + i, prot));
+				set_pte(ptep_new,
+					__pte(pte_val(pte) + (i << _PAGE_PFN_SHIFT)));
 
 			smp_wmb();
 
@@ -149,9 +149,8 @@ static int __split_linear_mapping_pud(p4d_t *p4dp,
 			continue;
 
 		if (pud_leaf(pudp_get(pudp))) {
+			pmd_t pmd = __pmd(pud_val(pudp_get(pudp)));
 			struct page *pmd_page;
-			unsigned long pfn = _pud_pfn(pudp_get(pudp));
-			pgprot_t prot = __pgprot(pud_val(pudp_get(pudp)) & ~_PAGE_PFN_MASK);
 			pmd_t *pmdp_new;
 			int i;
 
@@ -162,7 +161,8 @@ static int __split_linear_mapping_pud(p4d_t *p4dp,
 			pmdp_new = (pmd_t *)page_address(pmd_page);
 			for (i = 0; i < PTRS_PER_PMD; ++i, ++pmdp_new)
 				set_pmd(pmdp_new,
-					pfn_pmd(pfn + ((i * PMD_SIZE) >> PAGE_SHIFT), prot));
+					__pmd(pmd_val(pmd) +
+					      (i << (PMD_SHIFT - PAGE_SHIFT + _PAGE_PFN_SHIFT))));
 
 			smp_wmb();
 
@@ -198,9 +198,8 @@ static int __split_linear_mapping_p4d(pgd_t *pgdp,
 			continue;
 
 		if (p4d_leaf(p4dp_get(p4dp))) {
+			pud_t pud = __pud(p4d_val(p4dp_get(p4dp)));
 			struct page *pud_page;
-			unsigned long pfn = _p4d_pfn(p4dp_get(p4dp));
-			pgprot_t prot = __pgprot(p4d_val(p4dp_get(p4dp)) & ~_PAGE_PFN_MASK);
 			pud_t *pudp_new;
 			int i;
 
@@ -215,7 +214,8 @@ static int __split_linear_mapping_p4d(pgd_t *pgdp,
 			pudp_new = (pud_t *)page_address(pud_page);
 			for (i = 0; i < PTRS_PER_PUD; ++i, ++pudp_new)
 				set_pud(pudp_new,
-					pfn_pud(pfn + ((i * PUD_SIZE) >> PAGE_SHIFT), prot));
+					__pud(pud_val(pud) +
+					      (i << (PUD_SHIFT - PAGE_SHIFT + _PAGE_PFN_SHIFT))));
 
 			/*
 			 * Make sure the pud filling is not reordered with the
