@@ -264,11 +264,11 @@ static inline void pmd_clear(pmd_t *pmdp)
 
 static inline pgd_t pfn_pgd(unsigned long pfn, pgprot_t prot)
 {
-	unsigned long prot_val = pgprot_val(prot);
+	pgd_t pgd = __pgd((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 
-	ALT_THEAD_PMA(prot_val);
+	ALT_FIXUP_MT(pgd);
 
-	return __pgd((pfn << _PAGE_PFN_SHIFT) | prot_val);
+	return pgd;
 }
 
 static inline unsigned long pmd_pfn(pmd_t pmd)
@@ -344,11 +344,11 @@ static inline unsigned long pte_pfn(pte_t pte)
 /* Constructs a page table entry */
 static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
 {
-	unsigned long prot_val = pgprot_val(prot);
+	pte_t pte = __pte((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 
-	ALT_THEAD_PMA(prot_val);
+	ALT_FIXUP_MT(pte);
 
-	return __pte((pfn << _PAGE_PFN_SHIFT) | prot_val);
+	return pte;
 }
 
 #define mk_pte(page, prot)       pfn_pte(page_to_pfn(page), prot)
@@ -470,9 +470,11 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 {
 	unsigned long newprot_val = pgprot_val(newprot);
 
-	ALT_THEAD_PMA(newprot_val);
+	ALT_UNFIX_MT(pte);
+	pte = __pte((pte_val(pte) & _PAGE_CHG_MASK) | newprot_val);
+	ALT_FIXUP_MT(pte);
 
-	return __pte((pte_val(pte) & _PAGE_CHG_MASK) | newprot_val);
+	return pte;
 }
 
 #define pgd_ERROR(e) \
