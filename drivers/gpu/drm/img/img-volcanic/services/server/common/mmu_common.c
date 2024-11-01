@@ -5135,7 +5135,7 @@ static IMG_UINT64 MMU_GetVDevAddrPTE(MMU_CONTEXT *psMMUContext,
 			if (psLevel == NULL)
 				break;
 
-			__fallthrough;
+			fallthrough;
 		case MMU_LEVEL_2:
 			uiIndex = _CalcPDEIdx(sDevVAddr, psDevVAddrConfig, IMG_FALSE);
 
@@ -5147,7 +5147,7 @@ static IMG_UINT64 MMU_GetVDevAddrPTE(MMU_CONTEXT *psMMUContext,
 			if (psLevel == NULL)
 				break;
 
-			__fallthrough;
+			fallthrough;
 		case MMU_LEVEL_1:
 			uiIndex = _CalcPTEIdx(sDevVAddr, psDevVAddrConfig, IMG_FALSE);
 
