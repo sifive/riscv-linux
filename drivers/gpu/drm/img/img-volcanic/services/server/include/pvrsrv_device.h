@@ -265,7 +265,7 @@ struct _PVRSRV_DEVICE_CONFIG_
 	struct _PVRSRV_DEVICE_NODE_ *psDevNode;
 
 	/*! Name of the device */
-	IMG_CHAR *pszName;
+	const IMG_CHAR *pszName;
 
 	/*! Version of the device (optional) */
 	IMG_CHAR *pszVersion;
