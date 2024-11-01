@@ -150,11 +150,9 @@ void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
 		   dev_driver_string(dev), dev_name(dev),
 		   ARCH_DMA_MINALIGN, riscv_cbom_block_size);
 
-#ifndef CONFIG_SOC_SIFIVE_EIC7700
 	WARN_TAINT(!coherent && !noncoherent_supported, TAINT_CPU_OUT_OF_SPEC,
 		   "%s %s: device non-coherent but no non-coherent operations supported",
 		   dev_driver_string(dev), dev_name(dev));
-#endif
 
 	dev->dma_coherent = coherent;
 
@@ -176,67 +174,3 @@ void __init riscv_set_dma_cache_alignment(void)
 	if (!noncoherent_supported)
 		dma_cache_alignment = 1;
 }
-#ifdef CONFIG_SOC_SIFIVE_EIC7700
-static struct page **__iommu_dma_common_find_pages(void *cpu_addr)
-{
-    struct vm_struct *area = find_vm_area(cpu_addr);
-
-    if (!area || area->flags != VM_DMA_COHERENT)
-        return NULL;
-    return area->pages;
-}
-
-void arch_dma_clear_uncached(void *addr, size_t size)
-{
-    struct page **pages = NULL;
-
-    pages = __iommu_dma_common_find_pages(addr);
-    if (!pages) { // todo: supposed to handle this error
-        pr_err( "smmu_dbg, fail to find pages\n");
-
-        return;
-    }
-    kvfree(pages);
-    memunmap(addr);
-}
-
-void *arch_dma_set_uncached(void *addr, size_t size)
-{
-    struct page **pages = NULL;
-    static struct page *page = NULL;
-    struct vm_struct *area = NULL;
-    phys_addr_t phys_addr = convert_pha_from_mem_to_sys_port(__pa(addr));
-    void *mem_base = NULL;
-
-    mem_base = memremap(phys_addr, size, MEMREMAP_WT);
-    if (!mem_base) {
-        pr_err("%s memremap failed for addr %px\n", __func__, addr);
-        return ERR_PTR(-EINVAL);
-    }
-
-    pages = kvzalloc(sizeof(*pages), GFP_KERNEL);
-    if (!pages) {
-        pr_err("smmu_dbg, failed to alloc memory!\n");
-        goto err_pages_alloc;
-    }
-    page = virt_to_page(addr);
-    area = find_vm_area(mem_base);
-    if (!area) {
-        pr_err("smmu_dbg, failed to find vm area!\n");
-        goto err_find_vm_area;
-    }
-    pages[0] = page;
-    area->pages = pages;
-    area->flags = VM_DMA_COHERENT;
-
-    return mem_base;
-
-err_find_vm_area:
-    kvfree(pages);
-
-err_pages_alloc:
-    memunmap(mem_base);
-
-    return NULL;
-}
-#endif
