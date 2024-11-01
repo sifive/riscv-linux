@@ -220,7 +220,7 @@ static int dwc3_eswin_get_extcon_dev(struct dwc3_eswin *eswin)
 	return 0;
 }
 
-static int __init dwc3_eswin_deassert(struct dwc3_eswin *eswin)
+static int dwc3_eswin_deassert(struct dwc3_eswin *eswin)
 {
 	int rc;
 
