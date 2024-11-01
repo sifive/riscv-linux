@@ -566,6 +566,9 @@ config RISCV_ISA_SVPBMT
 
 	   The Svpbmt extension is only available on 64-bit cpus.
 
+	   This option also controls selection of memory type based on
+	   physical memory aliases.
+
 	   If you don't know what to do here, say Y.
 
 config TOOLCHAIN_HAS_V
