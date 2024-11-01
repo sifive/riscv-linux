@@ -400,6 +400,10 @@ static void bnxt_re_create_fence_wqe(struct bnxt_re_pd *pd)
 	struct bnxt_re_fence_data *fence = &pd->fence;
 	struct ib_mr *ib_mr = &fence->mr->ib_mr;
 	struct bnxt_qplib_swqe *wqe = &fence->bind_wqe;
+	struct bnxt_re_dev *rdev = pd->rdev;
+
+	if (bnxt_qplib_is_chip_gen_p5_p7(rdev->chip_ctx))
+		return;
 
 	memset(wqe, 0, sizeof(*wqe));
 	wqe->type = BNXT_QPLIB_SWQE_TYPE_BIND_MW;
@@ -454,6 +458,9 @@ static void bnxt_re_destroy_fence_mr(struct bnxt_re_pd *pd)
 	struct device *dev = &rdev->en_dev->pdev->dev;
 	struct bnxt_re_mr *mr = fence->mr;
 
+	if (bnxt_qplib_is_chip_gen_p5_p7(rdev->chip_ctx))
+		return;
+
 	if (fence->mw) {
 		bnxt_re_dealloc_mw(fence->mw);
 		fence->mw = NULL;
@@ -484,6 +491,9 @@ static int bnxt_re_create_fence_mr(struct bnxt_re_pd *pd)
 	dma_addr_t dma_addr = 0;
 	struct ib_mw *mw;
 	int rc;
+
+	if (bnxt_qplib_is_chip_gen_p5_p7(rdev->chip_ctx))
+		return 0;
 
 	dma_addr = dma_map_single(dev, fence->va, BNXT_RE_FENCE_BYTES,
 				  DMA_BIDIRECTIONAL);
@@ -1023,7 +1033,7 @@ static int bnxt_re_init_user_qp(struct bnxt_re_dev *rdev, struct bnxt_re_pd *pd,
 	bytes = (qplib_qp->sq.max_wqe * qplib_qp->sq.wqe_size);
 	/* Consider mapping PSN search memory only for RC QPs. */
 	if (qplib_qp->type == CMDQ_CREATE_QP_TYPE_RC) {
-		psn_sz = bnxt_qplib_is_chip_gen_p5(rdev->chip_ctx) ?
+		psn_sz = bnxt_qplib_is_chip_gen_p5_p7(rdev->chip_ctx) ?
 						   sizeof(struct sq_psn_search_ext) :
 						   sizeof(struct sq_psn_search);
 		psn_nume = (qplib_qp->wqe_mode == BNXT_QPLIB_WQE_MODE_STATIC) ?
@@ -1184,7 +1194,8 @@ fail:
 }
 
 static int bnxt_re_init_rq_attr(struct bnxt_re_qp *qp,
-				struct ib_qp_init_attr *init_attr)
+				struct ib_qp_init_attr *init_attr,
+				struct bnxt_re_ucontext *uctx)
 {
 	struct bnxt_qplib_dev_attr *dev_attr;
 	struct bnxt_qplib_qp *qplqp;
@@ -1213,7 +1224,7 @@ static int bnxt_re_init_rq_attr(struct bnxt_re_qp *qp,
 		/* Allocate 1 more than what's provided so posting max doesn't
 		 * mean empty.
 		 */
-		entries = roundup_pow_of_two(init_attr->cap.max_recv_wr + 1);
+		entries = bnxt_re_init_depth(init_attr->cap.max_recv_wr + 1, uctx);
 		rq->max_wqe = min_t(u32, entries, dev_attr->max_qp_wqes + 1);
 		rq->q_full_delta = 0;
 		rq->sg_info.pgsize = PAGE_SIZE;
@@ -1233,7 +1244,7 @@ static void bnxt_re_adjust_gsi_rq_attr(struct bnxt_re_qp *qp)
 	qplqp = &qp->qplib_qp;
 	dev_attr = &rdev->dev_attr;
 
-	if (!bnxt_qplib_is_chip_gen_p5(rdev->chip_ctx)) {
+	if (!bnxt_qplib_is_chip_gen_p5_p7(rdev->chip_ctx)) {
 		qplqp->rq.max_sge = dev_attr->max_qp_sges;
 		if (qplqp->rq.max_sge > dev_attr->max_qp_sges)
 			qplqp->rq.max_sge = dev_attr->max_qp_sges;
@@ -1243,7 +1254,7 @@ static void bnxt_re_adjust_gsi_rq_attr(struct bnxt_re_qp *qp)
 
 static int bnxt_re_init_sq_attr(struct bnxt_re_qp *qp,
 				struct ib_qp_init_attr *init_attr,
-				struct ib_udata *udata)
+				struct bnxt_re_ucontext *uctx)
 {
 	struct bnxt_qplib_dev_attr *dev_attr;
 	struct bnxt_qplib_qp *qplqp;
@@ -1272,7 +1283,7 @@ static int bnxt_re_init_sq_attr(struct bnxt_re_qp *qp,
 	/* Allocate 128 + 1 more than what's provided */
 	diff = (qplqp->wqe_mode == BNXT_QPLIB_WQE_MODE_VARIABLE) ?
 		0 : BNXT_QPLIB_RESERVED_QP_WRS;
-	entries = roundup_pow_of_two(entries + diff + 1);
+	entries = bnxt_re_init_depth(entries + diff + 1, uctx);
 	sq->max_wqe = min_t(u32, entries, dev_attr->max_qp_wqes + diff + 1);
 	sq->q_full_delta = diff + 1;
 	/*
@@ -1288,7 +1299,8 @@ static int bnxt_re_init_sq_attr(struct bnxt_re_qp *qp,
 }
 
 static void bnxt_re_adjust_gsi_sq_attr(struct bnxt_re_qp *qp,
-				       struct ib_qp_init_attr *init_attr)
+				       struct ib_qp_init_attr *init_attr,
+				       struct bnxt_re_ucontext *uctx)
 {
 	struct bnxt_qplib_dev_attr *dev_attr;
 	struct bnxt_qplib_qp *qplqp;
@@ -1299,8 +1311,8 @@ static void bnxt_re_adjust_gsi_sq_attr(struct bnxt_re_qp *qp,
 	qplqp = &qp->qplib_qp;
 	dev_attr = &rdev->dev_attr;
 
-	if (!bnxt_qplib_is_chip_gen_p5(rdev->chip_ctx)) {
-		entries = roundup_pow_of_two(init_attr->cap.max_send_wr + 1);
+	if (!bnxt_qplib_is_chip_gen_p5_p7(rdev->chip_ctx)) {
+		entries = bnxt_re_init_depth(init_attr->cap.max_send_wr + 1, uctx);
 		qplqp->sq.max_wqe = min_t(u32, entries,
 					  dev_attr->max_qp_wqes + 1);
 		qplqp->sq.q_full_delta = qplqp->sq.max_wqe -
@@ -1326,7 +1338,7 @@ static int bnxt_re_init_qp_type(struct bnxt_re_dev *rdev,
 		goto out;
 	}
 
-	if (bnxt_qplib_is_chip_gen_p5(chip_ctx) &&
+	if (bnxt_qplib_is_chip_gen_p5_p7(chip_ctx) &&
 	    init_attr->qp_type == IB_QPT_GSI)
 		qptype = CMDQ_CREATE_QP_TYPE_GSI;
 out:
@@ -1338,6 +1350,7 @@ static int bnxt_re_init_qp_attr(struct bnxt_re_qp *qp, struct bnxt_re_pd *pd,
 				struct ib_udata *udata)
 {
 	struct bnxt_qplib_dev_attr *dev_attr;
+	struct bnxt_re_ucontext *uctx;
 	struct bnxt_qplib_qp *qplqp;
 	struct bnxt_re_dev *rdev;
 	struct bnxt_re_cq *cq;
@@ -1347,6 +1360,7 @@ static int bnxt_re_init_qp_attr(struct bnxt_re_qp *qp, struct bnxt_re_pd *pd,
 	qplqp = &qp->qplib_qp;
 	dev_attr = &rdev->dev_attr;
 
+	uctx = rdma_udata_to_drv_context(udata, struct bnxt_re_ucontext, ib_uctx);
 	/* Setup misc params */
 	ether_addr_copy(qplqp->smac, rdev->netdev->dev_addr);
 	qplqp->pd = &pd->qplib_pd;
@@ -1388,18 +1402,18 @@ static int bnxt_re_init_qp_attr(struct bnxt_re_qp *qp, struct bnxt_re_pd *pd,
 	}
 
 	/* Setup RQ/SRQ */
-	rc = bnxt_re_init_rq_attr(qp, init_attr);
+	rc = bnxt_re_init_rq_attr(qp, init_attr, uctx);
 	if (rc)
 		goto out;
 	if (init_attr->qp_type == IB_QPT_GSI)
 		bnxt_re_adjust_gsi_rq_attr(qp);
 
 	/* Setup SQ */
-	rc = bnxt_re_init_sq_attr(qp, init_attr, udata);
+	rc = bnxt_re_init_sq_attr(qp, init_attr, uctx);
 	if (rc)
 		goto out;
 	if (init_attr->qp_type == IB_QPT_GSI)
-		bnxt_re_adjust_gsi_sq_attr(qp, init_attr);
+		bnxt_re_adjust_gsi_sq_attr(qp, init_attr, uctx);
 
 	if (udata) /* This will update DPI and qp_handle */
 		rc = bnxt_re_init_user_qp(rdev, pd, qp, udata);
@@ -1523,7 +1537,7 @@ int bnxt_re_create_qp(struct ib_qp *ib_qp, struct ib_qp_init_attr *qp_init_attr,
 		goto fail;
 
 	if (qp_init_attr->qp_type == IB_QPT_GSI &&
-	    !(bnxt_qplib_is_chip_gen_p5(rdev->chip_ctx))) {
+	    !(bnxt_qplib_is_chip_gen_p5_p7(rdev->chip_ctx))) {
 		rc = bnxt_re_create_gsi_qp(qp, pd, qp_init_attr);
 		if (rc == -ENODEV)
 			goto qp_destroy;
@@ -1715,6 +1729,7 @@ int bnxt_re_create_srq(struct ib_srq *ib_srq,
 {
 	struct bnxt_qplib_dev_attr *dev_attr;
 	struct bnxt_qplib_nq *nq = NULL;
+	struct bnxt_re_ucontext *uctx;
 	struct bnxt_re_dev *rdev;
 	struct bnxt_re_srq *srq;
 	struct bnxt_re_pd *pd;
@@ -1739,13 +1754,14 @@ int bnxt_re_create_srq(struct ib_srq *ib_srq,
 		goto exit;
 	}
 
+	uctx = rdma_udata_to_drv_context(udata, struct bnxt_re_ucontext, ib_uctx);
 	srq->rdev = rdev;
 	srq->qplib_srq.pd = &pd->qplib_pd;
 	srq->qplib_srq.dpi = &rdev->dpi_privileged;
 	/* Allocate 1 more than what's provided so posting max doesn't
 	 * mean empty
 	 */
-	entries = roundup_pow_of_two(srq_init_attr->attr.max_wr + 1);
+	entries = bnxt_re_init_depth(srq_init_attr->attr.max_wr + 1, uctx);
 	if (entries > dev_attr->max_srq_wqes + 1)
 		entries = dev_attr->max_srq_wqes + 1;
 	srq->qplib_srq.max_wqe = entries;
@@ -2102,6 +2118,9 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 		qp->qplib_qp.max_dest_rd_atomic = qp_attr->max_dest_rd_atomic;
 	}
 	if (qp_attr_mask & IB_QP_CAP) {
+		struct bnxt_re_ucontext *uctx =
+			rdma_udata_to_drv_context(udata, struct bnxt_re_ucontext, ib_uctx);
+
 		qp->qplib_qp.modify_flags |=
 				CMDQ_MODIFY_QP_MODIFY_MASK_SQ_SIZE |
 				CMDQ_MODIFY_QP_MODIFY_MASK_RQ_SIZE |
@@ -2118,7 +2137,7 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 				  "Create QP failed - max exceeded");
 			return -EINVAL;
 		}
-		entries = roundup_pow_of_two(qp_attr->cap.max_send_wr);
+		entries = bnxt_re_init_depth(qp_attr->cap.max_send_wr, uctx);
 		qp->qplib_qp.sq.max_wqe = min_t(u32, entries,
 						dev_attr->max_qp_wqes + 1);
 		qp->qplib_qp.sq.q_full_delta = qp->qplib_qp.sq.max_wqe -
@@ -2131,7 +2150,7 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
 		qp->qplib_qp.sq.q_full_delta -= 1;
 		qp->qplib_qp.sq.max_sge = qp_attr->cap.max_send_sge;
 		if (qp->qplib_qp.rq.max_wqe) {
-			entries = roundup_pow_of_two(qp_attr->cap.max_recv_wr);
+			entries = bnxt_re_init_depth(qp_attr->cap.max_recv_wr, uctx);
 			qp->qplib_qp.rq.max_wqe =
 				min_t(u32, entries, dev_attr->max_qp_wqes + 1);
 			qp->qplib_qp.rq.q_full_delta = qp->qplib_qp.rq.max_wqe -
@@ -2458,7 +2477,7 @@ static int bnxt_re_build_send_wqe(struct bnxt_re_qp *qp,
 		break;
 	case IB_WR_SEND_WITH_IMM:
 		wqe->type = BNXT_QPLIB_SWQE_TYPE_SEND_WITH_IMM;
-		wqe->send.imm_data = wr->ex.imm_data;
+		wqe->send.imm_data = be32_to_cpu(wr->ex.imm_data);
 		break;
 	case IB_WR_SEND_WITH_INV:
 		wqe->type = BNXT_QPLIB_SWQE_TYPE_SEND_WITH_INV;
@@ -2488,7 +2507,7 @@ static int bnxt_re_build_rdma_wqe(const struct ib_send_wr *wr,
 		break;
 	case IB_WR_RDMA_WRITE_WITH_IMM:
 		wqe->type = BNXT_QPLIB_SWQE_TYPE_RDMA_WRITE_WITH_IMM;
-		wqe->rdma.imm_data = wr->ex.imm_data;
+		wqe->rdma.imm_data = be32_to_cpu(wr->ex.imm_data);
 		break;
 	case IB_WR_RDMA_READ:
 		wqe->type = BNXT_QPLIB_SWQE_TYPE_RDMA_READ;
@@ -2544,11 +2563,6 @@ static int bnxt_re_build_inv_wqe(const struct ib_send_wr *wr,
 	wqe->type = BNXT_QPLIB_SWQE_TYPE_LOCAL_INV;
 	wqe->local_inv.inv_l_key = wr->ex.invalidate_rkey;
 
-	/* Need unconditional fence for local invalidate
-	 * opcode to work as expected.
-	 */
-	wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_UC_FENCE;
-
 	if (wr->send_flags & IB_SEND_SIGNALED)
 		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_SIGNAL_COMP;
 	if (wr->send_flags & IB_SEND_SOLICITED)
@@ -2570,12 +2584,6 @@ static int bnxt_re_build_reg_wqe(const struct ib_reg_wr *wr,
 	wqe->frmr.page_list_len = mr->npages;
 	wqe->frmr.levels = qplib_frpl->hwq.level;
 	wqe->type = BNXT_QPLIB_SWQE_TYPE_REG_MR;
-
-	/* Need unconditional fence for reg_mr
-	 * opcode to function as expected.
-	 */
-
-	wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_UC_FENCE;
 
 	if (wr->wr.send_flags & IB_SEND_SIGNALED)
 		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_SIGNAL_COMP;
@@ -2707,6 +2715,18 @@ bad:
 	return rc;
 }
 
+static void bnxt_re_legacy_set_uc_fence(struct bnxt_qplib_swqe *wqe)
+{
+	/* Need unconditional fence for non-wire memory opcode
+	 * to work as expected.
+	 */
+	if (wqe->type == BNXT_QPLIB_SWQE_TYPE_LOCAL_INV ||
+	    wqe->type == BNXT_QPLIB_SWQE_TYPE_FAST_REG_MR ||
+	    wqe->type == BNXT_QPLIB_SWQE_TYPE_REG_MR ||
+	    wqe->type == BNXT_QPLIB_SWQE_TYPE_BIND_MW)
+		wqe->flags |= BNXT_QPLIB_SWQE_FLAGS_UC_FENCE;
+}
+
 int bnxt_re_post_send(struct ib_qp *ib_qp, const struct ib_send_wr *wr,
 		      const struct ib_send_wr **bad_wr)
 {
@@ -2786,8 +2806,11 @@ int bnxt_re_post_send(struct ib_qp *ib_qp, const struct ib_send_wr *wr,
 			rc = -EINVAL;
 			goto bad;
 		}
-		if (!rc)
+		if (!rc) {
+			if (!bnxt_qplib_is_chip_gen_p5_p7(qp->rdev->chip_ctx))
+				bnxt_re_legacy_set_uc_fence(&wqe);
 			rc = bnxt_qplib_post_send(&qp->qplib_qp, &wqe);
+		}
 bad:
 		if (rc) {
 			ibdev_err(&qp->rdev->ibdev,
@@ -2919,9 +2942,11 @@ int bnxt_re_destroy_cq(struct ib_cq *ib_cq, struct ib_udata *udata)
 int bnxt_re_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 		      struct ib_udata *udata)
 {
-	struct bnxt_re_dev *rdev = to_bnxt_re_dev(ibcq->device, ibdev);
-	struct bnxt_qplib_dev_attr *dev_attr = &rdev->dev_attr;
 	struct bnxt_re_cq *cq = container_of(ibcq, struct bnxt_re_cq, ib_cq);
+	struct bnxt_re_dev *rdev = to_bnxt_re_dev(ibcq->device, ibdev);
+	struct bnxt_re_ucontext *uctx =
+		rdma_udata_to_drv_context(udata, struct bnxt_re_ucontext, ib_uctx);
+	struct bnxt_qplib_dev_attr *dev_attr = &rdev->dev_attr;
 	int rc, entries;
 	int cqe = attr->cqe;
 	struct bnxt_qplib_nq *nq = NULL;
@@ -2940,7 +2965,7 @@ int bnxt_re_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 	cq->rdev = rdev;
 	cq->qplib_cq.cq_handle = (u64)(unsigned long)(&cq->qplib_cq);
 
-	entries = roundup_pow_of_two(cqe + 1);
+	entries = bnxt_re_init_depth(cqe + 1, uctx);
 	if (entries > dev_attr->max_cq_wqes + 1)
 		entries = dev_attr->max_cq_wqes + 1;
 
@@ -2948,8 +2973,6 @@ int bnxt_re_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 	cq->qplib_cq.sg_info.pgshft = PAGE_SHIFT;
 	if (udata) {
 		struct bnxt_re_cq_req req;
-		struct bnxt_re_ucontext *uctx = rdma_udata_to_drv_context(
-			udata, struct bnxt_re_ucontext, ib_uctx);
 		if (ib_copy_from_udata(&req, udata, sizeof(req))) {
 			rc = -EFAULT;
 			goto fail;
@@ -3071,12 +3094,11 @@ int bnxt_re_resize_cq(struct ib_cq *ibcq, int cqe, struct ib_udata *udata)
 		return -EINVAL;
 	}
 
-	entries = roundup_pow_of_two(cqe + 1);
+	uctx = rdma_udata_to_drv_context(udata, struct bnxt_re_ucontext, ib_uctx);
+	entries = bnxt_re_init_depth(cqe + 1, uctx);
 	if (entries > dev_attr->max_cq_wqes + 1)
 		entries = dev_attr->max_cq_wqes + 1;
 
-	uctx = rdma_udata_to_drv_context(udata, struct bnxt_re_ucontext,
-					 ib_uctx);
 	/* uverbs consumer */
 	if (ib_copy_from_udata(&req, udata, sizeof(req))) {
 		rc = -EFAULT;
@@ -3537,7 +3559,7 @@ static void bnxt_re_process_res_shadow_qp_wc(struct bnxt_re_qp *gsi_sqp,
 	wc->byte_len = orig_cqe->length;
 	wc->qp = &gsi_qp->ib_qp;
 
-	wc->ex.imm_data = orig_cqe->immdata;
+	wc->ex.imm_data = cpu_to_be32(le32_to_cpu(orig_cqe->immdata));
 	wc->src_qp = orig_cqe->src_qp;
 	memcpy(wc->smac, orig_cqe->smac, ETH_ALEN);
 	if (bnxt_re_is_vlan_pkt(orig_cqe, &vlan_id, &sl)) {
@@ -3682,7 +3704,7 @@ int bnxt_re_poll_cq(struct ib_cq *ib_cq, int num_entries, struct ib_wc *wc)
 				 (unsigned long)(cqe->qp_handle),
 				 struct bnxt_re_qp, qplib_qp);
 			wc->qp = &qp->ib_qp;
-			wc->ex.imm_data = cqe->immdata;
+			wc->ex.imm_data = cpu_to_be32(le32_to_cpu(cqe->immdata));
 			wc->src_qp = cqe->src_qp;
 			memcpy(wc->smac, cqe->smac, ETH_ALEN);
 			wc->port_num = 1;
@@ -4107,6 +4129,7 @@ int bnxt_re_alloc_ucontext(struct ib_ucontext *ctx, struct ib_udata *udata)
 	struct bnxt_qplib_dev_attr *dev_attr = &rdev->dev_attr;
 	struct bnxt_re_user_mmap_entry *entry;
 	struct bnxt_re_uctx_resp resp = {};
+	struct bnxt_re_uctx_req ureq = {};
 	u32 chip_met_rev_num = 0;
 	int rc;
 
@@ -4155,6 +4178,16 @@ int bnxt_re_alloc_ucontext(struct ib_ucontext *ctx, struct ib_udata *udata)
 	uctx->shpage_mmap = &entry->rdma_entry;
 	if (rdev->pacing.dbr_pacing)
 		resp.comp_mask |= BNXT_RE_UCNTX_CMASK_DBR_PACING_ENABLED;
+
+	if (udata->inlen >= sizeof(ureq)) {
+		rc = ib_copy_from_udata(&ureq, udata, min(udata->inlen, sizeof(ureq)));
+		if (rc)
+			goto cfail;
+		if (ureq.comp_mask & BNXT_RE_COMP_MASK_REQ_UCNTX_POW2_SUPPORT) {
+			resp.comp_mask |= BNXT_RE_UCNTX_CMASK_POW2_DISABLED;
+			uctx->cmask |= BNXT_RE_UCNTX_CMASK_POW2_DISABLED;
+		}
+	}
 
 	rc = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
 	if (rc) {

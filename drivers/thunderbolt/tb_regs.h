@@ -194,6 +194,8 @@ struct tb_regs_switch_header {
 #define USB4_VERSION_MAJOR_MASK			GENMASK(7, 5)
 
 #define ROUTER_CS_1				0x01
+#define ROUTER_CS_3				0x03
+#define ROUTER_CS_3_V				BIT(31)
 #define ROUTER_CS_4				0x04
 /* Used with the router cmuv field */
 #define ROUTER_CS_4_CMUV_V1			0x10
@@ -346,10 +348,14 @@ struct tb_regs_port_header {
 #define LANE_ADP_CS_1				0x01
 #define LANE_ADP_CS_1_TARGET_SPEED_MASK		GENMASK(3, 0)
 #define LANE_ADP_CS_1_TARGET_SPEED_GEN3		0xc
-#define LANE_ADP_CS_1_TARGET_WIDTH_MASK		GENMASK(9, 4)
+#define LANE_ADP_CS_1_TARGET_WIDTH_MASK		GENMASK(5, 4)
 #define LANE_ADP_CS_1_TARGET_WIDTH_SHIFT	4
 #define LANE_ADP_CS_1_TARGET_WIDTH_SINGLE	0x1
 #define LANE_ADP_CS_1_TARGET_WIDTH_DUAL		0x3
+#define LANE_ADP_CS_1_TARGET_WIDTH_ASYM_MASK	GENMASK(7, 6)
+#define LANE_ADP_CS_1_TARGET_WIDTH_ASYM_TX	0x1
+#define LANE_ADP_CS_1_TARGET_WIDTH_ASYM_RX	0x2
+#define LANE_ADP_CS_1_TARGET_WIDTH_ASYM_DUAL	0x0
 #define LANE_ADP_CS_1_CL0S_ENABLE		BIT(10)
 #define LANE_ADP_CS_1_CL1_ENABLE		BIT(11)
 #define LANE_ADP_CS_1_CL2_ENABLE		BIT(12)
@@ -382,12 +388,16 @@ struct tb_regs_port_header {
 #define PORT_CS_18_WOCS				BIT(16)
 #define PORT_CS_18_WODS				BIT(17)
 #define PORT_CS_18_WOU4S			BIT(18)
+#define PORT_CS_18_CSA				BIT(22)
+#define PORT_CS_18_TIP				BIT(24)
 #define PORT_CS_19				0x13
+#define PORT_CS_19_DPR				BIT(0)
 #define PORT_CS_19_PC				BIT(3)
 #define PORT_CS_19_PID				BIT(4)
 #define PORT_CS_19_WOC				BIT(16)
 #define PORT_CS_19_WOD				BIT(17)
 #define PORT_CS_19_WOU4				BIT(18)
+#define PORT_CS_19_START_ASYM			BIT(24)
 
 /* Display Port adapter registers */
 #define ADP_DP_CS_0				0x00
@@ -579,6 +589,9 @@ struct tb_regs_hop {
 #define TB_LC_POWER				0x740
 
 /* Link controller registers */
+#define TB_LC_PORT_MODE				0x26
+#define TB_LC_PORT_MODE_DPR			BIT(0)
+
 #define TB_LC_CS_42				0x2a
 #define TB_LC_CS_42_USB_PLUGGED			BIT(31)
 

@@ -2782,26 +2782,6 @@ oa_configure_all_contexts(struct i915_perf_stream *stream,
 }
 
 static int
-gen12_configure_all_contexts(struct i915_perf_stream *stream,
-			     const struct i915_oa_config *oa_config,
-			     struct i915_active *active)
-{
-	struct flex regs[] = {
-		{
-			GEN8_R_PWR_CLK_STATE(RENDER_RING_BASE),
-			CTX_R_PWR_CLK_STATE,
-		},
-	};
-
-	if (stream->engine->class != RENDER_CLASS)
-		return 0;
-
-	return oa_configure_all_contexts(stream,
-					 regs, ARRAY_SIZE(regs),
-					 active);
-}
-
-static int
 lrc_configure_all_contexts(struct i915_perf_stream *stream,
 			   const struct i915_oa_config *oa_config,
 			   struct i915_active *active)
@@ -2907,7 +2887,6 @@ gen12_enable_metric_set(struct i915_perf_stream *stream,
 {
 	struct drm_i915_private *i915 = stream->perf->i915;
 	struct intel_uncore *uncore = stream->uncore;
-	struct i915_oa_config *oa_config = stream->oa_config;
 	bool periodic = stream->periodic;
 	u32 period_exponent = stream->period_exponent;
 	u32 sqcnt1;
@@ -2950,15 +2929,6 @@ gen12_enable_metric_set(struct i915_perf_stream *stream,
 		 (HAS_OA_BPC_REPORTING(i915) ? GEN12_SQCNT1_OABPC : 0);
 
 	intel_uncore_rmw(uncore, GEN12_SQCNT1, 0, sqcnt1);
-
-	/*
-	 * Update all contexts prior writing the mux configurations as we need
-	 * to make sure all slices/subslices are ON before writing to NOA
-	 * registers.
-	 */
-	ret = gen12_configure_all_contexts(stream, oa_config, active);
-	if (ret)
-		return ret;
 
 	/*
 	 * For Gen12, performance counters are context
@@ -3013,9 +2983,6 @@ static void gen12_disable_metric_set(struct i915_perf_stream *stream)
 		intel_uncore_write(uncore, GEN7_ROW_CHICKEN2,
 				   _MASKED_BIT_DISABLE(GEN12_DISABLE_DOP_GATING));
 	}
-
-	/* Reset all contexts' slices/subslices configurations. */
-	gen12_configure_all_contexts(stream, NULL, NULL);
 
 	/* disable the context save/restore or OAR counters */
 	if (stream->ctx)
@@ -3255,11 +3222,10 @@ get_sseu_config(struct intel_sseu *out_sseu,
  */
 u32 i915_perf_oa_timestamp_frequency(struct drm_i915_private *i915)
 {
-	/*
-	 * Wa_18013179988:dg2
-	 * Wa_14015846243:mtl
-	 */
-	if (IS_DG2(i915) || IS_METEORLAKE(i915)) {
+	struct intel_gt *gt = to_gt(i915);
+
+	/* Wa_18013179988 */
+	if (IS_DG2(i915) || IS_GFX_GT_IP_RANGE(gt, IP_VER(12, 70), IP_VER(12, 74))) {
 		intel_wakeref_t wakeref;
 		u32 reg, shift;
 
@@ -4564,7 +4530,7 @@ static bool xehp_is_valid_b_counter_addr(struct i915_perf *perf, u32 addr)
 
 static bool gen12_is_valid_mux_addr(struct i915_perf *perf, u32 addr)
 {
-	if (IS_METEORLAKE(perf->i915))
+	if (GRAPHICS_VER_FULL(perf->i915) >= IP_VER(12, 70))
 		return reg_in_range_table(addr, mtl_oa_mux_regs);
 	else
 		return reg_in_range_table(addr, gen12_oa_mux_regs);

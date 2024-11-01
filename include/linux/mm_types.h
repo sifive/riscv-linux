@@ -551,9 +551,36 @@ struct vma_lock {
 };
 
 struct vma_numab_state {
+	/*
+	 * Initialised as time in 'jiffies' after which VMA
+	 * should be scanned.  Delays first scan of new VMA by at
+	 * least sysctl_numa_balancing_scan_delay:
+	 */
 	unsigned long next_scan;
-	unsigned long next_pid_reset;
-	unsigned long access_pids[2];
+
+	/*
+	 * Time in jiffies when pids_active[] is reset to
+	 * detect phase change behaviour:
+	 */
+	unsigned long pids_active_reset;
+
+	/*
+	 * Approximate tracking of PIDs that trapped a NUMA hinting
+	 * fault. May produce false positives due to hash collisions.
+	 *
+	 *   [0] Previous PID tracking
+	 *   [1] Current PID tracking
+	 *
+	 * Window moves after next_pid_reset has expired approximately
+	 * every VMA_PID_RESET_PERIOD jiffies:
+	 */
+	unsigned long pids_active[2];
+
+	/*
+	 * MM scan sequence ID when the VMA was last completely scanned.
+	 * A VMA is not eligible for scanning if prev_scan_seq == numa_scan_seq
+	 */
+	int prev_scan_seq;
 };
 
 /*
@@ -899,7 +926,7 @@ struct mm_struct {
 		 * Represent how many empty pages are merged with kernel zero
 		 * pages when enabling KSM use_zero_pages.
 		 */
-		unsigned long ksm_zero_pages;
+		atomic_long_t ksm_zero_pages;
 #endif /* CONFIG_KSM */
 #ifdef CONFIG_LRU_GEN
 		struct {

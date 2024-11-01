@@ -23,6 +23,8 @@
 #define QUIRK_FORCE_POWER_LINK_CONTROLLER		BIT(0)
 /* Disable CLx if not supported */
 #define QUIRK_NO_CLX					BIT(1)
+/* Need to keep power on while USB4 port is in redrive mode */
+#define QUIRK_KEEP_POWER_IN_DP_REDRIVE			BIT(2)
 
 /**
  * struct tb_nvm - Structure holding NVM information
@@ -162,11 +164,6 @@ struct tb_switch_tmu {
  * switches) you need to have domain lock held.
  *
  * In USB4 terminology this structure represents a router.
- *
- * Note @link_width is not the same as whether link is bonded or not.
- * For Gen 4 links the link is also bonded when it is asymmetric. The
- * correct way to find out whether the link is bonded or not is to look
- * @bonded field of the upstream port.
  */
 struct tb_switch {
 	struct device dev;
@@ -261,6 +258,7 @@ struct tb_bandwidth_group {
  * @group_list: The adapter is linked to the group's list of ports through this
  * @max_bw: Maximum possible bandwidth through this adapter if set to
  *	    non-zero.
+ * @redrive: For DP IN, if true the adapter is in redrive mode.
  *
  * In USB4 terminology this structure represents an adapter (protocol or
  * lane adapter).
@@ -289,6 +287,7 @@ struct tb_port {
 	struct tb_bandwidth_group *group;
 	struct list_head group_list;
 	unsigned int max_bw;
+	bool redrive;
 };
 
 /**
@@ -484,7 +483,7 @@ struct tb_path {
  */
 struct tb_cm_ops {
 	int (*driver_ready)(struct tb *tb);
-	int (*start)(struct tb *tb);
+	int (*start)(struct tb *tb, bool reset);
 	void (*stop)(struct tb *tb);
 	int (*suspend_noirq)(struct tb *tb);
 	int (*resume_noirq)(struct tb *tb);
@@ -731,7 +730,7 @@ int tb_xdomain_init(void);
 void tb_xdomain_exit(void);
 
 struct tb *tb_domain_alloc(struct tb_nhi *nhi, int timeout_msec, size_t privsize);
-int tb_domain_add(struct tb *tb);
+int tb_domain_add(struct tb *tb, bool reset);
 void tb_domain_remove(struct tb *tb);
 int tb_domain_suspend_noirq(struct tb *tb);
 int tb_domain_resume_noirq(struct tb *tb);
@@ -798,7 +797,7 @@ int tb_switch_configuration_valid(struct tb_switch *sw);
 int tb_switch_add(struct tb_switch *sw);
 void tb_switch_remove(struct tb_switch *sw);
 void tb_switch_suspend(struct tb_switch *sw, bool runtime);
-int tb_switch_resume(struct tb_switch *sw);
+int tb_switch_resume(struct tb_switch *sw, bool runtime);
 int tb_switch_reset(struct tb_switch *sw);
 int tb_switch_wait_for_bit(struct tb_switch *sw, u32 offset, u32 bit,
 			   u32 value, int timeout_msec);
@@ -862,6 +861,15 @@ static inline struct tb_port *tb_switch_downstream_port(struct tb_switch *sw)
 	if (WARN_ON(!tb_route(sw)))
 		return NULL;
 	return tb_port_at(tb_route(sw), tb_switch_parent(sw));
+}
+
+/**
+ * tb_switch_depth() - Returns depth of the connected router
+ * @sw: Router
+ */
+static inline int tb_switch_depth(const struct tb_switch *sw)
+{
+	return sw->config.depth;
 }
 
 static inline bool tb_switch_is_light_ridge(const struct tb_switch *sw)
@@ -956,8 +964,7 @@ static inline bool tb_switch_is_icm(const struct tb_switch *sw)
 	return !sw->config.enabled;
 }
 
-int tb_switch_lane_bonding_enable(struct tb_switch *sw);
-void tb_switch_lane_bonding_disable(struct tb_switch *sw);
+int tb_switch_set_link_width(struct tb_switch *sw, enum tb_link_width width);
 int tb_switch_configure_link(struct tb_switch *sw);
 void tb_switch_unconfigure_link(struct tb_switch *sw);
 
@@ -1040,6 +1047,21 @@ void tb_port_release_out_hopid(struct tb_port *port, int hopid);
 struct tb_port *tb_next_port_on_path(struct tb_port *start, struct tb_port *end,
 				     struct tb_port *prev);
 
+/**
+ * tb_port_path_direction_downstream() - Checks if path directed downstream
+ * @src: Source adapter
+ * @dst: Destination adapter
+ *
+ * Returns %true only if the specified path from source adapter (@src)
+ * to destination adapter (@dst) is directed downstream.
+ */
+static inline bool
+tb_port_path_direction_downstream(const struct tb_port *src,
+				  const struct tb_port *dst)
+{
+	return src->sw->config.depth < dst->sw->config.depth;
+}
+
 static inline bool tb_port_use_credit_allocation(const struct tb_port *port)
 {
 	return tb_port_is_null(port) && port->sw->credit_allocation;
@@ -1057,12 +1079,29 @@ static inline bool tb_port_use_credit_allocation(const struct tb_port *port)
 	for ((p) = tb_next_port_on_path((src), (dst), NULL); (p);	\
 	     (p) = tb_next_port_on_path((src), (dst), (p)))
 
+/**
+ * tb_for_each_upstream_port_on_path() - Iterate over each upstreamm port on path
+ * @src: Source port
+ * @dst: Destination port
+ * @p: Port used as iterator
+ *
+ * Walks over each upstream lane adapter on path from @src to @dst.
+ */
+#define tb_for_each_upstream_port_on_path(src, dst, p)			\
+	for ((p) = tb_next_port_on_path((src), (dst), NULL); (p);	\
+	     (p) = tb_next_port_on_path((src), (dst), (p)))		\
+		if (!tb_port_is_null((p)) || !tb_is_upstream_port((p))) {\
+			continue;					\
+		} else
+
 int tb_port_get_link_speed(struct tb_port *port);
+int tb_port_get_link_generation(struct tb_port *port);
 int tb_port_get_link_width(struct tb_port *port);
+bool tb_port_width_supported(struct tb_port *port, unsigned int width);
 int tb_port_set_link_width(struct tb_port *port, enum tb_link_width width);
 int tb_port_lane_bonding_enable(struct tb_port *port);
 void tb_port_lane_bonding_disable(struct tb_port *port);
-int tb_port_wait_for_link_width(struct tb_port *port, unsigned int width_mask,
+int tb_port_wait_for_link_width(struct tb_port *port, unsigned int width,
 				int timeout_msec);
 int tb_port_update_credits(struct tb_port *port);
 
@@ -1096,6 +1135,7 @@ struct tb_path *tb_path_alloc(struct tb *tb, struct tb_port *src, int src_hopid,
 void tb_path_free(struct tb_path *path);
 int tb_path_activate(struct tb_path *path);
 void tb_path_deactivate(struct tb_path *path);
+int tb_path_deactivate_hop(struct tb_port *port, int hop_index);
 bool tb_path_is_invalid(struct tb_path *path);
 bool tb_path_port_on_path(const struct tb_path *path,
 			  const struct tb_port *port);
@@ -1115,6 +1155,7 @@ int tb_drom_read(struct tb_switch *sw);
 int tb_drom_read_uid_only(struct tb_switch *sw, u64 *uid);
 
 int tb_lc_read_uuid(struct tb_switch *sw, u32 *uuid);
+int tb_lc_reset_port(struct tb_port *port);
 int tb_lc_configure_port(struct tb_port *port);
 void tb_lc_unconfigure_port(struct tb_port *port);
 int tb_lc_configure_xdomain(struct tb_port *port);
@@ -1218,6 +1259,7 @@ static inline bool tb_switch_is_usb4(const struct tb_switch *sw)
 	return usb4_switch_version(sw) > 0;
 }
 
+void usb4_switch_check_wakes(struct tb_switch *sw);
 int usb4_switch_setup(struct tb_switch *sw);
 int usb4_switch_configuration_valid(struct tb_switch *sw);
 int usb4_switch_read_uid(struct tb_switch *sw, u64 *uid);
@@ -1247,6 +1289,7 @@ void usb4_switch_remove_ports(struct tb_switch *sw);
 
 int usb4_port_unlock(struct tb_port *port);
 int usb4_port_hotplug_enable(struct tb_port *port);
+int usb4_port_reset(struct tb_port *port);
 int usb4_port_configure(struct tb_port *port);
 void usb4_port_unconfigure(struct tb_port *port);
 int usb4_port_configure_xdomain(struct tb_port *port, struct tb_xdomain *xd);
@@ -1256,6 +1299,11 @@ int usb4_port_router_online(struct tb_port *port);
 int usb4_port_enumerate_retimers(struct tb_port *port);
 bool usb4_port_clx_supported(struct tb_port *port);
 int usb4_port_margining_caps(struct tb_port *port, u32 *caps);
+
+bool usb4_port_asym_supported(struct tb_port *port);
+int usb4_port_asym_set_link_width(struct tb_port *port, enum tb_link_width width);
+int usb4_port_asym_start(struct tb_port *port);
+
 int usb4_port_hw_margin(struct tb_port *port, unsigned int lanes,
 			unsigned int ber_level, bool timing, bool right_high,
 			u32 *results);

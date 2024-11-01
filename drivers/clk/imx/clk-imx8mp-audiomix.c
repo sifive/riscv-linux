@@ -18,7 +18,12 @@
 
 #define CLKEN0			0x000
 #define CLKEN1			0x004
-#define SAI_MCLK_SEL(n)		(0x300 + 4 * (n))	/* n in 0..5 */
+#define SAI1_MCLK_SEL		0x300
+#define SAI2_MCLK_SEL		0x304
+#define SAI3_MCLK_SEL		0x308
+#define SAI5_MCLK_SEL		0x30C
+#define SAI6_MCLK_SEL		0x310
+#define SAI7_MCLK_SEL		0x314
 #define PDM_SEL			0x318
 #define SAI_PLL_GNRL_CTL	0x400
 
@@ -95,13 +100,13 @@ static const struct clk_parent_data clk_imx8mp_audiomix_pll_bypass_sels[] = {
 		IMX8MP_CLK_AUDIOMIX_SAI##n##_MCLK1_SEL, {},		\
 		clk_imx8mp_audiomix_sai##n##_mclk1_parents,		\
 		ARRAY_SIZE(clk_imx8mp_audiomix_sai##n##_mclk1_parents), \
-		SAI_MCLK_SEL(n), 1, 0					\
+		SAI##n##_MCLK_SEL, 1, 0					\
 	}, {								\
 		"sai"__stringify(n)"_mclk2_sel",			\
 		IMX8MP_CLK_AUDIOMIX_SAI##n##_MCLK2_SEL, {},		\
 		clk_imx8mp_audiomix_sai_mclk2_parents,			\
 		ARRAY_SIZE(clk_imx8mp_audiomix_sai_mclk2_parents),	\
-		SAI_MCLK_SEL(n), 4, 1					\
+		SAI##n##_MCLK_SEL, 4, 1					\
 	}, {								\
 		"sai"__stringify(n)"_ipg_cg",				\
 		IMX8MP_CLK_AUDIOMIX_SAI##n##_IPG,			\
@@ -141,6 +146,15 @@ static const struct clk_parent_data clk_imx8mp_audiomix_pll_bypass_sels[] = {
 		PDM_SEL, 2, 0						\
 	}
 
+#define CLK_GATE_PARENT(gname, cname, pname)						\
+	{								\
+		gname"_cg",						\
+		IMX8MP_CLK_AUDIOMIX_##cname,				\
+		{ .fw_name = pname, .name = pname }, NULL, 1,		\
+		CLKEN0 + 4 * !!(IMX8MP_CLK_AUDIOMIX_##cname / 32),	\
+		1, IMX8MP_CLK_AUDIOMIX_##cname % 32			\
+	}
+
 struct clk_imx8mp_audiomix_sel {
 	const char			*name;
 	int				clkid;
@@ -158,14 +172,14 @@ static struct clk_imx8mp_audiomix_sel sels[] = {
 	CLK_GATE("earc", EARC_IPG),
 	CLK_GATE("ocrama", OCRAMA_IPG),
 	CLK_GATE("aud2htx", AUD2HTX_IPG),
-	CLK_GATE("earc_phy", EARC_PHY),
+	CLK_GATE_PARENT("earc_phy", EARC_PHY, "sai_pll_out_div2"),
 	CLK_GATE("sdma2", SDMA2_ROOT),
 	CLK_GATE("sdma3", SDMA3_ROOT),
 	CLK_GATE("spba2", SPBA2_ROOT),
 	CLK_GATE("dsp", DSP_ROOT),
 	CLK_GATE("dspdbg", DSPDBG_ROOT),
 	CLK_GATE("edma", EDMA_ROOT),
-	CLK_GATE("audpll", AUDPLL_ROOT),
+	CLK_GATE_PARENT("audpll", AUDPLL_ROOT, "osc_24m"),
 	CLK_GATE("mu2", MU2_ROOT),
 	CLK_GATE("mu3", MU3_ROOT),
 	CLK_PDM,
