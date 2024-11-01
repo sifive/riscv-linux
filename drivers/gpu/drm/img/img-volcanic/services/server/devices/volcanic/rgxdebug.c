@@ -3017,7 +3017,7 @@ static const IMG_CHAR *_RGXGetDebugDevStateString(PVRSRV_DEVICE_STATE eDevState)
 			return "Bad";
 		case PVRSRV_DEVICE_STATE_UNDEFINED:
 			PVR_ASSERT(!"Device has undefined state");
-			__fallthrough;
+			fallthrough;
 		default:
 			return "Unknown";
 	}

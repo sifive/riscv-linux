@@ -1978,7 +1978,7 @@ e0:
 					PVR_ASSERT(psLevel->ui32RefCount <= psLevel->ui32NumOfEntries);
 				}
 
-				__fallthrough;
+				fallthrough;
 			case 2:
 				if (psLevel->apsNextLevel[i] != NULL  &&
 						psLevel->apsNextLevel[i]->ui32RefCount == 0)
@@ -1987,7 +1987,7 @@ e0:
 					           aeMMULevel[uiThisLevel]);
 				}
 
-				__fallthrough;
+				fallthrough;
 			case 1:
 				if (psLevel->apsNextLevel[i] != NULL  &&
 						psLevel->apsNextLevel[i]->ui32RefCount == 0)
@@ -1996,7 +1996,7 @@ e0:
 					psLevel->apsNextLevel[i] = NULL;
 				}
 
-				__fallthrough;
+				fallthrough;
 			case 0:
 				uiAllocState = 3;
 				break;
@@ -4140,7 +4140,7 @@ static IMG_UINT64 MMU_GetVDevAddrPTE(MMU_CONTEXT *psMMUContext,
 			if (psLevel == NULL)
 				break;
 
-			__fallthrough;
+			fallthrough;
 		case MMU_LEVEL_2:
 			uiIndex = _CalcPDEIdx(sDevVAddr, psDevVAddrConfig, IMG_FALSE);
 
@@ -4152,7 +4152,7 @@ static IMG_UINT64 MMU_GetVDevAddrPTE(MMU_CONTEXT *psMMUContext,
 			if (psLevel == NULL)
 				break;
 
-			__fallthrough;
+			fallthrough;
 		case MMU_LEVEL_1:
 			uiIndex = _CalcPTEIdx(sDevVAddr, psDevVAddrConfig, IMG_FALSE);
 
