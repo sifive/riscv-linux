@@ -84,7 +84,7 @@
  * Define vmemmap for pfn_to_page & page_to_pfn calls. Needed if kernel
  * is configured with CONFIG_SPARSEMEM_VMEMMAP enabled.
  */
-#define vmemmap		((struct page *)VMEMMAP_START)
+#define vmemmap		((struct page *)VMEMMAP_START - vmemmap_start_pfn)
 
 #define PCI_IO_SIZE      SZ_16M
 #define PCI_IO_END       VMEMMAP_START
@@ -208,54 +208,6 @@ extern struct pt_alloc_ops pt_ops __initdata;
 #define _PAGE_IOREMAP	((_PAGE_KERNEL & ~_PAGE_MTMASK) | _PAGE_IO)
 #define PAGE_KERNEL_IO		__pgprot(_PAGE_IOREMAP)
 
-#if defined(CONFIG_SOC_SIFIVE_EIC7700)
-#define pgprot_noncached(prot)      __pgprot(pgprot_val(prot) | _PAGE_UNCACHE)
-#define pgprot_writecombine(prot)   pgprot_noncached(prot)
-#define pgprot_dmacoherent(prot)    pgprot_noncached(prot)
-
-/* DIE0 */
-#define DIE0_MEM_PORT_PFN_START                     (CONFIG_RISCV_DIE0_CACHED_OFFSET >> PAGE_SHIFT)
-#define DIE0_MEM_PORT_PFN_END                       ((CONFIG_RISCV_DIE0_CACHED_OFFSET + CONFIG_RISCV_DIE0_MEM_MAX_SIZE) >> PAGE_SHIFT)
-
-#define DIE0_SYS_PORT_PFN_START                     (CONFIG_RISCV_DIE0_UNCACHED_OFFSET >> PAGE_SHIFT)
-#define DIE0_MEM_TO_SYS_PFN_ADDRESS(a)              (DIE0_SYS_PORT_PFN_START + ((u64)(a) - DIE0_MEM_PORT_PFN_START))
-#define DIE0_SYS_TO_MEM_PFN_ADDRESS(a)              (DIE0_MEM_PORT_PFN_START + ((u64)(a) - DIE0_SYS_PORT_PFN_START))
-#define DIE0_SYS_PORT_PFN_END                       ((CONFIG_RISCV_DIE0_UNCACHED_OFFSET + CONFIG_RISCV_DIE0_MEM_MAX_SIZE) >> PAGE_SHIFT)
-
-/* DIE1 */
-#define DIE1_MEM_PORT_PFN_START                     (CONFIG_RISCV_DIE1_CACHED_OFFSET >> PAGE_SHIFT)
-#define DIE1_MEM_PORT_PFN_END                       ((CONFIG_RISCV_DIE1_CACHED_OFFSET + CONFIG_RISCV_DIE1_MEM_MAX_SIZE) >> PAGE_SHIFT)
-
-#define DIE1_SYS_PORT_PFN_START                     (CONFIG_RISCV_DIE1_UNCACHED_OFFSET >> PAGE_SHIFT)
-#define DIE1_MEM_TO_SYS_PFN_ADDRESS(a)              (DIE1_SYS_PORT_PFN_START + ((u64)(a) - DIE1_MEM_PORT_PFN_START))
-#define DIE1_SYS_TO_MEM_PFN_ADDRESS(a)              (DIE1_MEM_PORT_PFN_START + ((u64)(a) - DIE1_SYS_PORT_PFN_START))
-#define DIE1_SYS_PORT_PFN_END                       ((CONFIG_RISCV_DIE1_UNCACHED_OFFSET + CONFIG_RISCV_DIE1_MEM_MAX_SIZE) >> PAGE_SHIFT)
-
-/* interleave */
-#define INTERLEAVE_MEM_PORT_PFN_START               (CONFIG_RISCV_INTERLEAVE_CACHED_OFFSET >> PAGE_SHIFT)
-#define INTERLEAVE_MEM_PORT_PFN_END                 ((CONFIG_RISCV_INTERLEAVE_CACHED_OFFSET + CONFIG_RISCV_INTERLEAVE_MEM_MAX_SIZE) >> PAGE_SHIFT)
-
-#define INTERLEAVE_SYS_PORT_PFN_START               (CONFIG_RISCV_INTERLEAVE_UNCACHED_OFFSET >> PAGE_SHIFT)
-#define INTERLEAVE_MEM_TO_SYS_PFN_ADDRESS(a)        (INTERLEAVE_SYS_PORT_PFN_START + ((u64)(a) - INTERLEAVE_MEM_PORT_PFN_START))
-#define INTERLEAVE_SYS_TO_MEM_PFN_ADDRESS(a)        (INTERLEAVE_MEM_PORT_PFN_START + ((u64)(a) - INTERLEAVE_SYS_PORT_PFN_START))
-#define INTERLEAVE_SYS_PORT_PFN_END                 ((CONFIG_RISCV_INTERLEAVE_UNCACHED_OFFSET + CONFIG_RISCV_INTERLEAVE_MEM_MAX_SIZE) >> PAGE_SHIFT)
-
-/* pha conversion between mem port and sys port */
-#define convert_pfn_from_mem_to_sys_port(pfn) \
-	((pfn < DIE0_MEM_PORT_PFN_END)?DIE0_MEM_TO_SYS_PFN_ADDRESS(pfn): \
-	((pfn >= DIE1_MEM_PORT_PFN_START && pfn < DIE1_MEM_PORT_PFN_END)?DIE1_MEM_TO_SYS_PFN_ADDRESS(pfn): \
-	 ((pfn >= INTERLEAVE_MEM_PORT_PFN_START && pfn < INTERLEAVE_MEM_PORT_PFN_END) ? INTERLEAVE_MEM_TO_SYS_PFN_ADDRESS(pfn) : (pfn))))
-
-#define convert_pfn_from_sys_to_mem_port(pfn) \
-	((pfn < DIE0_SYS_PORT_PFN_END)?DIE0_SYS_TO_MEM_PFN_ADDRESS(pfn): \
-	((pfn >= DIE1_SYS_PORT_PFN_START && pfn < DIE1_SYS_PORT_PFN_END)?DIE1_SYS_TO_MEM_PFN_ADDRESS(pfn): \
-	((pfn >= INTERLEAVE_SYS_PORT_PFN_START && pfn < INTERLEAVE_SYS_PORT_PFN_END) ? INTERLEAVE_SYS_TO_MEM_PFN_ADDRESS(pfn) : (pfn))))
-
-#define convert_pha_from_mem_to_sys_port(pha) \
-	(convert_pfn_from_mem_to_sys_port(pha >> PAGE_SHIFT) << PAGE_SHIFT)
-
-#endif
-
 extern pgd_t swapper_pg_dir[];
 extern pgd_t trampoline_pg_dir[];
 extern pgd_t early_pg_dir[];
@@ -375,15 +327,6 @@ static inline unsigned long pte_pfn(pte_t pte)
 {
 	unsigned long res  = __page_val_to_pfn(pte_val(pte));
 
-#if defined(CONFIG_SOC_SIFIVE_EIC7700)
-	unsigned long pfn_new;
-	if (unlikely(pte_val(pte) & _PAGE_UNCACHE))
-	{
-	    pr_debug("pte_pfn:pfn_sys 0x%lx to pfn_mport 0x%lx\n", (pte_val(pte) >> _PAGE_PFN_SHIFT), pfn_new);
-	    return convert_pfn_from_sys_to_mem_port(pte_val(pte) >> _PAGE_PFN_SHIFT);
-	}
-#endif
-
 	if (has_svnapot() && pte_napot(pte))
 		res = res & (res - 1UL);
 
@@ -396,17 +339,6 @@ static inline unsigned long pte_pfn(pte_t pte)
 static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
 {
 	unsigned long prot_val = pgprot_val(prot);
-
-#if defined(CONFIG_SOC_SIFIVE_EIC7700)
-	unsigned long pfn_new;
-
-	if (unlikely(_PAGE_UNCACHE == (pgprot_val(prot) & _PAGE_UNCACHE)))
-	{
-	    pfn_new = convert_pfn_from_mem_to_sys_port(pfn);
-	    pr_debug("pfn_pte:pfn_mport 0x%lx to pfn_sysport 0x%lx\n", pfn, pfn_new);
-	    return __pte((pfn_new << _PAGE_PFN_SHIFT) | pgprot_val(prot));
-	}
-#endif
 
 	ALT_THEAD_PMA(prot_val);
 
@@ -664,7 +596,6 @@ static inline int ptep_clear_flush_young(struct vm_area_struct *vma,
 	return ptep_test_and_clear_young(vma, address, ptep);
 }
 
-#if !defined(CONFIG_SOC_SIFIVE_EIC7700)
 #define pgprot_noncached pgprot_noncached
 static inline pgprot_t pgprot_noncached(pgprot_t _prot)
 {
@@ -686,7 +617,6 @@ static inline pgprot_t pgprot_writecombine(pgprot_t _prot)
 
 	return __pgprot(prot);
 }
-#endif
 
 /*
  * THP functions
