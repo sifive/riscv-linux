@@ -319,6 +319,11 @@ static int eswin_pcie_host_init(struct dw_pcie_rp *pp)
 	/*  config support 32 msi vectors */
 	dw_pcie_writel_dbi(pci, 0x50, 0x018a7005);
 
+	/* disable msix cap */
+	val = dw_pcie_readl_dbi(pci, 0x70);
+	val &= 0xffff00ff;
+	dw_pcie_writel_dbi(pci, 0x70, val);
+
 	return 0;
 }
 
