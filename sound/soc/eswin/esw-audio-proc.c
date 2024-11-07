@@ -27,6 +27,7 @@
 #include <linux/eventfd.h>
 #include <linux/ioctl.h>
 #include <linux/device.h>
+#include <linux/mutex.h>
 
 // proc data definition
 typedef enum
@@ -79,6 +80,7 @@ static int audio_proc_major[NUM_DEVICES] = {0};
 static struct class *audio_proc_class = NULL;
 static struct device *audio_proc_device[NUM_DEVICES] = {NULL};
 static int32_t *g_perf_data[NUM_DEVICES] = {NULL};
+static DEFINE_MUTEX(audio_proc_class_lock);
 
 static void show_aenc_data(struct seq_file *m)
 {
@@ -393,15 +395,19 @@ int audio_proc_module_init(void)
 	int i, ret;
 	struct device *dev;
 
+	pr_info("audio_proc_module_init enter.\n");
+
+	mutex_lock(&audio_proc_class_lock);
+
 	if (g_proc_initialized) {
+		mutex_unlock(&audio_proc_class_lock);
 		return 0;
 	}
-
-	pr_info("audio_proc_module_init enter.\n");
 
 	audio_proc_class = class_create("audio_proc_class");
 	if (IS_ERR(audio_proc_class)) {
 		pr_err("Failed to create audio_proc_class\n");
+		mutex_unlock(&audio_proc_class_lock);
 		return PTR_ERR(audio_proc_class);
 	}
 
@@ -436,6 +442,7 @@ int audio_proc_module_init(void)
 	g_proc_initialized = true;
 
 	pr_info("es_audio_proc: initialized\n");
+	mutex_unlock(&audio_proc_class_lock);
 	return 0;
 
 cleanup:
@@ -455,6 +462,7 @@ cleanup:
 	}
 
 	class_destroy(audio_proc_class);
+	mutex_unlock(&audio_proc_class_lock);
 	return ret;
 }
 
