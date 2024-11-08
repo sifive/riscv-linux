@@ -1,3 +1,14 @@
+linux-premier (6.6.21-9.1) noble; urgency=medium
+
+  * Disabled NUMA and optimized DRM configs
+  * Fixed MMC crash in fwupd
+  * Optimize ELF relocation function
+  * Fixed i2s_probe crash
+  * Fixed vblank_timeout warning dump on boot up
+  * Fixed CSR clock error on boot up
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Fri, 08 Nov 2024 13:58:43 +0000
+
 linux-premier (6.6.21-8.1) noble; urgency=medium
 
   * Disabled kernel debug configs 
