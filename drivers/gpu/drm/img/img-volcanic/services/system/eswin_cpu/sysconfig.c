@@ -64,7 +64,6 @@ void riscv_invalidate_addr(phys_addr_t addr, size_t size,IMG_BOOL virtual) {
 }
 void riscv_flush_addr(IMG_UINT64 cpuaddr,IMG_UINT64 bytes_size, IMG_BOOL virtual)
 {
-		// printk(KERN_ALERT "eswin print %s: ----------riscv_flush_addr--run-----------\n", __func__);
     IMG_UINT64 bStart = 0;
     IMG_UINT64 bEnd = 0;
     // IMG_UINT64 bBase;
@@ -260,7 +259,6 @@ void SysDevDeInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
                 WARN_ON(0 != ret);
                 reset_control_put(psDevConfig->rstc_axi);
         }
-        printk(KERN_DEBUG "eswin print %s: gpu reset assert ok\n", __func__);
 
 	/* eswin, close the clk */
         if (psDevConfig->aclk)
@@ -278,7 +276,6 @@ void SysDevDeInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
             clk_disable_unprepare(psDevConfig->gray_clk);
 	    clk_put(psDevConfig->gray_clk);
         }
-        printk(KERN_DEBUG "eswin print %s: gpu clk disable ok\n", __func__);
 
 	OSFreeMem(psDevConfig);
 }
@@ -365,19 +362,16 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 	{
 		ret = PTR_ERR(psDevConfig->aclk);
 		dev_err(&pdev->dev, "failed to get aclk: %d\n", ret);
-		printk(KERN_ALERT "eswin print %s: failed to get aclk\n", __func__);
 		return ret;
 	}
 
 	// get gpu clk, it is supposed to be 800MHz
 	rgx_freq = clk_get_rate(psDevConfig->aclk);
-	printk(KERN_ALERT "%s:%d, eswin print : read back aclk  %dHZ \n", __func__, __LINE__, rgx_freq);
 
 	ret = clk_prepare_enable(psDevConfig->aclk);
 	if (ret)
 	{
 		dev_err(&pdev->dev, "failed to enable aclk: %d\n", ret);
-		printk(KERN_ALERT "eswin print %s: failed to enable aclk\n", __func__);
 		return ret;
 	}
 
@@ -386,14 +380,12 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 	{
 		ret = PTR_ERR(psDevConfig->cfg_clk);
 		dev_err(&pdev->dev, "failed to get cfg_clk: %d\n", ret);
-		printk(KERN_ALERT "eswin print %s: failed to get cfg_clk\n", __func__);
 		return ret;
 	}
 	ret = clk_prepare_enable(psDevConfig->cfg_clk);
 	if (ret)
 	{
 		dev_err(&pdev->dev, "failed to enable cfg_clk: %d\n", ret);
-		printk(KERN_ALERT "eswin print %s: failed to enable cfg_clk\n", __func__);
 		return ret;
 	}
 
@@ -402,21 +394,17 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 	{
 		ret = PTR_ERR(psDevConfig->gray_clk);
 		dev_err(&pdev->dev, "failed to get gray_clk: %d\n", ret);
-		printk(KERN_ALERT "eswin print %s: failed to get gray_clk\n", __func__);
 		return ret;
 	}
 	ret = clk_prepare_enable(psDevConfig->gray_clk);
 	if (ret)
 	{
 		dev_err(&pdev->dev, "failed to enable gray_clk: %d\n", ret);
-		printk(KERN_ALERT "eswin print %s: failed to enable gray_clk\n", __func__);
 		return ret;
 	}
-	printk(KERN_ALERT "eswin print %s: gpu clk enable ok\n", __func__);
 	clk_disable_unprepare(psDevConfig->aclk);
 	clk_disable_unprepare(psDevConfig->cfg_clk);
 	clk_disable_unprepare(psDevConfig->gray_clk);
-	printk(KERN_ALERT "eswin print %s: gpu clk disable ok\n", __func__);
 
 	if (_corefreq_div > 800000000)
 		_corefreq_div = 800000000;
@@ -428,24 +416,20 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 			dev_err(&pdev->dev, "failed to set aclk: %d\n", ret);
 			return ret;
 		}
-		printk(KERN_ALERT "eswin print : set aclk to %dHZ \n", rgx_freq);
 	}
 	rgx_freq = clk_get_rate(psDevConfig->aclk);
-	printk(KERN_ALERT "eswin print : read back aclk  %dHZ \n", rgx_freq);
 	psRGXTimingInfo->ui32CoreClockSpeed = rgx_freq;
 
 	clk_prepare_enable(psDevConfig->aclk);
 	clk_prepare_enable(psDevConfig->cfg_clk);
 	clk_prepare_enable(psDevConfig->gray_clk);
 
-	printk(KERN_ALERT "eswin print %s: gpu clk enable ok\n", __func__);
 
 	// reset gpu
 	psDevConfig->rstc_axi = of_reset_control_get_optional_exclusive(np, "axi");
 	if (IS_ERR_OR_NULL(psDevConfig->rstc_axi))
 	{
 		dev_err(&pdev->dev, "Failed to get axi reset handle\n");
-		printk(KERN_ALERT "eswin print %s: Failed to get axi reset handle\n", __func__);
 		return -EFAULT;
 	}
 	ret = reset_control_reset(psDevConfig->rstc_axi);
@@ -455,7 +439,6 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 	if (IS_ERR_OR_NULL(psDevConfig->rstc_cfg))
 	{
 		dev_err(&pdev->dev, "Failed to get cfg reset handle\n");
-		printk(KERN_ALERT "eswin print %s: Failed to get cfg reset handle\n", __func__);
 		return -EFAULT;
 	}
 	ret = reset_control_reset(psDevConfig->rstc_cfg);
@@ -465,7 +448,6 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 	if (IS_ERR_OR_NULL(psDevConfig->rstc_gray))
 	{
 		dev_err(&pdev->dev, "Failed to get gray reset handle\n");
-		printk(KERN_ALERT "eswin print %s: Failed to get gray reset handle\n", __func__);
 		return -EFAULT;
 	}
 	ret = reset_control_reset(psDevConfig->rstc_gray);
@@ -475,7 +457,6 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 	if (IS_ERR_OR_NULL(psDevConfig->rstc_jones))
 	{
 		dev_err(&pdev->dev, "Failed to get jones reset handle\n");
-		printk(KERN_ALERT "eswin print %s: Failed to get jones reset handle\n", __func__);
 		return -EFAULT;
 	}
 	ret = reset_control_reset(psDevConfig->rstc_jones);
@@ -485,12 +466,10 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 	if (IS_ERR_OR_NULL(psDevConfig->rstc_spu))
 	{
 		dev_err(&pdev->dev, "Failed to get spu reset handle\n");
-		printk(KERN_ALERT "eswin print %s: Failed to get spu reset handle\n", __func__);
 		return -EFAULT;
 	}
 	ret = reset_control_reset(psDevConfig->rstc_spu);
 	WARN_ON(0 != ret);
-	printk(KERN_ALERT "eswin print %s: gpu clk reset ok\n", __func__);
 #else
 	psRGXTimingInfo->ui32CoreClockSpeed        = RGX_NOHW_CORE_CLOCK_SPEED;
 #endif //CONFIG_SPARSE_IRQ
