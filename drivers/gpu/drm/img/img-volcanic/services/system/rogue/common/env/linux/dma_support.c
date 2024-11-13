@@ -139,7 +139,7 @@ SysDmaAcquireKernelAddress(struct page *psPage, IMG_UINT64 ui64Size, DMA_ALLOC *
 	}
 
 	/* Remap pages into VMALLOC space */
-	pvVirtAddr = pvr_vmap(pagearray, ui32PgCount, VM_READ | VM_WRITE, prot);
+	pvVirtAddr = pvr_vmap(pagearray, ui32PgCount, VM_MAP, prot);
 	psDmaAlloc->PageProps = prot;
 
 	/* Clean-up tmp buffers */
@@ -380,7 +380,7 @@ PVRSRV_ERROR SysDmaRegisterForIoRemapping(DMA_ALLOC *psDmaAlloc)
  ******************************************************************************/
 void SysDmaDeregisterForIoRemapping(DMA_ALLOC *psDmaAlloc)
 {
-	size_t uiSize;
+	__maybe_unused size_t uiSize;
 	IMG_UINT32 ui32Idx;
 
 	if (psDmaAlloc == NULL ||

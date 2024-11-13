@@ -137,4 +137,25 @@ THE SOFTWARE.
 #define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY50_16x4_V13    fourcc_mod_code(PVR, 30)
 #define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY75_16x4_V13    fourcc_mod_code(PVR, 31)
 
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY37_8x8_V13     fourcc_mod_code(PVR, 32)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY37_16x4_V13    fourcc_mod_code(PVR, 33)
+
+#define DRM_FORMAT_MOD_PVR_FBCDC_8x8_V14             fourcc_mod_code(PVR, 34)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY25_8x8_V14     fourcc_mod_code(PVR, 35)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY37_8x8_V14     fourcc_mod_code(PVR, 36)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY50_8x8_V14     fourcc_mod_code(PVR, 37)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY75_8x8_V14     fourcc_mod_code(PVR, 38)
+
+#define DRM_FORMAT_MOD_PVR_FBCDC_16x4_V14            fourcc_mod_code(PVR, 39)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY25_16x4_V14    fourcc_mod_code(PVR, 40)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY37_16x4_V14    fourcc_mod_code(PVR, 41)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY50_16x4_V14    fourcc_mod_code(PVR, 42)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY75_16x4_V14    fourcc_mod_code(PVR, 43)
+
+#define DRM_FORMAT_MOD_PVR_FBCDC_32x2_V14            fourcc_mod_code(PVR, 44)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY25_32x2_V14    fourcc_mod_code(PVR, 45)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY37_32x2_V14    fourcc_mod_code(PVR, 46)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY50_32x2_V14    fourcc_mod_code(PVR, 47)
+#define DRM_FORMAT_MOD_PVR_FBCDC_LOSSY75_32x2_V14    fourcc_mod_code(PVR, 48)
+
 #endif /* IMG_DRM_FOURCC_H */

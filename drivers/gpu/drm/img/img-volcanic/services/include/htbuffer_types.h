@@ -55,10 +55,14 @@ extern "C" {
 #include "htbuffer_sf.h"
 
 /* The group flags array of ints large enough to store all the group flags */
+#if defined(PVRSRV_ENABLE_HTB)
 #define HTB_FLAG_NUM_EL (((HTB_GROUP_DBG-1) / HTB_FLAG_NUM_BITS_IN_EL) + 1)
 extern IMG_INTERNAL HTB_FLAG_EL_T g_auiHTBGroupEnable[HTB_FLAG_NUM_EL];
 
 #define HTB_GROUP_ENABLED(SF) (g_auiHTBGroupEnable[HTB_LOG_GROUP_FLAG_GROUP(HTB_SF_GID(SF))] & HTB_LOG_GROUP_FLAG(HTB_SF_GID(SF)))
+#else
+#define HTB_GROUP_ENABLED(SF) IMG_FALSE
+#endif
 
 /*************************************************************************/ /*!
  Host Trace Buffer operation mode

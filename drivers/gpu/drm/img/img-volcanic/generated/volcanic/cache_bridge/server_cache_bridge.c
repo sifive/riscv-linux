@@ -87,9 +87,7 @@ PVRSRVBridgeCacheOpQueue(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -116,7 +114,6 @@ PVRSRVBridgeCacheOpQueue(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psCacheOpQueueIN), sizeof(unsigned long));
@@ -132,7 +129,6 @@ PVRSRVBridgeCacheOpQueue(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -301,11 +297,7 @@ CacheOpQueue_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -431,13 +423,16 @@ PVRSRV_ERROR InitCACHEBridge(void)
 {
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_CACHE, PVRSRV_BRIDGE_CACHE_CACHEOPQUEUE,
-			      PVRSRVBridgeCacheOpQueue, NULL);
+			      PVRSRVBridgeCacheOpQueue, NULL, sizeof(PVRSRV_BRIDGE_IN_CACHEOPQUEUE),
+			      sizeof(PVRSRV_BRIDGE_OUT_CACHEOPQUEUE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_CACHE, PVRSRV_BRIDGE_CACHE_CACHEOPEXEC,
-			      PVRSRVBridgeCacheOpExec, NULL);
+			      PVRSRVBridgeCacheOpExec, NULL, sizeof(PVRSRV_BRIDGE_IN_CACHEOPEXEC),
+			      sizeof(PVRSRV_BRIDGE_OUT_CACHEOPEXEC));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_CACHE, PVRSRV_BRIDGE_CACHE_CACHEOPLOG,
-			      PVRSRVBridgeCacheOpLog, NULL);
+			      PVRSRVBridgeCacheOpLog, NULL, sizeof(PVRSRV_BRIDGE_IN_CACHEOPLOG),
+			      sizeof(PVRSRV_BRIDGE_OUT_CACHEOPLOG));
 
 	return PVRSRV_OK;
 }

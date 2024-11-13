@@ -108,19 +108,9 @@ typedef struct _DRIVER_INFO_
 	IMG_BOOL	bIsNoMatch;
 }DRIVER_INFO;
 
-#if defined(SUPPORT_VALIDATION) && defined(__linux__)
-typedef struct MEM_LEAK_INTERVALS_TAG
-{
-	IMG_UINT32 ui32OSAlloc;
-	IMG_UINT32 ui32GPU;
-	IMG_UINT32 ui32MMU;
-} MEM_LEAK_INTERVALS;
-#endif
 
 typedef struct PVRSRV_DATA_TAG
 {
-	PVRSRV_DRIVER_MODE    eDriverMode;                    /*!< Driver mode (i.e. native, host or guest) */
-	IMG_BOOL              bForceApphintDriverMode;        /*!< Indicate if driver mode is forced via apphint */
 	DRIVER_INFO           sDriverInfo;
 	IMG_UINT32            ui32DPFErrorCount;                 /*!< Number of Fatal/Error DPFs */
 
@@ -138,21 +128,18 @@ typedef struct PVRSRV_DATA_TAG
 	IMG_HANDLE            hCleanupThread;                 /*!< Cleanup thread */
 	IMG_HANDLE            hCleanupEventObject;            /*!< Event object to drive cleanup thread */
 	POS_SPINLOCK          hCleanupThreadWorkListLock;     /*!< Lock protecting the cleanup thread work list */
-	DLLIST_NODE           sCleanupThreadWorkList;         /*!< List of work for the cleanup thread */
 	IMG_PID               cleanupThreadPid;               /*!< Cleanup thread process id */
 	uintptr_t             cleanupThreadTid;               /*!< Cleanup thread id */
 	ATOMIC_T              i32NumCleanupItemsQueued;       /*!< Number of items in cleanup thread work list */
 	ATOMIC_T              i32NumCleanupItemsNotCompleted; /*!< Number of items dropped from cleanup thread work list
 	                                                           after retry limit reached */
+	ATOMIC_T              i32CleanupItemTypes[PVRSRV_CLEANUP_TYPE_LAST];         /*!< Array containing the counts for different cleanup item types. */
 
 	IMG_HANDLE            hDevicesWatchdogThread;         /*!< Devices watchdog thread */
 	IMG_HANDLE            hDevicesWatchdogEvObj;          /*! Event object to drive devices watchdog thread */
 	volatile IMG_UINT32   ui32DevicesWatchdogPwrTrans;    /*! Number of off -> on power state transitions */
 #if !defined(PVRSRV_SERVER_THREADS_INDEFINITE_SLEEP)
 	volatile IMG_UINT32   ui32DevicesWatchdogTimeout;     /*! Timeout for the Devices watchdog Thread */
-#endif
-#ifdef PVR_TESTING_UTILS
-	volatile IMG_UINT32   ui32DevicesWdWakeupCounter;     /* Need this for the unit tests. */
 #endif
 
 #if defined(SUPPORT_AUTOVZ)
@@ -165,6 +152,9 @@ typedef struct PVRSRV_DATA_TAG
 	IMG_HANDLE            hHWPerfHostPeriodicEvObj;       /*! Event object to drive HWPerf thread */
 	volatile IMG_BOOL     bHWPerfHostThreadStop;
 	IMG_UINT32            ui32HWPerfHostThreadTimeout;
+
+	POS_LOCK              hClientStreamTableLock;         /*!< Lock for the client stream hash */
+	HASH_TABLE            *psClientStreamTable;           /*!< Hash table for client streams */
 
 	IMG_HANDLE            hPvzConnection;                 /*!< PVZ connection used for cross-VM hyper-calls */
 	POS_LOCK              hPvzConnectionLock;             /*!< Lock protecting PVZ connection */
@@ -182,14 +172,16 @@ typedef struct PVRSRV_DATA_TAG
 	DEVMEM_MEMDESC        *psInfoPageMemDesc;             /*! Memory descriptor of the information page. */
 	POS_LOCK              hInfoPageLock;                  /*! Lock guarding access to information page. */
 
-#if defined(SUPPORT_VALIDATION) && defined(__linux__)
-	MEM_LEAK_INTERVALS    sMemLeakIntervals;              /*!< How often certain memory leak types will trigger */
-#endif
 	IMG_HANDLE            hThreadsDbgReqNotify;
 
+
 	IMG_UINT32            ui32PDumpBoundDevice;           /*!< PDump is bound to the device first connected to */
+	ATOMIC_T              iNumDriverTasksActive;          /*!< Number of device-agnostic tasks active in the server */
+	PVRSRV_DRIVER_MODE    aeModuleParamDriverMode[PVRSRV_MAX_DEVICES]; /*!< Driver Mode for each device requested at launch */
 } PVRSRV_DATA;
 
+/* Function pointer used to invalidate cache between loops in wait/poll for value functions */
+typedef PVRSRV_ERROR (*PFN_INVALIDATE_CACHEFUNC)(const volatile void*, IMG_UINT64, PVRSRV_CACHE_OP);
 
 /*!
 ******************************************************************************
@@ -200,32 +192,23 @@ typedef struct PVRSRV_DATA_TAG
  @Return   PVRSRV_DATA *
 ******************************************************************************/
 PVRSRV_DATA *PVRSRVGetPVRSRVData(void);
+PVRSRV_DRIVER_MODE PVRSRVGetVzModeByDevNum(IMG_UINT32 ui32DevNum);
 
-#define PVRSRV_KM_ERRORS                     (PVRSRVGetPVRSRVData()->ui32DPFErrorCount)
+#define PVRSRV_KM_ERRORS                     ( PVRSRVGetPVRSRVData() ? PVRSRVGetPVRSRVData()->ui32DPFErrorCount : IMG_UINT32_MAX)
 #define PVRSRV_ERROR_LIMIT_REACHED                (PVRSRV_KM_ERRORS == IMG_UINT32_MAX)
 #define PVRSRV_REPORT_ERROR()                do { if (!(PVRSRV_ERROR_LIMIT_REACHED)) { PVRSRVGetPVRSRVData()->ui32DPFErrorCount++; } } while (0)
 
-#define PVRSRV_VZ_MODE_IS(_expr)              (DRIVER_MODE_##_expr == PVRSRVGetPVRSRVData()->eDriverMode)
-#define PVRSRV_VZ_RETN_IF_MODE(_expr)         do { if (  PVRSRV_VZ_MODE_IS(_expr)) { return; } } while (0)
-#define PVRSRV_VZ_RETN_IF_NOT_MODE(_expr)     do { if (! PVRSRV_VZ_MODE_IS(_expr)) { return; } } while (0)
-#define PVRSRV_VZ_RET_IF_MODE(_expr, _rc)     do { if (  PVRSRV_VZ_MODE_IS(_expr)) { return (_rc); } } while (0)
-#define PVRSRV_VZ_RET_IF_NOT_MODE(_expr, _rc) do { if (! PVRSRV_VZ_MODE_IS(_expr)) { return (_rc); } } while (0)
+#define PVRSRV_VZ_MODE_FROM_DEVNODE(pnode)     (pnode->psDevConfig->eDriverMode)
+#define PVRSRV_VZ_MODE_FROM_DEVINFO(pdevinfo)  (pdevinfo->psDeviceNode->psDevConfig->eDriverMode)
+#define PVRSRV_VZ_MODE_FROM_DEVCFG(pdevcfg)    (pdevcfg->eDriverMode)
+#define PVRSRV_VZ_MODE_FROM_DEVID(devid)       (PVRSRVGetVzModeByDevNum(devid))
 
-/*!
-******************************************************************************
-@Note	The driver execution mode AppHint (i.e. PVRSRV_APPHINT_DRIVERMODE)
-		can be an override or non-override 32-bit value. An override value
-		has the MSB bit set & a non-override value has this MSB bit cleared.
-		Excluding this MSB bit & interpreting the remaining 31-bit as a
-		signed 31-bit integer, the mode values are:
-		  [-1 native <default>: 0 host : +1 guest ].
-******************************************************************************/
-#define PVRSRV_VZ_APPHINT_MODE_IS_OVERRIDE(_expr)   ((IMG_UINT32)(_expr)&(IMG_UINT32)(1<<31))
-#define PVRSRV_VZ_APPHINT_MODE(_expr)				\
-	((((IMG_UINT32)(_expr)&(IMG_UINT32)0x7FFFFFFF) == (IMG_UINT32)0x7FFFFFFF) ? DRIVER_MODE_NATIVE : \
-		!((IMG_UINT32)(_expr)&(IMG_UINT32)0x7FFFFFFF) ? DRIVER_MODE_HOST : \
-			((IMG_UINT32)((IMG_UINT32)(_expr)&(IMG_UINT)0x7FFFFFFF)==(IMG_UINT32)0x1) ? DRIVER_MODE_GUEST : \
-				((IMG_UINT32)(_expr)&(IMG_UINT32)0x7FFFFFFF))
+#define PVRSRV_VZ_MODE_IS(_expr, _struct, dev) (DRIVER_MODE_##_expr == PVRSRV_VZ_MODE_FROM_##_struct(dev))
+
+#define PVRSRV_VZ_RETN_IF_MODE(_expr, _struct, dev)         do { if (  PVRSRV_VZ_MODE_IS(_expr, _struct, dev)) { return; } } while (0)
+#define PVRSRV_VZ_RET_IF_MODE(_expr, _struct, dev, _rc)     do { if (  PVRSRV_VZ_MODE_IS(_expr, _struct, dev)) { return (_rc); } } while (0)
+
+#define PVRSRV_VZ_TIME_SLICE_MAX	(100UL)
 
 typedef struct _PHYS_HEAP_ITERATOR_ PHYS_HEAP_ITERATOR;
 
@@ -234,19 +217,19 @@ typedef struct _PHYS_HEAP_ITERATOR_ PHYS_HEAP_ITERATOR;
  @Function LMA_HeapIteratorCreate
 
  @Description
- Creates iterator for traversing physical heap requested by ui32Flags. The
+ Creates iterator for traversing physical heap requested by ePhysHeap. The
  iterator will go through all of the segments (a segment is physically
  contiguous) of the physical heap and return their CPU physical address and
  size.
 
  @Input psDevNode: Pointer to device node struct.
- @Input ui32Flags: Find heap that matches flags.
+ @Input ePhysHeap: Find the matching heap.
  @Output ppsIter: Pointer to the iterator object.
 
  @Return PVRSRV_OK upon success and PVRSRV_ERROR otherwise.
 ******************************************************************************/
 PVRSRV_ERROR LMA_HeapIteratorCreate(PVRSRV_DEVICE_NODE *psDevNode,
-                                    PHYS_HEAP_USAGE_FLAGS ui32Flags,
+                                    PVRSRV_PHYS_HEAP ePhysHeap,
                                     PHYS_HEAP_ITERATOR **ppsIter);
 
 /*!
@@ -323,6 +306,8 @@ PVRSRV_ERROR LMA_HeapIteratorGetHeapStats(PHYS_HEAP_ITERATOR *psIter,
         also used by debug-dumping code, this argument MUST be IMG_FALSE
         otherwise, we might end up requesting debug-dump in recursion and
         eventually blow-up call stack.
+ @Input pfnFwInvalidate : Function pointer to invalidation function used
+        each loop / poll. This is only used for FWmemctx allocations.
 
  @Return   PVRSRV_ERROR :
 ******************************************************************************/
@@ -330,7 +315,8 @@ PVRSRV_ERROR PVRSRVPollForValueKM(PVRSRV_DEVICE_NODE *psDevNode,
 		volatile IMG_UINT32 __iomem *pui32LinMemAddr,
 		IMG_UINT32                   ui32Value,
 		IMG_UINT32                   ui32Mask,
-		POLL_FLAGS                   ePollFlags);
+		POLL_FLAGS                   ePollFlags,
+		PFN_INVALIDATE_CACHEFUNC     pfnFwInvalidate);
 
 /*!
 ******************************************************************************
@@ -343,12 +329,16 @@ PVRSRV_ERROR PVRSRVPollForValueKM(PVRSRV_DEVICE_NODE *psDevNode,
  @Input  ui32Value             : Required value
  @Input  ui32Mask              : Mask to be applied before checking against
                                  ui32Value
+ @Input  pfnFwInvalidate       : Function pointer to invalidation function used
+                                 each loop / wait. This is only used for
+                                 FWmemctx allocations.
  @Return PVRSRV_ERROR          :
 ******************************************************************************/
 PVRSRV_ERROR
 PVRSRVWaitForValueKM(volatile IMG_UINT32 __iomem *pui32LinMemAddr,
                      IMG_UINT32                  ui32Value,
-                     IMG_UINT32                  ui32Mask);
+                     IMG_UINT32                  ui32Mask,
+                     PFN_INVALIDATE_CACHEFUNC    pfnFwInvalidate);
 
 /*!
 ******************************************************************************
@@ -379,16 +369,6 @@ IMG_BOOL PVRSRVSystemSnoopingIsEmulated(PVRSRV_DEVICE_CONFIG *psDevConfig);
  @Return : IMG_TRUE if the system has CPU cache snooping
 ******************************************************************************/
 IMG_BOOL PVRSRVSystemSnoopingOfCPUCache(PVRSRV_DEVICE_CONFIG *psDevConfig);
-
-/*!
-******************************************************************************
- @Function	: PVRSRVSystemSnoopingOfDeviceCache
-
- @Description	: Returns whether the system supports snooping of the device cache
-
- @Return : IMG_TRUE if the system has device cache snooping
-******************************************************************************/
-IMG_BOOL PVRSRVSystemSnoopingOfDeviceCache(PVRSRV_DEVICE_CONFIG *psDevConfig);
 
 /*!
 ******************************************************************************
@@ -453,8 +433,8 @@ static inline IMG_BOOL PVRSRVIsBridgeEnabled(IMG_HANDLE hServices, IMG_UINT32 ui
 
 #if defined(SUPPORT_GPUVIRT_VALIDATION)
 #if defined(EMULATOR)
-	void SetAxiProtOSid(IMG_UINT32 ui32OSid, IMG_BOOL bState);
-	void SetTrustedDeviceAceEnabled(void);
+	void SetAxiProtOSid(IMG_HANDLE hSysData, IMG_UINT32 ui32OSid, IMG_BOOL bState);
+	void SetTrustedDeviceAceEnabled(IMG_HANDLE hSysData);
 #endif
 #endif
 
@@ -483,14 +463,14 @@ PVRSRV_ERROR PVRSRVCreateHWPerfHostThread(IMG_UINT32 ui32Timeout);
 PVRSRV_ERROR PVRSRVDestroyHWPerfHostThread(void);
 
 /*************************************************************************/ /*!
-@Function       FindPhysHeapConfig
+@Function       PVRSRVFindPhysHeapConfig
 @Description    Find Phys Heap Config from Device Config.
 @Input          psDevConfig  Pointer to device config.
 @Input          ui32Flags    Find heap that matches flags.
 @Return         PHYS_HEAP_CONFIG*  Return a config, or NULL if not found.
 */ /**************************************************************************/
-PHYS_HEAP_CONFIG* FindPhysHeapConfig(PVRSRV_DEVICE_CONFIG *psDevConfig,
-									 PHYS_HEAP_USAGE_FLAGS ui32Flags);
+PHYS_HEAP_CONFIG* PVRSRVFindPhysHeapConfig(PVRSRV_DEVICE_CONFIG *psDevConfig,
+										   PHYS_HEAP_USAGE_FLAGS ui32Flags);
 
 /*************************************************************************/ /*!
 @Function       PVRSRVGetDeviceInstance
@@ -501,19 +481,41 @@ PHYS_HEAP_CONFIG* FindPhysHeapConfig(PVRSRV_DEVICE_CONFIG *psDevConfig,
 PVRSRV_DEVICE_NODE* PVRSRVGetDeviceInstance(IMG_UINT32 ui32Instance);
 
 /*************************************************************************/ /*!
-@Function       PVRSRVGetDeviceInstanceByOSId
+@Function       PVRSRVGetDeviceInstanceByKernelDevID
 @Description    Return the specified device instance by OS Id.
 @Input          i32OSInstance        OS device Id to find
 @Return         PVRSRV_DEVICE_NODE*  Return a device node, or NULL if not found.
 */ /**************************************************************************/
-PVRSRV_DEVICE_NODE *PVRSRVGetDeviceInstanceByOSId(IMG_INT32 i32OSInstance);
+PVRSRV_DEVICE_NODE *PVRSRVGetDeviceInstanceByKernelDevID(IMG_INT32 i32OSInstance);
 
 /*************************************************************************/ /*!
-@Function       PVRSRVDefaultDomainPower
-@Description    Returns psDevNode->eCurrentSysPowerState
-@Input          PVRSRV_DEVICE_NODE*     Device node
-@Return         PVRSRV_SYS_POWER_STATE  System power state tracked internally
+@Function       PVRSRVAcquireInternalID
+@Description    Returns the lowest free device ID.
+@Output         pui32InternalID  The device ID
+@Return         PVRSRV_ERROR     PVRSRV_OK or an error code
 */ /**************************************************************************/
-PVRSRV_SYS_POWER_STATE PVRSRVDefaultDomainPower(PVRSRV_DEVICE_NODE *psDevNode);
+PVRSRV_ERROR PVRSRVAcquireInternalID(IMG_UINT32 *pui32InternalID);
+
+/*************************************************************************/ /*!
+@Function       PVRSRVDeviceFreeze
+@Description    Stops further processing from occurring on the device after the
+                 current work ends and blocks user-mode tasks on the specified
+                 device. Device node is put into POWER-DOWN state.
+@Input          PVRSRV_DEVICE_NODE*     Device node
+@Return         PVRSRV_ERROR            PVRSRV_OK on success otherwise a
+                                        PVRSRV_ERR_ code on failure
+*/ /**************************************************************************/
+PVRSRV_ERROR PVRSRVDeviceFreeze(PVRSRV_DEVICE_NODE *psDevNode);
+
+/*************************************************************************/ /*!
+@Function       PVRSRVDeviceThaw
+@Description    Unfreezes a previously frozen device. Restarts work on the
+                 device, if work queues are non-empty, and unblocks any
+                 user-mode tasks on the specified device.
+@Input          PVRSRV_DEVICE_NODE*     Device node
+@Return         PVRSRV_ERROR            PVRSRV_OK on success otherwise a
+                                        PVRSRV_ERR_ code on failure
+*/ /**************************************************************************/
+PVRSRV_ERROR PVRSRVDeviceThaw(PVRSRV_DEVICE_NODE *psDevNode);
 
 #endif /* PVRSRV_H */

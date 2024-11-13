@@ -51,6 +51,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "physmem.h"
 #include "ri_server.h"
 #include "pvr_ricommon.h"
+#include "pvrsrv.h"
 
 static void
 RGXShaderReadHeader(OS_FW_IMAGE *psShaderFW, RGX_SHADER_HEADER *psHeader)
@@ -111,14 +112,12 @@ _GetShaderFileName(PVRSRV_DEVICE_NODE * psDeviceNode,
 	PVRSRV_RGXDEV_INFO *psDevInfo = psDeviceNode->pvDevice;
 
 	OSSNPrintf(pszShaderFilenameStr, RGX_SHADER_FILENAME_MAX_SIZE,
-			   "%s." RGX_BVNC_STR_FMTSPEC,
-			   RGX_SH_FILENAME,
+			   RGX_SH_FILENAME "." RGX_BVNC_STR_FMTSPEC,
 			   psDevInfo->sDevFeatureCfg.ui32B, psDevInfo->sDevFeatureCfg.ui32V,
 			   psDevInfo->sDevFeatureCfg.ui32N, psDevInfo->sDevFeatureCfg.ui32C);
 
 	OSSNPrintf(pszShaderpFilenameStr, RGX_SHADER_FILENAME_MAX_SIZE,
-			   "%s." RGX_BVNC_STRP_FMTSPEC,
-			   RGX_SH_FILENAME,
+			   RGX_SH_FILENAME "." RGX_BVNC_STRP_FMTSPEC,
 			   psDevInfo->sDevFeatureCfg.ui32B, psDevInfo->sDevFeatureCfg.ui32V,
 			   psDevInfo->sDevFeatureCfg.ui32N, psDevInfo->sDevFeatureCfg.ui32C);
 }
@@ -135,6 +134,9 @@ PVRSRVTQLoadShaders(PVRSRV_DEVICE_NODE * psDeviceNode)
 	IMG_CHAR            aszShaderpFilenameStr[RGX_SHADER_FILENAME_MAX_SIZE];
 	const IMG_CHAR      *pszShaderFilenameStr = aszShaderFilenameStr;
 	size_t              uiNumBytes;
+	PVRSRV_DEVICE_NODE *psHostDevNode = PVRSRVGetPVRSRVData()->psHostMemDeviceNode;
+	size_t              uiLog2PageSize = OSGetPageShift();
+	IMG_DEVMEM_SIZE_T   uiTQUSCMemSize;
 	PVRSRV_ERROR        eError;
 
 	_GetShaderFileName(psDeviceNode, aszShaderFilenameStr, aszShaderpFilenameStr);
@@ -170,17 +172,27 @@ PVRSRVTQLoadShaders(PVRSRV_DEVICE_NODE * psDeviceNode)
 		goto failed_firmware;
 	}
 
-	ui32NumPages = (sHeader.ui32SizeFragment / RGX_BIF_PM_PHYSICAL_PAGE_SIZE) + 1;
+	ui32NumPages = (sHeader.ui32SizeFragment / IMG_PAGE2BYTES32(uiLog2PageSize)) + 1;
+
+	uiTQUSCMemSize = ui32NumPages * IMG_PAGE2BYTES32(uiLog2PageSize);
+
+	if (uiTQUSCMemSize > RGXFWIF_KM_USC_TQ_SHADER_CODE_MAX_SIZE_BYTES)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: TQ shaders out of space ("IMG_DEVMEM_SIZE_FMTSPEC" > 0x%X)",
+				 __func__, uiTQUSCMemSize, RGXFWIF_KM_USC_TQ_SHADER_CODE_MAX_SIZE_BYTES));
+		eError = PVRSRV_ERROR_NOT_SUPPORTED;
+		goto failed_firmware;
+	}
 
 	PDUMPCOMMENT(psDeviceNode, "Allocate TDM USC PMR Block (Pages %08X)", ui32NumPages);
 
 	eError = PhysmemNewRamBackedPMR(NULL,
 									psDeviceNode,
-									(IMG_DEVMEM_SIZE_T)ui32NumPages * RGX_BIF_PM_PHYSICAL_PAGE_SIZE,
+									uiTQUSCMemSize,
 									1,
 									1,
 									&ui32MappingTable,
-									RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT,
+									uiLog2PageSize,
 									PVRSRV_MEMALLOCFLAG_KERNEL_CPU_MAPPABLE
 									| PVRSRV_MEMALLOCFLAG_GPU_READABLE
 									| PVRSRV_MEMALLOCFLAG_GPU_CACHE_INCOHERENT
@@ -219,21 +231,25 @@ PVRSRVTQLoadShaders(PVRSRV_DEVICE_NODE * psDeviceNode)
 		goto failed_uscpmr;
 	}
 
-	ui32NumPages = (sHeader.ui32SizeClientMem / RGX_BIF_PM_PHYSICAL_PAGE_SIZE) + 1;
+	PDUMPCOMMENT(psDeviceNode, "Load TDM USC PMR Block (Size "IMG_SIZE_FMTSPECX")", RGXShaderUSCMemSize(psShaderFW));
+	PMRPDumpLoadMem(psDevInfo->hTQUSCSharedMem, 0, RGXShaderUSCMemSize(psShaderFW), PDUMP_FLAGS_CONTINUOUS, false);
+
+	ui32NumPages = (sHeader.ui32SizeClientMem / IMG_PAGE2BYTES32(uiLog2PageSize)) + 1;
 
 	PDUMPCOMMENT(psDeviceNode, "Allocate TDM Client PMR Block (Pages %08X)", ui32NumPages);
 
 	eError = PhysmemNewRamBackedPMR(NULL,
-									psDeviceNode,
-									(IMG_DEVMEM_SIZE_T)ui32NumPages * RGX_BIF_PM_PHYSICAL_PAGE_SIZE,
+									psHostDevNode,
+									(IMG_DEVMEM_SIZE_T)ui32NumPages * IMG_PAGE2BYTES32(uiLog2PageSize),
 									1,
 									1,
 									&ui32MappingTable,
-									RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT,
+									uiLog2PageSize,
 									PVRSRV_MEMALLOCFLAG_KERNEL_CPU_MAPPABLE
 									| PVRSRV_MEMALLOCFLAG_CPU_READABLE
 									| PVRSRV_MEMALLOCFLAG_CPU_CACHE_INCOHERENT
-									| PVRSRV_MEMALLOCFLAG_VAL_SHARED_BUFFER,
+									| PVRSRV_MEMALLOCFLAG_VAL_SHARED_BUFFER
+									| PVRSRV_MEMALLOCFLAG_PHYS_HEAP_HINT(CPU_LOCAL),
 									sizeof("tqclipmr"),
 									"tqclipmr",
 									PVR_SYS_ALLOC_PID,
@@ -276,9 +292,9 @@ PVRSRVTQLoadShaders(PVRSRV_DEVICE_NODE * psDeviceNode)
 	return PVRSRV_OK;
 
 failed_clipmr:
-	PMRUnrefPMR(psDevInfo->hTQCLISharedMem);
+	(void) PMRUnrefPMR(psDevInfo->hTQCLISharedMem);
 failed_uscpmr:
-	PMRUnrefPMR(psDevInfo->hTQUSCSharedMem);
+	(void) PMRUnrefPMR(psDevInfo->hTQUSCSharedMem);
 failed_firmware:
 	OSUnloadFirmware(psShaderFW);
 failed_init:
@@ -287,15 +303,12 @@ failed_init:
 
 void
 PVRSRVTQAcquireShaders(PVRSRV_DEVICE_NODE  * psDeviceNode,
-					   PMR                ** ppsCLIPMRMem,
-					   PMR                ** ppsUSCPMRMem)
+					   PMR                ** ppsCLIPMRMem)
 {
 	PVRSRV_RGXDEV_INFO *psDevInfo = psDeviceNode->pvDevice;
 
-	PVR_ASSERT(psDevInfo->hTQUSCSharedMem != NULL);
 	PVR_ASSERT(psDevInfo->hTQCLISharedMem != NULL);
 
-	*ppsUSCPMRMem = psDevInfo->hTQUSCSharedMem;
 	*ppsCLIPMRMem = psDevInfo->hTQCLISharedMem;
 }
 

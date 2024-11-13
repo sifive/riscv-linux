@@ -53,6 +53,7 @@ extern "C" {
  */
 typedef int32_t PVRSRV_FENCE;
 typedef int32_t PVRSRV_TIMELINE;
+typedef int32_t PVRSRV_EXP_FENCE_CTX;
 
 /*! Maximum length for an annotation name string for fence sync model objects.
  */
@@ -62,6 +63,7 @@ typedef int32_t PVRSRV_TIMELINE;
  */
 #define PVRSRV_NO_TIMELINE      ((PVRSRV_TIMELINE) -1)
 #define PVRSRV_NO_FENCE         ((PVRSRV_FENCE)    -1)
+#define PVRSRV_NO_EXP_FENCE_CTX ((PVRSRV_EXP_FENCE_CTX) -1)
 #define PVRSRV_NO_FENCE_PTR     NULL
 #define PVRSRV_NO_TIMELINE_PTR  NULL
 

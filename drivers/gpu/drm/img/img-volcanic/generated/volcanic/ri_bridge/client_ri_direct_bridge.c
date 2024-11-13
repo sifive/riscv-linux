@@ -70,21 +70,24 @@ IMG_INTERNAL PVRSRV_ERROR BridgeRIWriteMEMDESCEntry(IMG_HANDLE hBridge,
 						    const IMG_CHAR * puiTextB,
 						    IMG_UINT64 ui64Offset,
 						    IMG_UINT64 ui64Size,
-						    IMG_BOOL bIsImport,
-						    IMG_BOOL bIsSuballoc, IMG_HANDLE * phRIHandle)
+						    IMG_UINT64 ui64Flags, IMG_HANDLE * phRIHandle)
 {
 	PVRSRV_ERROR eError;
 	PMR *psPMRHandleInt;
 	RI_HANDLE psRIHandleInt = NULL;
-	PVR_UNREFERENCED_PARAMETER(hBridge);
 
 	psPMRHandleInt = (PMR *) hPMRHandle;
 
 	eError =
-	    RIWriteMEMDESCEntryKM(psPMRHandleInt,
+	    RIWriteMEMDESCEntryKM(NULL, (PVRSRV_DEVICE_NODE *) ((void *)hBridge),
+				  psPMRHandleInt,
 				  ui32TextBSize,
-				  puiTextB,
-				  ui64Offset, ui64Size, bIsImport, bIsSuballoc, &psRIHandleInt);
+				  puiTextB, ui64Offset, ui64Size, ui64Flags, &psRIHandleInt);
+
+	if (eError != PVRSRV_OK)
+	{
+		return eError;
+	}
 
 	*phRIHandle = psRIHandleInt;
 	return eError;

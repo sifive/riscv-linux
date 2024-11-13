@@ -180,8 +180,7 @@ static inline IMG_BOOL rgxfw_hwperf_pow_st_indirect(RGX_HWPERF_CNTBLK_ID eBlkTyp
 			/*NOTREACHED*/
 			break;
 		default:
-			if (((gsPowCtl.eUnitsPowState & RGXFW_POW_ST_RD_ON) != 0U) &&
-				(ui32NumDustsEnabled > 0U))
+			if (rgxfw_pow_is_rd_on() && (ui32NumDustsEnabled > 0U))
 			{
 				return IMG_TRUE;
 			}
@@ -197,8 +196,8 @@ static inline IMG_BOOL rgxfw_hwperf_pow_st_indirect(RGX_HWPERF_CNTBLK_ID eBlkTyp
 
 #else /* !defined(RGX_FIRMWARE) || !defined(RGX_FEATURE_PERFBUS) */
 
-# define rgxfw_hwperf_pow_st_direct   ((void *)NULL)
-# define rgxfw_hwperf_pow_st_indirect ((void *)NULL)
+# define rgxfw_hwperf_pow_st_direct   ((PFN_RGXFW_HWPERF_CNTBLK_POWERED)NULL)
+# define rgxfw_hwperf_pow_st_indirect ((PFN_RGXFW_HWPERF_CNTBLK_POWERED)NULL)
 
 #endif /* !defined(RGX_FIRMWARE) || !defined(RGX_FEATURE_PERFBUS) */
 
@@ -316,7 +315,10 @@ static inline IMG_BOOL rgx_hwperf_blk_present(const RGXFW_HWPERF_CNTBLK_TYPE_MOD
 			if (ui32RTArchVal > 2U)
 			{
 				psRtInfo->uiNumUnits =
-					PVRSRV_GET_DEVICE_FEATURE_VALUE(psNode, NUM_SPU);
+					PVRSRV_GET_DEVICE_FEATURE_VALUE(psNode, SPU0_RAC_PRESENT) +
+					PVRSRV_GET_DEVICE_FEATURE_VALUE(psNode, SPU1_RAC_PRESENT) +
+					PVRSRV_GET_DEVICE_FEATURE_VALUE(psNode, SPU2_RAC_PRESENT) +
+					PVRSRV_GET_DEVICE_FEATURE_VALUE(psNode, SPU3_RAC_PRESENT);
 			}
 			else
 			{

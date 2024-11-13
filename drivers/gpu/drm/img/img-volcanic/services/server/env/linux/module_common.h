@@ -80,12 +80,10 @@ typedef struct
 	 */
 	void *pvSyncConnectionData;
 
-#if defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD)
-	/* hGpuWorkPeriodEventStats is used to hold gpu work period event stats
-	 * private data for each apps which have been working with GPU.
+	/* An integer representing the type of connection (indicated by the
+	 * DKF_CONNECTION_FLAGS).
 	 */
-	void *pvGpuWorkPeriodEventStats;
-#endif /* defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD) */
+	uint32_t ui32Type;
 
 } PVRSRV_CONNECTION_PRIV;
 

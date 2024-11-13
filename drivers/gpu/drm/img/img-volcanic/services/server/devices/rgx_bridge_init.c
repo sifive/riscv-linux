@@ -46,10 +46,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgx_bridge_init.h"
 #include "rgxdevice.h"
 
-#if defined(RGX_FEATURE_FASTRENDER_DM_BIT_MASK)
 PVRSRV_ERROR InitRGXTQ2Bridge(void);
 void DeinitRGXTQ2Bridge(void);
-#endif
 PVRSRV_ERROR InitRGXCMPBridge(void);
 void DeinitRGXCMPBridge(void);
 #if defined(SUPPORT_RGXRAY_BRIDGE)
@@ -57,55 +55,112 @@ PVRSRV_ERROR InitRGXRAYBridge(void);
 void DeinitRGXRAYBridge(void);
 #endif
 
-PVRSRV_ERROR DeviceDepBridgeInit(PVRSRV_RGXDEV_INFO *psDevInfo)
+/* Reference counts for device-conditional
+ * bridges. This ensures that bridges remain
+ * valid while there are still devices using
+ * them.
+ */
+static ATOMIC_T i32RGXCMPBridgeRefCt;
+static ATOMIC_T i32RGXTQ2BridgeRefCt;
+#if defined(SUPPORT_RGXRAY_BRIDGE)
+static ATOMIC_T i32RGXRayBridgeRefCt;
+#endif
+static IMG_BOOL bAtomicsInitialised = IMG_FALSE;
+
+void RGXBridgeDriverInit(void)
+{
+	if (!bAtomicsInitialised)
+	{
+		bAtomicsInitialised = IMG_TRUE;
+		OSAtomicWrite(&i32RGXCMPBridgeRefCt, 0);
+		OSAtomicWrite(&i32RGXTQ2BridgeRefCt, 0);
+#if defined(SUPPORT_RGXRAY_BRIDGE)
+		OSAtomicWrite(&i32RGXRayBridgeRefCt, 0);
+#endif
+	}
+}
+
+PVRSRV_ERROR RGXRegisterBridges(PVRSRV_RGXDEV_INFO *psDevInfo)
 {
 	PVRSRV_ERROR eError;
 
-	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, COMPUTE))
+	if (!bAtomicsInitialised)
 	{
-		eError = InitRGXCMPBridge();
-		PVR_LOG_RETURN_IF_ERROR(eError, "InitRGXCMPBridge");
+		eError = PVRSRV_ERROR_NOT_INITIALISED;
+		PVR_LOG_RETURN_IF_ERROR(eError, "RGXBridgeRefCts");
 	}
 
-#if defined(RGX_FEATURE_FASTRENDER_DM_BIT_MASK)
+	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, COMPUTE))
+	{
+		if (OSAtomicIncrement(&i32RGXCMPBridgeRefCt) == 1)
+		{
+			eError = InitRGXCMPBridge();
+			if (eError != PVRSRV_OK)
+			{
+				OSAtomicDecrement(&i32RGXCMPBridgeRefCt);
+			}
+			PVR_LOG_RETURN_IF_ERROR(eError, "InitRGXCMPBridge");
+		}
+	}
+
 	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, FASTRENDER_DM))
 	{
-		eError = InitRGXTQ2Bridge();
-		PVR_LOG_RETURN_IF_ERROR(eError, "InitRGXTQ2Bridge");
+		if (OSAtomicIncrement(&i32RGXTQ2BridgeRefCt) == 1)
+		{
+			eError = InitRGXTQ2Bridge();
+			if (eError != PVRSRV_OK)
+			{
+				OSAtomicDecrement(&i32RGXTQ2BridgeRefCt);
+			}
+			PVR_LOG_RETURN_IF_ERROR(eError, "InitRGXTQ2Bridge");
+		}
 	}
-#endif
 
 #if defined(SUPPORT_RGXRAY_BRIDGE)
 	if (RGX_IS_FEATURE_VALUE_SUPPORTED(psDevInfo, RAY_TRACING_ARCH) &&
 		RGX_GET_FEATURE_VALUE(psDevInfo, RAY_TRACING_ARCH) > 0)
 	{
-		eError = InitRGXRAYBridge();
-		PVR_LOG_RETURN_IF_ERROR(eError, "InitRGXRAYBridge");
+		if (OSAtomicIncrement(&i32RGXRayBridgeRefCt) == 1)
+		{
+			eError = InitRGXRAYBridge();
+			if (eError != PVRSRV_OK)
+			{
+				OSAtomicDecrement(&i32RGXRayBridgeRefCt);
+			}
+			PVR_LOG_RETURN_IF_ERROR(eError, "InitRGXRAYBridge");
+		}
 	}
 #endif
 
 	return PVRSRV_OK;
 }
 
-void DeviceDepBridgeDeInit(PVRSRV_RGXDEV_INFO *psDevInfo)
+void RGXUnregisterBridges(PVRSRV_RGXDEV_INFO *psDevInfo)
 {
 	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, COMPUTE))
 	{
-		DeinitRGXCMPBridge();
+		if (OSAtomicDecrement(&i32RGXCMPBridgeRefCt) == 0)
+		{
+			DeinitRGXCMPBridge();
+		}
 	}
 
-#if defined(RGX_FEATURE_FASTRENDER_DM_BIT_MASK)
 	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, FASTRENDER_DM))
 	{
-		DeinitRGXTQ2Bridge();
+		if (OSAtomicDecrement(&i32RGXTQ2BridgeRefCt) == 0)
+		{
+			DeinitRGXTQ2Bridge();
+		}
 	}
-#endif
 
 #if defined(SUPPORT_RGXRAY_BRIDGE)
 	if (RGX_IS_FEATURE_VALUE_SUPPORTED(psDevInfo, RAY_TRACING_ARCH) &&
 		RGX_GET_FEATURE_VALUE(psDevInfo, RAY_TRACING_ARCH) > 0)
 	{
-		DeinitRGXRAYBridge();
+		if (OSAtomicDecrement(&i32RGXRayBridgeRefCt) == 0)
+		{
+			DeinitRGXRAYBridge();
+		}
 	}
 #endif
 }

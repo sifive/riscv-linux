@@ -41,11 +41,11 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */ /***************************************************************************/
 
-#include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/err.h>
 #include <linux/gfp.h>
 #include <linux/idr.h>
+#include <linux/pid.h>
 
 #include "handle_impl.h"
 #include "allocmem.h"
@@ -110,29 +110,11 @@ static PVRSRV_ERROR AcquireHandle(HANDLE_IMPL_BASE *psBase,
 	PVR_ASSERT(phHandle != NULL);
 	PVR_ASSERT(pvData != NULL);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0))
 	idr_preload(GFP_KERNEL);
 	id = idr_alloc(&psBase->sIdr, pvData, ID_VALUE_MIN, psBase->ui32MaxHandleValue + 1, 0);
 	idr_preload_end();
 
 	result = id;
-#else
-	do
-	{
-		if (idr_pre_get(&psBase->sIdr, GFP_KERNEL) == 0)
-		{
-			return PVRSRV_ERROR_OUT_OF_MEMORY;
-		}
-
-		result = idr_get_new_above(&psBase->sIdr, pvData, ID_VALUE_MIN, &id);
-	} while (result == -EAGAIN);
-
-	if ((IMG_UINT32)id > psBase->ui32MaxHandleValue)
-	{
-		idr_remove(&psBase->sIdr, id);
-		result = -ENOSPC;
-	}
-#endif
 
 	if (result < 0)
 	{
@@ -390,10 +372,6 @@ static PVRSRV_ERROR DestroyHandleBase(HANDLE_IMPL_BASE *psBase)
 {
 	PVR_ASSERT(psBase);
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0))
-	idr_remove_all(&psBase->sIdr);
-#endif
-
 	/* Finally destroy the idr */
 	idr_destroy(&psBase->sIdr);
 
@@ -401,7 +379,6 @@ static PVRSRV_ERROR DestroyHandleBase(HANDLE_IMPL_BASE *psBase)
 
 	return PVRSRV_OK;
 }
-
 
 static const HANDLE_IMPL_FUNCTAB g_sHandleFuncTab =
 {
@@ -413,7 +390,7 @@ static const HANDLE_IMPL_FUNCTAB g_sHandleFuncTab =
 	.pfnEnableHandlePurging = EnableHandlePurging,
 	.pfnPurgeHandles = PurgeHandles,
 	.pfnCreateHandleBase = CreateHandleBase,
-	.pfnDestroyHandleBase = DestroyHandleBase
+	.pfnDestroyHandleBase = DestroyHandleBase,
 };
 
 PVRSRV_ERROR PVRSRVHandleGetFuncTable(HANDLE_IMPL_FUNCTAB const **ppsFuncs)

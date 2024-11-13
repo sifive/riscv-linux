@@ -64,9 +64,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pdump_km.h"
 #include "allocmem.h"
 
-#if defined(PVR_TESTING_UTILS)
-#include "tutils_km.h"
-#endif
 
 #include "ossecure_export.h"
 
@@ -290,7 +287,6 @@ static IMG_BOOL _SyncFbFenceAddPt(PVRSRV_FENCE_SERVER *psFence,
                                   PVRSRV_SYNC_PT *psSyncPt);
 static PVRSRV_ERROR _SyncFbSWTimelineFenceCreate(PVRSRV_DEVICE_NODE *psDeviceNode,
                                                  PVRSRV_TIMELINE_SERVER *psTl,
-                                                 IMG_UINT32 uiFenceNameSize,
                                                  const IMG_CHAR *pszFenceName,
                                                  PVRSRV_FENCE_SERVER **ppsOutputFence,
                                                  IMG_UINT64 *pui64SyncPtIdx);
@@ -555,6 +551,8 @@ static void _SyncFbDebugRequest(IMG_HANDLE hDebugRequestHandle,
                                 DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf,
                                 void *pvDumpDebugFile)
 {
+	PVR_UNREFERENCED_PARAMETER(hDebugRequestHandle);
+
 	if (DD_VERB_LVL_ENABLED(ui32VerbLevel, DEBUG_REQUEST_VERBOSITY_MEDIUM))
 	{
 		IMG_UINT32 i;
@@ -647,6 +645,8 @@ static void _SyncFbTimelineUpdate_NotifyCMD(void *psSyncFbContext)
 	PDLLIST_NODE psCurrentTl, psNextTl;
 	PDLLIST_NODE psCurrentPt, psNextPt;
 	IMG_BOOL bSignalled = IMG_FALSE, bSignal = IMG_FALSE;
+
+	PVR_UNREFERENCED_PARAMETER(psSyncFbContext);
 
 	PVR_DPF_ENTERED;
 
@@ -822,7 +822,7 @@ PVRSRV_ERROR SyncFbRegisterSyncFunctions(void)
 	gsSyncFbContext.sSyncCheckpointReg.pfnNoHWUpdateTimelines = &_SyncFbTimelineUpdate_NotifyCMD;
 	gsSyncFbContext.sSyncCheckpointReg.pfnFreeCheckpointListMem = OSFreeMem;
 	gsSyncFbContext.sSyncCheckpointReg.pfnDumpInfoOnStalledUFOs = &SyncFbDumpInfoOnStalledUFOs;
-	OSStringLCopy(gsSyncFbContext.sSyncCheckpointReg.pszImplName, "SyncFb", SYNC_CHECKPOINT_IMPL_MAX_STRLEN);
+	OSStringSafeCopy(gsSyncFbContext.sSyncCheckpointReg.pszImplName, "SyncFb", SYNC_CHECKPOINT_IMPL_MAX_STRLEN);
 #if defined(PDUMP)
 	gsSyncFbContext.sSyncCheckpointReg.pfnSyncFenceGetCheckpoints = &SyncFbFenceGetCheckpoints;
 #endif
@@ -861,11 +861,11 @@ PVRSRV_ERROR SyncFbRegisterDevice(PVRSRV_DEVICE_NODE *psDeviceNode)
 	psNewDeviceEntry = OSAllocMem(sizeof(*psNewDeviceEntry));
 	PVR_GOTO_IF_NOMEM(psNewDeviceEntry, eError, e4);
 
+	psNewDeviceEntry->psDevice = psDeviceNode;
+
 	OSLockAcquire(gsSyncFbContext.hFbContextLock);
 	dllist_add_to_tail(&gsSyncFbContext.sDeviceList, &psNewDeviceEntry->sDeviceListNode);
 	OSLockRelease(gsSyncFbContext.hFbContextLock);
-
-	psNewDeviceEntry->psDevice = psDeviceNode;
 
 	eError = PVRSRVRegisterDeviceDbgRequestNotify(&psNewDeviceEntry->hDBGNotify,
 	                                              psDeviceNode,
@@ -887,6 +887,7 @@ e4:
 e3:
 	OSLockDestroy(gsSyncFbContext.hFbContextLock);
 e2:
+	HASH_Delete_Extended(gsSyncFbContext.sCheckpointHashTable, IMG_TRUE);
 	OSEventObjectDestroy(gsSyncFbContext.hSyncEventObject);
 e1:
 	PVR_DPF_RETURN_RC(eError);
@@ -932,7 +933,7 @@ PVRSRV_ERROR SyncFbDeregisterDevice(PVRSRV_DEVICE_NODE *psDeviceNode)
 
 	PVRSRVUnregisterCmdCompleteNotify(gsSyncFbContext.hCMDNotify);
 
-
+	HASH_Delete_Extended(gsSyncFbContext.sCheckpointHashTable, IMG_TRUE);
 	eError = OSEventObjectDestroy(gsSyncFbContext.hSyncEventObject);
 	PVR_LOG_IF_ERROR(eError, "OSEventObjectDestroy");
 
@@ -1346,7 +1347,7 @@ PVRSRV_ERROR SyncFbFenceMerge(PVRSRV_FENCE_SERVER *psInFence1,
 	{
 		if (pszFenceName)
 		{
-			OSStringLCopy(psNewFence->pszName,
+			OSStringSafeCopy(psNewFence->pszName,
 						  pszFenceName,
 						  SYNC_FB_FENCE_MAX_LENGTH);
 		}
@@ -1540,6 +1541,9 @@ PVRSRV_ERROR SyncFbFenceDump(PVRSRV_FENCE_SERVER *psFence,
 	PVRSRV_ERROR eError = PVRSRV_OK;
 	IMG_UINT32 i;
 
+	PVR_UNREFERENCED_PARAMETER(uiFileNameLength);
+	PVR_UNREFERENCED_PARAMETER(uiModuleLength);
+	PVR_UNREFERENCED_PARAMETER(uiDescLength);
 
 	PVR_DPF_ENTERED1(psFence);
 
@@ -1548,6 +1552,8 @@ PVRSRV_ERROR SyncFbFenceDump(PVRSRV_FENCE_SERVER *psFence,
 	PVR_LOG(("    %s (%s:%u)", pszModule, pszFile, uiLine));
 #else
 	PVR_LOG(("    %s (location only available in debug build)", pszModule));
+	PVR_UNREFERENCED_PARAMETER(pszFile);
+	PVR_UNREFERENCED_PARAMETER(uiLine);
 #endif
 	PVR_LOG(("  Desc: %s", pszDesc));
 	PVR_LOG(("---------------- FENCE ----------------"));
@@ -1604,7 +1610,7 @@ static PVRSRV_ERROR _SyncFbTimelineCreate(PFN_SYNC_PT_HAS_SIGNALLED pfnHasPtSign
 	{
 		if (pszTimelineName)
 		{
-			OSStringLCopy((IMG_CHAR*) psNewTl->pszName,
+			OSStringSafeCopy((IMG_CHAR*) psNewTl->pszName,
 			              pszTimelineName,
 			              SYNC_FB_TIMELINE_MAX_LENGTH);
 		}
@@ -1618,8 +1624,6 @@ static PVRSRV_ERROR _SyncFbTimelineCreate(PFN_SYNC_PT_HAS_SIGNALLED pfnHasPtSign
 	dllist_init(&psNewTl->sSyncActiveList);
 	dllist_init(&psNewTl->sTlList);
 
-	_SyncFbFTimelineListAdd(psNewTl);
-
 	psNewTl->sTlOps.pfnSyncPtHasSignalled = pfnHasPtSignalled;
 	psNewTl->iUID = (IMG_INT64)(uintptr_t) psNewTl; /* Not unique throughout the driver lifetime */
 	OSAtomicWrite(&psNewTl->iSeqNum, 0);
@@ -1628,6 +1632,8 @@ static PVRSRV_ERROR _SyncFbTimelineCreate(PFN_SYNC_PT_HAS_SIGNALLED pfnHasPtSign
 
 	/* Set initial refcount value */
 	TL_REF_SET(&psNewTl->iRef, 1, psNewTl);
+
+	_SyncFbFTimelineListAdd(psNewTl);
 
 	*ppsTimeline = psNewTl;
 
@@ -1858,7 +1864,7 @@ PVRSRV_ERROR SyncFbFenceCreatePVR(PPVRSRV_DEVICE_NODE psDeviceNode,
 	OSLockRelease(gsSyncFbContext.hFbContextLock);
 
 	/* Init Fence */
-	OSStringLCopy(psNewFence->pszName,
+	OSStringSafeCopy(psNewFence->pszName,
 	              pszName,
 	              SYNC_FB_FENCE_MAX_LENGTH);
 
@@ -2371,7 +2377,6 @@ PVRSRV_ERROR SyncFbTimelineCreateSW(IMG_UINT32 uiTimelineNameSize,
 /*****************************************************************************/
 static PVRSRV_ERROR _SyncFbSWTimelineFenceCreate(PVRSRV_DEVICE_NODE *psDeviceNode,
                                           PVRSRV_TIMELINE_SERVER *psTl,
-                                          IMG_UINT32 uiFenceNameSize,
                                           const IMG_CHAR *pszFenceName,
                                           PVRSRV_FENCE_SERVER **ppsOutputFence,
                                           IMG_UINT64 *pui64SyncPtIdx)
@@ -2456,7 +2461,7 @@ static PVRSRV_ERROR _SyncFbSWTimelineFenceCreate(PVRSRV_DEVICE_NODE *psDeviceNod
 	if (pszFenceName)
 	{
 		/* Init Fence */
-		OSStringLCopy(psNewFence->pszName,
+		OSStringSafeCopy(psNewFence->pszName,
 		              pszFenceName,
 		              SYNC_FB_FENCE_MAX_LENGTH);
 	}
@@ -2531,7 +2536,6 @@ PVRSRV_ERROR SyncFbSWTimelineFenceCreateKM(PVRSRV_DEVICE_NODE *psDeviceNode,
 	PVR_GOTO_IF_ERROR(eError, e0);
 
 	eError = _SyncFbSWTimelineFenceCreate(psDeviceNode, psTl,
-	                                      OSStringLength(pszFenceName),
 	                                      pszFenceName,
 	                                      &psNewFence,
 	                                      pui64SyncPtIdx);
@@ -2581,10 +2585,10 @@ PVRSRV_ERROR SyncFbFenceCreateSW(CONNECTION_DATA *psConnection,
 	PVRSRV_ERROR eError;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(uiFenceNameSize);
 
 	eError =  _SyncFbSWTimelineFenceCreate(psDeviceNode,
 	                                       psTimeline,
-	                                       0,
 	                                       pszFenceName,
 	                                       ppsOutputFence,
 	                                       pui64SyncPtIdx);
@@ -2904,6 +2908,8 @@ PVRSRV_ERROR SyncFbFenceExportSecure(CONNECTION_DATA *psConnection,
 
 	PVR_DPF_ENTERED1(psFence);
 
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDevNode);
 	PVR_UNREFERENCED_PARAMETER(ppsSecureConnection);
 
 	eError = _SyncFbFenceExport(psFence, &psExport);
@@ -2942,7 +2948,6 @@ PVRSRV_ERROR SyncFbFenceImportSecure(CONNECTION_DATA *psConnection,
 
 	eError = _SyncFbFenceImport(psImport, ppsFence);
 
-	PVR_DPF_RETURN_OK;
 err_out:
 	PVR_DPF_RETURN_RC(eError);
 }
@@ -2952,187 +2957,3 @@ err_out:
 /*                            TESTING FUNCTIONS                              */
 /*                                                                           */
 /*****************************************************************************/
-#if defined(PVR_TESTING_UTILS)
-
-static void _GetCheckContext(PVRSRV_DEVICE_NODE *psDevNode,
-                             PSYNC_CHECKPOINT_CONTEXT *ppsSyncCheckpointContext)
-{
-	*ppsSyncCheckpointContext = psDevNode->hSyncCheckpointContext;
-}
-
-PVRSRV_ERROR TestIOCTLSyncFbFenceSignalPVR(CONNECTION_DATA *psConnection,
-                                           PVRSRV_DEVICE_NODE *psDevNode,
-                                           void *psFenceIn)
-{
-	PVRSRV_ERROR eError;
-	PVRSRV_SYNC_PT *psSyncPt;
-	IMG_UINT32 i;
-	PVRSRV_FENCE_SERVER *psFence = psFenceIn;
-
-	PVR_DPF_ENTERED;
-
-	for (i = 0; i < psFence->uiNumSyncs; i++)
-	{
-		psSyncPt = psFence->apsFenceSyncList[i];
-		OSAtomicWrite(&psSyncPt->iStatus, PVRSRV_SYNC_SIGNALLED);
-
-		OSLockAcquire(psSyncPt->psTl->hTlLock);
-		eError = _SyncFbSyncPtSignalAttached(psSyncPt, PVRSRV_SYNC_SIGNALLED);
-		PVR_LOG_GOTO_IF_ERROR(eError, "_SyncFbSyncPtSignalAttached", eSignal);
-
-		OSLockRelease(psSyncPt->psTl->hTlLock);
-	}
-
-	eError = _SyncFbSignalEO();
-	PVR_LOG_GOTO_IF_ERROR(eError, "_SyncFbSignalEO", eExit);
-
-	PVR_DPF_RETURN_OK;
-
-eSignal:
-	OSLockRelease(psSyncPt->psTl->hTlLock);
-eExit:
-	PVR_DPF_RETURN_RC(eError);
-}
-
-
-PVRSRV_ERROR TestIOCTLSyncFbFenceCreatePVR(CONNECTION_DATA *psConnection,
-                                           PVRSRV_DEVICE_NODE *psDevNode,
-                                           IMG_UINT32 uiNameLength,
-                                           const IMG_CHAR *pszName,
-                                           PVRSRV_TIMELINE iTL,
-                                           PVRSRV_FENCE *piOutFence)
-{
-	PSYNC_CHECKPOINT_CONTEXT psContext = NULL;
-	PSYNC_CHECKPOINT psCheckpoint;
-	PVRSRV_FENCE iFence;
-	PVRSRV_ERROR eError;
-	IMG_UINT64 uiFenceUID;
-
-	PVR_DPF_ENTERED;
-
-	if (iTL == PVRSRV_NO_TIMELINE)
-	{
-		WRN("Supplied invalid timeline, returning invalid fence!");
-		*piOutFence = PVRSRV_NO_FENCE;
-
-		eError = PVRSRV_OK;
-		goto e1;
-	}
-
-	_GetCheckContext(psDevNode,
-	                 &psContext);
-
-	eError = SyncFbFenceCreatePVR(psDevNode,
-	                              pszName,
-	                              iTL,
-	                              psContext,
-	                              &iFence,
-	                              &uiFenceUID,
-	                              NULL,
-	                              &psCheckpoint,
-	                              NULL,
-	                              NULL);
-	PVR_LOG_GOTO_IF_ERROR(eError, "SyncFbFenceCreatePVR", e1);
-
-	*piOutFence = iFence;
-
-	PVR_DPF_RETURN_OK;
-
-e1:
-	PVR_DPF_RETURN_RC(eError);
-}
-
-PVRSRV_ERROR TestIOCTLSyncFbFenceResolvePVR(CONNECTION_DATA *psConnection,
-                                            PVRSRV_DEVICE_NODE *psDevNode,
-                                            PVRSRV_FENCE iFence)
-{
-	PSYNC_CHECKPOINT_CONTEXT psContext = NULL;
-	PVRSRV_ERROR eError;
-	PSYNC_CHECKPOINT *apsChecks = NULL;
-	IMG_UINT32 uiNumChecks, i;
-	IMG_UINT64 uiFenceUID;
-
-	PVR_DPF_ENTERED;
-
-	_GetCheckContext(psDevNode,
-	                 &psContext);
-
-	eError = SyncFbFenceResolvePVR(psContext,
-	                               iFence,
-	                               &uiNumChecks,
-	                               &apsChecks,
-	                               &uiFenceUID);
-	PVR_LOG_GOTO_IF_ERROR(eError, "SyncFbFenceResolvePVR", eExit);
-
-	/* Close Checkpoints */
-	for (i = 0; i < uiNumChecks; i++)
-	{
-		SyncCheckpointFree(apsChecks[i]);
-	}
-
-	OSFreeMem(apsChecks);
-
-	PVR_DPF_RETURN_OK;
-
-eExit:
-	PVR_DPF_RETURN_RC(eError);
-}
-
-PVRSRV_ERROR TestIOCTLSyncFbSWTimelineAdvance(CONNECTION_DATA * psConnection,
-                                              PVRSRV_DEVICE_NODE *psDevNode,
-                                              PVRSRV_TIMELINE iSWTl)
-{
-	PVRSRV_ERROR eError;
-	PVRSRV_TIMELINE_SERVER *psSWTl;
-	PVRSRV_HANDLE_BASE *psHB;
-	SYNC_TIMELINE_OBJ sSWTimelineObj;
-
-	PVR_DPF_ENTERED;
-
-	PVR_UNREFERENCED_PARAMETER(psConnection);
-
-	eError = _SyncFbLookupProcHandle((IMG_HANDLE) (uintptr_t) iSWTl,
-	                                 PVRSRV_HANDLE_TYPE_PVRSRV_TIMELINE_SERVER,
-	                                 IMG_FALSE,
-	                                 (void**) &psSWTl,
-	                                 &psHB);
-	PVR_LOG_GOTO_IF_ERROR(eError, "_SyncFbLookupProcHandle", e0);
-
-	sSWTimelineObj.pvTlObj = psSWTl;
-	sSWTimelineObj.hTimeline = iSWTl;
-
-	eError = SyncSWTimelineAdvanceKM(psDevNode, &sSWTimelineObj);
-	PVR_LOG_GOTO_IF_ERROR(eError, "SyncSWTimelineAdvanceKM", e0);
-
-	PVR_DPF_RETURN_OK;
-
-e0:
-	PVR_DPF_RETURN_RC(eError);
-}
-
-PVRSRV_ERROR TestIOCTLSyncFbSWFenceCreate(CONNECTION_DATA * psConnection,
-                                          PVRSRV_DEVICE_NODE *psDevNode,
-                                          PVRSRV_TIMELINE iTl,
-                                          IMG_UINT32 uiFenceNameLength,
-                                          const IMG_CHAR *pszFenceName,
-                                          PVRSRV_FENCE *piFence)
-{
-	PVRSRV_ERROR eError;
-
-	PVR_DPF_ENTERED;
-
-	PVR_UNREFERENCED_PARAMETER(psConnection);
-
-	eError = SyncSWTimelineFenceCreateKM(psDevNode,
-	                                     iTl,
-	                                     pszFenceName,
-	                                     piFence);
-	PVR_LOG_GOTO_IF_ERROR(eError, "SyncSWTimelineFenceCreateKM", e0);
-
-	PVR_DPF_RETURN_OK;
-
-e0:
-	PVR_DPF_RETURN_RC(eError);
-}
-
-#endif /* PVR_TESTING_UTILS */

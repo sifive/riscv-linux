@@ -66,12 +66,10 @@ PVRSRVTQLoadShaders(PVRSRV_DEVICE_NODE *psDeviceNode);
 @Description    Get handle to ready allocated shader PMR memory
 @Input          psDeviceNode Device node
 @Output         ppsCLIPMRMem Shader data used by CPU client side.
-@Output         ppsUSCPMRMem Shader usc code used by GPU.
 */ /**************************************************************************/
 void
 PVRSRVTQAcquireShaders(PVRSRV_DEVICE_NODE  *psDeviceNode,
-                       PMR                **ppsCLIPMRMem,
-                       PMR                **ppsUSCPMRMem);
+                       PMR                **ppsCLIPMRMem);
 
 /*************************************************************************/ /*!
 @Function       PVRSRVTQUnLoadShaders

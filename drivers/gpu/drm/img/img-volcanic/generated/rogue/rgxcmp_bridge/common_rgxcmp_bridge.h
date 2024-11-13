@@ -58,12 +58,16 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define PVRSRV_BRIDGE_RGXCMP_RGXCREATECOMPUTECONTEXT			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+0
 #define PVRSRV_BRIDGE_RGXCMP_RGXDESTROYCOMPUTECONTEXT			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+1
 #define PVRSRV_BRIDGE_RGXCMP_RGXFLUSHCOMPUTEDATA			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+2
-#define PVRSRV_BRIDGE_RGXCMP_RGXSETCOMPUTECONTEXTPRIORITY			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+3
-#define PVRSRV_BRIDGE_RGXCMP_RGXNOTIFYCOMPUTEWRITEOFFSETUPDATE			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+4
-#define PVRSRV_BRIDGE_RGXCMP_RGXKICKCDM2			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+5
+#define PVRSRV_BRIDGE_RGXCMP_RGXSENDCANCELCMD			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+3
+#define PVRSRV_BRIDGE_RGXCMP_RGXSETCOMPUTECONTEXTPRIORITY			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+4
+#define PVRSRV_BRIDGE_RGXCMP_RGXNOTIFYCOMPUTEWRITEOFFSETUPDATE			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+5
 #define PVRSRV_BRIDGE_RGXCMP_RGXSETCOMPUTECONTEXTPROPERTY			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+6
 #define PVRSRV_BRIDGE_RGXCMP_RGXGETLASTDEVICEERROR			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+7
-#define PVRSRV_BRIDGE_RGXCMP_CMD_LAST			(PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+7)
+#define PVRSRV_BRIDGE_RGXCMP_RGXKICKTIMESTAMPQUERY			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+8
+#define PVRSRV_BRIDGE_RGXCMP_RGXKICKCDM			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+9
+#define PVRSRV_BRIDGE_RGXCMP_RGXCDMGETSHAREDMEMORY			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+10
+#define PVRSRV_BRIDGE_RGXCMP_RGXCDMRELEASESHAREDMEMORY			PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+11
+#define PVRSRV_BRIDGE_RGXCMP_CMD_LAST			(PVRSRV_BRIDGE_RGXCMP_CMD_FIRST+11)
 
 /*******************************************
             RGXCreateComputeContext
@@ -124,6 +128,24 @@ typedef struct PVRSRV_BRIDGE_OUT_RGXFLUSHCOMPUTEDATA_TAG
 } __packed PVRSRV_BRIDGE_OUT_RGXFLUSHCOMPUTEDATA;
 
 /*******************************************
+            RGXSendCancelCmd
+ *******************************************/
+
+/* Bridge in structure for RGXSendCancelCmd */
+typedef struct PVRSRV_BRIDGE_IN_RGXSENDCANCELCMD_TAG
+{
+	IMG_HANDLE hComputeContext;
+	IMG_INT32 i32FirstIntJobRefToCancel;
+	IMG_INT32 i32LastIntJobRefToCancel;
+} __packed PVRSRV_BRIDGE_IN_RGXSENDCANCELCMD;
+
+/* Bridge out structure for RGXSendCancelCmd */
+typedef struct PVRSRV_BRIDGE_OUT_RGXSENDCANCELCMD_TAG
+{
+	PVRSRV_ERROR eError;
+} __packed PVRSRV_BRIDGE_OUT_RGXSENDCANCELCMD;
+
+/*******************************************
             RGXSetComputeContextPriority
  *******************************************/
 
@@ -155,40 +177,6 @@ typedef struct PVRSRV_BRIDGE_OUT_RGXNOTIFYCOMPUTEWRITEOFFSETUPDATE_TAG
 {
 	PVRSRV_ERROR eError;
 } __packed PVRSRV_BRIDGE_OUT_RGXNOTIFYCOMPUTEWRITEOFFSETUPDATE;
-
-/*******************************************
-            RGXKickCDM2
- *******************************************/
-
-/* Bridge in structure for RGXKickCDM2 */
-typedef struct PVRSRV_BRIDGE_IN_RGXKICKCDM2_TAG
-{
-	IMG_UINT64 ui64DeadlineInus;
-	IMG_HANDLE hComputeContext;
-	IMG_UINT32 *pui32ClientUpdateOffset;
-	IMG_UINT32 *pui32ClientUpdateValue;
-	IMG_UINT32 *pui32SyncPMRFlags;
-	IMG_BYTE *pui8DMCmd;
-	IMG_CHAR *puiUpdateFenceName;
-	IMG_HANDLE *phClientUpdateUFOSyncPrimBlock;
-	IMG_HANDLE *phSyncPMRs;
-	PVRSRV_FENCE hCheckFenceFd;
-	PVRSRV_TIMELINE hUpdateTimeline;
-	IMG_UINT32 ui32ClientUpdateCount;
-	IMG_UINT32 ui32CmdSize;
-	IMG_UINT32 ui32ExtJobRef;
-	IMG_UINT32 ui32NumOfWorkgroups;
-	IMG_UINT32 ui32NumOfWorkitems;
-	IMG_UINT32 ui32PDumpFlags;
-	IMG_UINT32 ui32SyncPMRCount;
-} __packed PVRSRV_BRIDGE_IN_RGXKICKCDM2;
-
-/* Bridge out structure for RGXKickCDM2 */
-typedef struct PVRSRV_BRIDGE_OUT_RGXKICKCDM2_TAG
-{
-	PVRSRV_ERROR eError;
-	PVRSRV_FENCE hUpdateFence;
-} __packed PVRSRV_BRIDGE_OUT_RGXKICKCDM2;
 
 /*******************************************
             RGXSetComputeContextProperty
@@ -225,5 +213,97 @@ typedef struct PVRSRV_BRIDGE_OUT_RGXGETLASTDEVICEERROR_TAG
 	PVRSRV_ERROR eError;
 	IMG_UINT32 ui32Error;
 } __packed PVRSRV_BRIDGE_OUT_RGXGETLASTDEVICEERROR;
+
+/*******************************************
+            RGXKickTimestampQuery
+ *******************************************/
+
+/* Bridge in structure for RGXKickTimestampQuery */
+typedef struct PVRSRV_BRIDGE_IN_RGXKICKTIMESTAMPQUERY_TAG
+{
+	IMG_HANDLE hComputeContext;
+	IMG_BYTE *pui8DMCmd;
+	IMG_CHAR *puiUpdateFenceName;
+	PVRSRV_FENCE hCheckFenceFd;
+	PVRSRV_TIMELINE hUpdateTimeline;
+	IMG_UINT32 ui32CmdSize;
+	IMG_UINT32 ui32ExtJobRef;
+} __packed PVRSRV_BRIDGE_IN_RGXKICKTIMESTAMPQUERY;
+
+/* Bridge out structure for RGXKickTimestampQuery */
+typedef struct PVRSRV_BRIDGE_OUT_RGXKICKTIMESTAMPQUERY_TAG
+{
+	PVRSRV_ERROR eError;
+	PVRSRV_FENCE hUpdateFence;
+} __packed PVRSRV_BRIDGE_OUT_RGXKICKTIMESTAMPQUERY;
+
+/*******************************************
+            RGXKickCDM
+ *******************************************/
+
+/* Bridge in structure for RGXKickCDM */
+typedef struct PVRSRV_BRIDGE_IN_RGXKICKCDM_TAG
+{
+	IMG_UINT64 ui64DeadlineInus;
+	IMG_HANDLE hComputeContext;
+	IMG_UINT32 *pui32ClientUpdateOffset;
+	IMG_UINT32 *pui32ClientUpdateValue;
+	IMG_UINT32 *pui32SyncPMRFlags;
+	IMG_BYTE *pui8DMCmd;
+	IMG_CHAR *puiUpdateFenceName;
+	IMG_HANDLE *phClientUpdateUFOSyncPrimBlock;
+	IMG_HANDLE *phSyncPMRs;
+	PVRSRV_FENCE hCheckFenceFd;
+	PVRSRV_FENCE hExportFenceToSignal;
+	PVRSRV_TIMELINE hUpdateTimeline;
+	IMG_UINT32 ui32ClientUpdateCount;
+	IMG_UINT32 ui32CmdSize;
+	IMG_UINT32 ui32ExtJobRef;
+	IMG_UINT32 ui32NumOfWorkgroups;
+	IMG_UINT32 ui32NumOfWorkitems;
+	IMG_UINT32 ui32PDumpFlags;
+	IMG_UINT32 ui32SyncPMRCount;
+} __packed PVRSRV_BRIDGE_IN_RGXKICKCDM;
+
+/* Bridge out structure for RGXKickCDM */
+typedef struct PVRSRV_BRIDGE_OUT_RGXKICKCDM_TAG
+{
+	PVRSRV_ERROR eError;
+	PVRSRV_FENCE hUpdateFence;
+	IMG_UINT32 ui32IntJobRef;
+} __packed PVRSRV_BRIDGE_OUT_RGXKICKCDM;
+
+/*******************************************
+            RGXCDMGetSharedMemory
+ *******************************************/
+
+/* Bridge in structure for RGXCDMGetSharedMemory */
+typedef struct PVRSRV_BRIDGE_IN_RGXCDMGETSHAREDMEMORY_TAG
+{
+	IMG_UINT32 ui32EmptyStructPlaceholder;
+} __packed PVRSRV_BRIDGE_IN_RGXCDMGETSHAREDMEMORY;
+
+/* Bridge out structure for RGXCDMGetSharedMemory */
+typedef struct PVRSRV_BRIDGE_OUT_RGXCDMGETSHAREDMEMORY_TAG
+{
+	IMG_HANDLE hCLIPMRMem;
+	PVRSRV_ERROR eError;
+} __packed PVRSRV_BRIDGE_OUT_RGXCDMGETSHAREDMEMORY;
+
+/*******************************************
+            RGXCDMReleaseSharedMemory
+ *******************************************/
+
+/* Bridge in structure for RGXCDMReleaseSharedMemory */
+typedef struct PVRSRV_BRIDGE_IN_RGXCDMRELEASESHAREDMEMORY_TAG
+{
+	IMG_HANDLE hPMRMem;
+} __packed PVRSRV_BRIDGE_IN_RGXCDMRELEASESHAREDMEMORY;
+
+/* Bridge out structure for RGXCDMReleaseSharedMemory */
+typedef struct PVRSRV_BRIDGE_OUT_RGXCDMRELEASESHAREDMEMORY_TAG
+{
+	PVRSRV_ERROR eError;
+} __packed PVRSRV_BRIDGE_OUT_RGXCDMRELEASESHAREDMEMORY;
 
 #endif /* COMMON_RGXCMP_BRIDGE_H */

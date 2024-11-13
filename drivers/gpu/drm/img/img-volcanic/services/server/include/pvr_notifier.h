@@ -104,7 +104,7 @@ PVRSRVUnregisterCmdCompleteNotify(IMG_HANDLE hNotify);
 @Function       PVRSRVCheckStatus
 @Description    Calls PVRSRVNotifyCommandCompletion() to notify registered
                 command complete handlers of work completion and then calls
-                PVRSRVSignalGlobalEO() to signal the global event object.
+                PVRSRVSignalGlobalEO() to signal the driver wide event objects.
 @Input          hCmdCompCallerHandle Used to prevent a handler from being
                                      notified. A NULL value results in all
                                      handlers being notified.
@@ -125,11 +125,11 @@ void
 PVRSRVNotifyCommandCompletion(PVRSRV_CMDCOMP_HANDLE hCmdCompCallerHandle);
 
 /*************************************************************************/ /*!
-@Function       PVRSRVSignalGlobalEO
-@Description    Signals the global event object.
+@Function       PVRSRVSignalDriverWideEO
+@Description    Signals the driver wide event objects.
 */ /**************************************************************************/
 void
-PVRSRVSignalGlobalEO(void);
+PVRSRVSignalDriverWideEO(void);
 
 
 /*************************************************************************/ /*!

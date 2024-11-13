@@ -51,7 +51,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvrsrv.h"
 #include "sync_internal.h"
 #include "rgxfwutils.h"
-
+#include "rgxlayer.h"
+#include "rgxmmudefs_km.h"
+#include "rgxta3d.h"
 
 PVRSRV_ERROR RGXQueryAPMState(const PVRSRV_DEVICE_NODE *psDeviceNode,
 	const void *pvPrivateData,
@@ -214,6 +216,333 @@ inline const char * RGXStringifyKickTypeDM(RGX_KICK_TYPE_DM eKickTypeDM)
 		default:
 			return "Invalid DM ";
 	}
+}
+
+PHYS_HEAP_POLICY RGXPhysHeapGetLMAPolicy(PHYS_HEAP_USAGE_FLAGS ui32UsageFlags, PVRSRV_DEVICE_NODE *psDeviceNode)
+{
+	PHYS_HEAP_POLICY ui32Policy;
+
+	if (OSIsMapPhysNonContigSupported())
+	{
+		ui32Policy = PHYS_HEAP_POLICY_ALLOC_ALLOW_NONCONTIG;
+
+		if (BITMASK_ANY(ui32UsageFlags,
+			(PHYS_HEAP_USAGE_FW_SHARED    |
+			 PHYS_HEAP_USAGE_FW_PRIVATE   |
+			 PHYS_HEAP_USAGE_FW_PREMAP_PT |
+			 PHYS_HEAP_USAGE_FW_CODE      |
+			 PHYS_HEAP_USAGE_FW_PRIV_DATA)))
+		{
+			if (PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDeviceNode))
+			{
+				/* Guest Firmware heaps are always premapped */
+				ui32Policy = PHYS_HEAP_POLICY_DEFAULT;
+			}
+#if defined(RGX_PREMAP_FW_HEAPS)
+			else if (PVRSRV_VZ_MODE_IS(HOST, DEVNODE, psDeviceNode))
+			{
+				/* All Firmware heaps are premapped under AutoVz*/
+				ui32Policy = PHYS_HEAP_POLICY_DEFAULT;
+			}
+#endif
+		}
+
+		if (BITMASK_ANY(ui32UsageFlags, PHYS_HEAP_USAGE_FW_PREMAP))
+		{
+			ui32Policy = PHYS_HEAP_POLICY_DEFAULT;
+		}
+	}
+	else
+	{
+		ui32Policy = PHYS_HEAP_POLICY_DEFAULT;
+	}
+
+	return ui32Policy;
+}
+
+IMG_BOOL RGXIsErrorAndDeviceRecoverable(PVRSRV_DEVICE_NODE *psDeviceNode, PVRSRV_ERROR *peError)
+{
+	IMG_BOOL bRecoverable = IMG_TRUE;
+
+	if (*peError == PVRSRV_OK)
+	{
+		/* No recovery required */
+		return IMG_FALSE;
+	}
+
+	if (!PVRSRVIsStatusRecoverable(OSAtomicRead(&psDeviceNode->eHealthStatus)))
+	{
+		bRecoverable = IMG_FALSE;
+	}
+	else
+	{
+		RGXUpdateHealthStatus(psDeviceNode, IMG_FALSE);
+
+		if (!PVRSRVIsStatusRecoverable(OSAtomicRead(&psDeviceNode->eHealthStatus)))
+		{
+			bRecoverable = IMG_FALSE;
+		}
+	}
+
+	if (bRecoverable && !PVRSRVIsRetryError(*peError))
+	{
+		PVR_DPF((PVR_DBG_WARNING,
+				 "%s: Device is recoverable. Changing error type (%s) to retry.",
+				 __func__, PVRSRVGetErrorString(*peError)));
+		*peError = PVRSRV_ERROR_RETRY;
+	}
+
+	if (!bRecoverable && PVRSRVIsRetryError(*peError))
+	{
+		PVR_DPF((PVR_DBG_WARNING,
+				 "%s: Device is not recoverable. Error type should not be retry (%s).",
+				 __func__, PVRSRVGetErrorString(*peError)));
+		*peError = PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	return bRecoverable;
+}
+
+/*
+ *  Function that returns the MList Size required for a given max PB size.
+ *
+ *  The maximum MList size required always depends on the maximum PB Size
+ *  chosen and must also take into account the additional pages that will
+ *  be provided by a local PB.
+ */
+IMG_UINT32 RGXCalcMListSize(PVRSRV_DEVICE_NODE *psDeviceNode,
+                            IMG_UINT64 ui64MaxLocalPBSize,
+                            IMG_UINT64 ui64MaxGlobalPBSize)
+{
+	IMG_UINT32  ui32PTEPages = 0, ui32PDEPages = 0, ui32PCEPages = 0, ui32MListSize = 0;
+	IMG_UINT32  ui32NumOfPipes = 1;
+	IMG_UINT64  ui64TotalPages = 0;
+	PVRSRV_RGXDEV_INFO *psDevInfo = psDeviceNode->pvDevice;
+	PVR_UNREFERENCED_PARAMETER(psDevInfo);
+	/*
+	 *  Assert if Size of PB exceeds maximum theoretical limit
+	 *  RGX_PM_MAX_PB_VIRT_ADDR_SPACE represents the 16G address space#
+	 */
+	PVR_ASSERT(ui64MaxLocalPBSize+ui64MaxGlobalPBSize <= RGX_PM_MAX_PB_VIRT_ADDR_SPACE);
+
+	/* Calculate the total number of pages which is the number of Page table entries */
+	ui64TotalPages = ((ui64MaxLocalPBSize+ui64MaxGlobalPBSize)/RGX_BIF_PM_PHYSICAL_PAGE_SIZE);
+
+	/* Calculate the total number of pages required for the PTE's (minimum of 1) */
+	ui32PTEPages = (IMG_UINT32)(ui64TotalPages/RGX_MMUCTRL_ENTRIES_PT_VALUE);
+	if (ui32PTEPages == 0U)
+	{
+		ui32PTEPages = 1;
+	}
+
+	/* Calculate the total number of pages required to hold the PDE's (minimum of 1) */
+	ui32PDEPages = ui32PTEPages/RGX_MMUCTRL_ENTRIES_PD_VALUE;
+	if (ui32PDEPages == 0U)
+	{
+		ui32PDEPages = 1;
+	}
+
+	/* Calculate the total number of pages required to hold the PCE's (minimum of 1) */
+	ui32PCEPages = ui32PDEPages/RGX_MMUCTRL_ENTRIES_PC_VALUE;
+	if (ui32PCEPages == 0U)
+	{
+		ui32PCEPages = 1;
+	}
+
+	/* Calculate the maximum number of TA/VCE pipes */
+#if defined(RGX_FEATURE_SCALABLE_TE_ARCH_IDX)
+	{
+		IMG_UINT32 ui32Val = RGX_GET_FEATURE_VALUE(psDevInfo, RGX_FEATURE_SCALABLE_TE_ARCH);
+		if (ui32Val > ui32NumOfPipes)
+		{
+			ui32NumOfPipes = ui32Val;
+		}
+	}
+#endif
+
+#if defined(RGX_FEATURE_SCALABLE_TE_ARCH_IDX)
+	{
+		IMG_UINT32 ui32Val = RGX_GET_FEATURE_VALUE(psDevInfo, RGX_FEATURE_SCALABLE_VCE);
+		if (ui32Val > ui32NumOfPipes)
+		{
+			ui32NumOfPipes = ui32Val;
+		}
+	}
+#endif
+
+	/*
+	 *  Calculate the MList size considering the total number of pages in PB are shared
+	 *  among all the PM address spaces...
+	 */
+	ui32MListSize = (ui32PCEPages + ui32PDEPages + ui32PTEPages) *
+					RGX_NUM_PM_ADDR_SPACES * ui32NumOfPipes * RGX_MLIST_ENTRY_STRIDE;
+
+	/* Round it off to the nearest page granularity */
+	ui32MListSize = PVR_ALIGN(ui32MListSize, RGX_BIF_PM_PHYSICAL_PAGE_SIZE);
+
+	return ui32MListSize;
+}
+
+/*
+ * Critical PMRs are PMRs that are created by client that might contain physical page addresses.
+ * We need to validate if they were allocated with proper flags.
+ */
+PVRSRV_ERROR ValidateCriticalPMR(PMR* psPMR, IMG_DEVMEM_SIZE_T ui64MinSize)
+{
+	PVRSRV_ERROR eError;
+	PVRSRV_DEVICE_NODE *psDevNode = PMR_DeviceNode(psPMR);
+
+	IMG_BOOL bCPUCacheSnoop =
+		(PVRSRVSystemSnoopingOfCPUCache(psDevNode->psDevConfig) &&
+		 psDevNode->pfnGetDeviceSnoopMode(psDevNode) == PVRSRV_DEVICE_SNOOP_CPU_ONLY);
+
+	PMR_FLAGS_T uiFlags = PMR_Flags(psPMR);
+
+	/* Critical PMR cannot be user CPU mappable */
+	if (PVRSRV_CHECK_CPU_READABLE(uiFlags) ||
+	    PVRSRV_CHECK_CPU_WRITEABLE(uiFlags))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		         "Critical PMR allows CPU mapping (0x%" PVRSRV_MEMALLOCFLAGS_FMTSPEC ")",
+		         uiFlags));
+		PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_DEVICEMEM_INVALID_PMR_FLAGS, return_error);
+	}
+
+	/* Critical PMR must not be user CPU cacheable (unless snooping is on) */
+	if (!bCPUCacheSnoop &&
+	    (PVRSRV_CHECK_CPU_CACHE_INCOHERENT(uiFlags) ||
+	     PVRSRV_CHECK_CPU_CACHE_COHERENT(uiFlags) ||
+	     PVRSRV_CHECK_CPU_CACHED(uiFlags)))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		         "Critical PMR allows CPU caching (0x%" PVRSRV_MEMALLOCFLAGS_FMTSPEC ")",
+		         uiFlags));
+		PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_DEVICEMEM_INVALID_PMR_FLAGS, return_error);
+	}
+
+	/* Critical PMRs must be allocated with PMMETA_PROTECT */
+	if ((uiFlags & PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(PMMETA_PROTECT)) == 0)
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Critical PMR must have PMMETA_PROTECT set",
+		        __func__));
+		PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_DEVICEMEM_INVALID_PMR_FLAGS, return_error);
+	}
+
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+	if (PVRSRV_CHECK_OS_LINUX_MOVABLE(uiFlags))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Critical PMR must not have OS_LINUX_MOVABLE set",
+		        __func__));
+		PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_DEVICEMEM_INVALID_PMR_FLAGS, return_error);
+	}
+#endif
+
+	if (PMR_LogicalSize(psPMR) < ui64MinSize)
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		         "%s: Critical PMR doesn't have sufficient size",
+		         __func__));
+		PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_INVALID_PARAMS, return_error);
+	}
+
+	return PVRSRV_OK;
+return_error:
+	return eError;
+}
+
+/* Check if all global freelists have the same size and if all local freelists have the same size.*/
+PVRSRV_ERROR ValidateFreeListSizes(RGX_FREELIST* apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
+                                   IMG_UINT32*   pui32LocalFLMaxPages,
+                                   IMG_UINT32*   pui32GlobalFLMaxPages)
+{
+	IMG_UINT32 i,j;
+	PVRSRV_ERROR eError = PVRSRV_OK;
+	IMG_UINT32 ui32GlobalFLMaxPages = apsFreeLists[RGXFW_GLOBAL_FREELIST]->ui32MaxFLPages;
+	IMG_UINT32 ui32LocalFLMaxPages = apsFreeLists[RGXFW_LOCAL_FREELIST]->ui32MaxFLPages;
+	IMG_UINT32 ui32NumFLPerGD = RGXMKIF_NUM_RTDATA_FREELISTS/RGXMKIF_NUM_GEOMDATAS;
+
+	for (i=0; i<RGXMKIF_NUM_GEOMDATAS; i++)
+	{
+		/* Check if all local freelists have the same size */
+		if (apsFreeLists[ui32NumFLPerGD * i + RGXFW_LOCAL_FREELIST]->ui32MaxFLPages != ui32LocalFLMaxPages)
+		{
+			eError = PVRSRV_ERROR_INVALID_PARAMS;
+		}
+
+		/* Check if all global freelists have the same size */
+		for (j=RGXFW_GLOBAL_FREELIST; j<ui32NumFLPerGD; j++)
+		{
+			if (apsFreeLists[ui32NumFLPerGD * i + j]->ui32MaxFLPages != ui32GlobalFLMaxPages)
+			{
+				eError = PVRSRV_ERROR_INVALID_PARAMS;
+			}
+		}
+	}
+
+	*pui32LocalFLMaxPages = ui32LocalFLMaxPages;
+	*pui32GlobalFLMaxPages = ui32GlobalFLMaxPages;
+
+	return eError;
+}
+
+PVRSRV_ERROR
+AcquireValidateRefCriticalBuffer(PVRSRV_DEVICE_NODE*     psDevNode,
+                                 DEVMEMINT_RESERVATION*  psReservation,
+                                 IMG_DEVMEM_SIZE_T       ui64MinSize,
+                                 PMR**                   ppsPMR,
+                                 IMG_DEV_VIRTADDR*       psDevVAddr)
+{
+	PVRSRV_ERROR eError;
+
+	/* Obtain reference to reservation object */
+	if (!DevmemIntReservationAcquire(psReservation))
+	{
+		eError = PVRSRV_ERROR_REFCOUNT_OVERFLOW;
+		PVR_LOG_GOTO_IF_ERROR_VA(eError, ReturnError,
+		    "%s: Failed to acquire reservation for critical buffer", __func__);
+	}
+
+	eError = DevmemIntGetReservationData(psReservation, ppsPMR, psDevVAddr);
+	PVR_LOG_GOTO_IF_ERROR_VA(eError, RollbackReservation,
+	    "%s: Error from DevmemIntGetReservationData for critical buffer: %s",
+	    __func__, PVRSRVGetErrorString(eError));
+
+
+	/* Check buffer sizes and flags are as required */
+	eError = ValidateCriticalPMR(*ppsPMR, ui64MinSize);
+	PVR_LOG_GOTO_IF_ERROR_VA(eError, RollbackReservation,
+	    "%s: Validation of critical PMR failed: %s",
+	    __func__, PVRSRVGetErrorString(eError));
+
+	/* If no error on validation ref the PMR */
+	(void) PMRRefPMR(*ppsPMR);
+
+	return PVRSRV_OK;
+
+RollbackReservation:
+	DevmemIntReservationRelease(psReservation);
+ReturnError:
+	return eError;
+}
+
+void UnrefAndReleaseCriticalBuffer(DEVMEMINT_RESERVATION* psReservation)
+{
+	PVRSRV_ERROR eError;
+	PMR* psPMR;
+	IMG_DEV_VIRTADDR sDummy;
+	/* Skip error check. If this function is called it means we already
+	   Acquired a reservation and confirmed that mapping exists. */
+	eError = DevmemIntGetReservationData(psReservation, &psPMR, &sDummy);
+	PVR_LOG_IF_ERROR_VA(PVR_DBG_ERROR, eError,
+	    "Error when trying to obtain reservation data in %s", __func__);
+
+	eError = PMRUnrefPMR(psPMR);
+	PVR_LOG_IF_ERROR_VA(PVR_DBG_ERROR, eError,
+	    "Error on PMR unref in %s", __func__);
+
+	DevmemIntReservationRelease(psReservation);
 }
 
 /******************************************************************************

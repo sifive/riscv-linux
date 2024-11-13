@@ -54,7 +54,23 @@ typedef struct DLLIST_NODE_TAG	*PDLLIST_NODE;
 
 
 /*!
-	Node in a linked list
+	Node in a linked list.
+	A list is comprised of a single list head and 0 to n nodes.
+	The head and nodes are all represented by `DLLIST_NODE`'s.
+	The head node is a special sentinel and should not be associated with
+	any elements in the list.
+
+	For example, the following list of fruits has 3 elements:
+	`... <--> "banana" <--> "apple" <--> head <--> "orange" <--> ...`
+	Therefore, using dllist_foreach_*(head) will iterate just the 3 fruits.
+
+	This is important because a `dllist_is_empty` is when the number of
+	elements == 0 is equivalent to when the head points to itself.
+	Proper use of the dllist_* functions requires a head.
+
+	For example, the following list is improper:
+	`... <--> "banana" <--> "apple" <--> "orange" <--> ...`
+	as one element must be treated as the head, and therefore is ignored.
 */
 /*
  * Note: the following structure's size is architecture-dependent and clients
@@ -149,10 +165,9 @@ void dllist_init(PDLLIST_NODE psListHead)
 */
 /*****************************************************************************/
 static INLINE
-bool dllist_is_empty(PDLLIST_NODE psListHead)
+bool dllist_is_empty(const DLLIST_NODE *const psListHead)
 {
-	return ((psListHead->psPrevNode == psListHead)
-			&& (psListHead->psNextNode == psListHead));
+	return (psListHead->psPrevNode == psListHead);
 }
 
 /*************************************************************************/ /*!
@@ -214,7 +229,7 @@ void dllist_add_to_tail(PDLLIST_NODE psListHead, PDLLIST_NODE psNewNode)
 */
 /*****************************************************************************/
 static INLINE
-bool dllist_node_is_in_list(PDLLIST_NODE psNode)
+bool dllist_node_is_in_list(const DLLIST_NODE *const psNode)
 {
 	return (psNode->psNextNode != NULL);
 }

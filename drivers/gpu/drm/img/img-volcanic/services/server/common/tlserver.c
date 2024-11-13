@@ -270,6 +270,8 @@ TLServerCloseStreamKM(PTL_STREAM_DESC psSD)
 	IMG_BOOL	bDestroyStream;
 	IMG_BOOL	bIsWriteOnly = psSD->ui32Flags & PVRSRV_STREAM_FLAG_OPEN_WO ?
 	                           IMG_TRUE : IMG_FALSE;
+	IMG_BOOL	bNoOpenCB    = psSD->ui32Flags & PVRSRV_STREAM_FLAG_IGNORE_OPEN_CALLBACK ?
+	                           IMG_TRUE : IMG_FALSE;
 
 	PVR_DPF_ENTERED;
 
@@ -328,6 +330,12 @@ TLServerCloseStreamKM(PTL_STREAM_DESC psSD)
 	/* Check the counter is sensible after input data validated. */
 	PVR_ASSERT(psGD->uiClientCnt > 0);
 	psGD->uiClientCnt--;
+
+	/* This callback is executed only on reader close. */
+	if (!bIsWriteOnly && psStream->pfOnReaderCloseCallback != NULL && !bNoOpenCB)
+	{
+		psStream->pfOnReaderCloseCallback(psStream->pvOnReaderCloseUserData);
+	}
 
 	OSLockRelease (psGD->hTLGDLock);
 
@@ -503,7 +511,7 @@ TLServerDiscoverStreamsKM(const IMG_CHAR *pszNamePattern,
 	                                  ui32Size / PRVSRVTL_MAX_STREAM_NAME_SIZE);
 
 	/* Find "tlctrl" stream and reset it */
-	psNode = TLFindStreamNodeByName(PVRSRV_TL_CTLR_STREAM);
+	psNode = TLFindStreamNodeByName(PVRSRV_TL_CTRL_STREAM);
 	if (psNode != NULL)
 		TLStreamReset(psNode->psStream);
 
@@ -596,7 +604,7 @@ TLServerAcquireDataKM(PTL_STREAM_DESC psSD,
 
 			TL_COUNTER_INC(psSD->ui32NoDataSleep);
 
-			LOOP_UNTIL_TIMEOUT(NO_DATA_WAIT_PERIOD_US)
+			LOOP_UNTIL_TIMEOUT_US(NO_DATA_WAIT_PERIOD_US)
 			{
 				eError = OSEventObjectWaitTimeout(psSD->hReadEvent, ui64WaitInChunksUs);
 				if (eError == PVRSRV_OK)
@@ -625,7 +633,7 @@ TLServerAcquireDataKM(PTL_STREAM_DESC psSD,
 				{ /* Some other system error with event objects */
 					PVR_DPF_RETURN_RC(eError);
 				}
-			} END_LOOP_UNTIL_TIMEOUT();
+			} END_LOOP_UNTIL_TIMEOUT_US();
 
 			if (bDataFound)
 			{

@@ -46,16 +46,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "img_types.h"
 #include "img_defs.h"
 #include "rgx_hwperf.h"
+#include "rgxdevice.h"
 #include "device.h"
 
-#if defined(__linux__)
-
-void PVRGpuTraceEnqueueEvent(
-		PVRSRV_DEVICE_NODE *psDevNode,
-		IMG_UINT32 ui32FirmwareCtx,
-		IMG_UINT32 ui32ExternalJobRef,
-		IMG_UINT32 ui32InternalJobRef,
-		RGX_HWPERF_KICK_TYPE eKickType);
+#if defined(__linux__) && defined(CONFIG_EVENT_TRACING) && \
+	(defined(PVRSRV_TRACE_ROGUE_EVENTS) || \
+	 defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD))
 
 /* Early initialisation of GPU Trace events logic.
  * This function is called on *driver* initialisation. */
@@ -74,6 +70,9 @@ void PVRGpuTraceInitAppHintCallbacks(const PVRSRV_DEVICE_NODE *psDeviceNode);
 /* Per-device initialisation of the GPU Trace resources */
 PVRSRV_ERROR PVRGpuTraceInitDevice(PVRSRV_DEVICE_NODE *psDeviceNode);
 
+/* TL Initialisation of FTrace */
+PVRSRV_ERROR PVRGpuTraceInitStream(PVRSRV_RGXDEV_INFO *psDevInfo);
+
 /* Per-device cleanup for the GPU Trace resources. */
 void PVRGpuTraceDeInitDevice(PVRSRV_DEVICE_NODE *psDeviceNode);
 
@@ -81,10 +80,6 @@ void PVRGpuTraceDeInitDevice(PVRSRV_DEVICE_NODE *psDeviceNode);
 PVRSRV_ERROR PVRGpuTraceSetEnabled(
 		PVRSRV_DEVICE_NODE *psDeviceNode,
 		IMG_BOOL bNewValue);
-
-/* Returns IMG_TRUE if the gpu trace sub-system has been enabled (but not
- * necessarily initialised). */
-IMG_BOOL PVRGpuTraceIsEnabled(void);
 
 /* Performs some initialisation steps if the feature was enabled
  * on driver startup. */
@@ -106,20 +101,7 @@ void PVRSRVGpuTraceWorkPeriodEventStatsUnregister(
 		IMG_HANDLE hGpuWorkPeriodEventStats);
 #endif /* defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD) */
 
-#else /* defined(__linux__) */
-
-static inline void PVRGpuTraceEnqueueEvent(
-		PVRSRV_DEVICE_NODE *psDevNode,
-		IMG_UINT32 ui32FirmwareCtx,
-		IMG_UINT32 ui32ExternalJobRef,
-		IMG_UINT32 ui32InternalJobRef,
-		RGX_HWPERF_KICK_TYPE eKickType)
-{
-	PVR_UNREFERENCED_PARAMETER(psDevNode);
-	PVR_UNREFERENCED_PARAMETER(ui32ExternalJobRef);
-	PVR_UNREFERENCED_PARAMETER(ui32InternalJobRef);
-	PVR_UNREFERENCED_PARAMETER(eKickType);
-}
+#else /* defined(__linux__) && defined(CONFIG_EVENT_TRACING) */
 
 static inline PVRSRV_ERROR PVRGpuTraceSupportInit(void) {
 	return PVRSRV_OK;
@@ -140,6 +122,12 @@ static inline PVRSRV_ERROR PVRGpuTraceInitDevice(
 	return PVRSRV_OK;
 }
 
+static inline PVRSRV_ERROR PVRGpuTraceInitStream(PVRSRV_RGXDEV_INFO *psDevInfo)
+{
+	PVR_UNREFERENCED_PARAMETER(psDevInfo);
+	return PVRSRV_OK;
+}
+
 static inline void PVRGpuTraceDeInitDevice(PVRSRV_DEVICE_NODE *psDeviceNode)
 {
 	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
@@ -154,11 +142,6 @@ static inline PVRSRV_ERROR PVRGpuTraceSetEnabled(
 	return PVRSRV_OK;
 }
 
-static inline IMG_BOOL PVRGpuTraceIsEnabled(void)
-{
-	return IMG_FALSE;
-}
-
 static inline void PVRGpuTraceInitIfEnabled(PVRSRV_DEVICE_NODE *psDeviceNode)
 {
 	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
@@ -170,6 +153,33 @@ static inline void PVRGpuTraceDisableUfoCallback(void) {}
 static inline void PVRGpuTraceEnableFirmwareActivityCallback(void) {}
 static inline void PVRGpuTraceDisableFirmwareActivityCallback(void) {}
 
-#endif /* defined(__linux__) */
+#endif /* defined(__linux__) && defined(CONFIG_EVENT_TRACING) */
+
+#if defined(__linux__) && defined(CONFIG_EVENT_TRACING) && defined(PVRSRV_TRACE_ROGUE_EVENTS)
+
+void PVRGpuTraceEnqueueEvent(
+		PVRSRV_DEVICE_NODE *psDevNode,
+		IMG_UINT32 ui32FirmwareCtx,
+		IMG_UINT32 ui32ExternalJobRef,
+		IMG_UINT32 ui32InternalJobRef,
+		RGX_HWPERF_KICK_TYPE eKickType);
+
+#else
+
+static inline void PVRGpuTraceEnqueueEvent(
+		PVRSRV_DEVICE_NODE *psDevNode,
+		IMG_UINT32 ui32FirmwareCtx,
+		IMG_UINT32 ui32ExternalJobRef,
+		IMG_UINT32 ui32InternalJobRef,
+		RGX_HWPERF_KICK_TYPE eKickType)
+{
+	PVR_UNREFERENCED_PARAMETER(psDevNode);
+	PVR_UNREFERENCED_PARAMETER(ui32FirmwareCtx);
+	PVR_UNREFERENCED_PARAMETER(ui32ExternalJobRef);
+	PVR_UNREFERENCED_PARAMETER(ui32InternalJobRef);
+	PVR_UNREFERENCED_PARAMETER(eKickType);
+}
+
+#endif /* defined(__linux__) && defined(CONFIG_EVENT_TRACING) && defined(PVRSRV_TRACE_ROGUE_EVENTS) */
 
 #endif /* PVR_GPUTRACE_H_ */

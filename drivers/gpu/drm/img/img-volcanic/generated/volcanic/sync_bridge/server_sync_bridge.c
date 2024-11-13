@@ -167,17 +167,16 @@ AllocSyncPrimitiveBlock_exit:
 			 * This should never fail... */
 			PVR_ASSERT((eError == PVRSRV_OK) || (eError == PVRSRV_ERROR_RETRY));
 
-			/* Avoid freeing/destroying/releasing the resource a second time below */
-			psSyncHandleInt = NULL;
 			/* Release now we have cleaned up creation handles. */
 			UnlockHandle(psConnection->psHandleBase);
 
 		}
 
-		if (psSyncHandleInt)
+		else if (psSyncHandleInt)
 		{
 			PVRSRVFreeSyncPrimitiveBlockKM(psSyncHandleInt);
 		}
+
 	}
 
 	return 0;
@@ -527,9 +526,7 @@ PVRSRVBridgeSyncAllocEvent(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -551,7 +548,6 @@ PVRSRVBridgeSyncAllocEvent(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psSyncAllocEventIN), sizeof(unsigned long));
@@ -567,7 +563,6 @@ PVRSRVBridgeSyncAllocEvent(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -615,11 +610,7 @@ SyncAllocEvent_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -683,35 +674,53 @@ PVRSRV_ERROR InitSYNCBridge(void)
 {
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_ALLOCSYNCPRIMITIVEBLOCK,
-			      PVRSRVBridgeAllocSyncPrimitiveBlock, NULL);
+			      PVRSRVBridgeAllocSyncPrimitiveBlock, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_ALLOCSYNCPRIMITIVEBLOCK));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_FREESYNCPRIMITIVEBLOCK,
-			      PVRSRVBridgeFreeSyncPrimitiveBlock, NULL);
+			      PVRSRVBridgeFreeSyncPrimitiveBlock, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_FREESYNCPRIMITIVEBLOCK),
+			      sizeof(PVRSRV_BRIDGE_OUT_FREESYNCPRIMITIVEBLOCK));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_SYNCPRIMSET,
-			      PVRSRVBridgeSyncPrimSet, NULL);
+			      PVRSRVBridgeSyncPrimSet, NULL, sizeof(PVRSRV_BRIDGE_IN_SYNCPRIMSET),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCPRIMSET));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_SYNCPRIMPDUMP,
-			      PVRSRVBridgeSyncPrimPDump, NULL);
+			      PVRSRVBridgeSyncPrimPDump, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCPRIMPDUMP),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCPRIMPDUMP));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_SYNCPRIMPDUMPVALUE,
-			      PVRSRVBridgeSyncPrimPDumpValue, NULL);
+			      PVRSRVBridgeSyncPrimPDumpValue, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCPRIMPDUMPVALUE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCPRIMPDUMPVALUE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_SYNCPRIMPDUMPPOL,
-			      PVRSRVBridgeSyncPrimPDumpPol, NULL);
+			      PVRSRVBridgeSyncPrimPDumpPol, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCPRIMPDUMPPOL),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCPRIMPDUMPPOL));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_SYNCPRIMPDUMPCBP,
-			      PVRSRVBridgeSyncPrimPDumpCBP, NULL);
+			      PVRSRVBridgeSyncPrimPDumpCBP, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCPRIMPDUMPCBP),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCPRIMPDUMPCBP));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_SYNCALLOCEVENT,
-			      PVRSRVBridgeSyncAllocEvent, NULL);
+			      PVRSRVBridgeSyncAllocEvent, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCALLOCEVENT),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCALLOCEVENT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC, PVRSRV_BRIDGE_SYNC_SYNCFREEEVENT,
-			      PVRSRVBridgeSyncFreeEvent, NULL);
+			      PVRSRVBridgeSyncFreeEvent, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFREEEVENT),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFREEEVENT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNC,
 			      PVRSRV_BRIDGE_SYNC_SYNCCHECKPOINTSIGNALLEDPDUMPPOL,
-			      PVRSRVBridgeSyncCheckpointSignalledPDumpPol, NULL);
+			      PVRSRVBridgeSyncCheckpointSignalledPDumpPol, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCCHECKPOINTSIGNALLEDPDUMPPOL),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCCHECKPOINTSIGNALLEDPDUMPPOL));
 
 	return PVRSRV_OK;
 }

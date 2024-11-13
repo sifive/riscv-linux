@@ -184,7 +184,7 @@ DECLARE_EVENT_CLASS(pvr_fence_foreign,
 			fence->fence->ops->fence_value_str(
 				fence->fence, __entry->foreign_val,
 				sizeof(__entry->foreign_val)) :
-			(void) strlcpy(__entry->foreign_val,
+			(void) OSStringSafeCopy(__entry->foreign_val,
 				"unknown", sizeof(__entry->foreign_val));
 		__entry->foreign_context = fence->fence->context;
 	),

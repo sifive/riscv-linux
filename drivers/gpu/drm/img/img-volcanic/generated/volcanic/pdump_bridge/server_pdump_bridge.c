@@ -90,9 +90,7 @@ PVRSRVBridgePDumpImageDescriptor(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -115,7 +113,6 @@ PVRSRVBridgePDumpImageDescriptor(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psPDumpImageDescriptorIN), sizeof(unsigned long));
@@ -131,7 +128,6 @@ PVRSRVBridgePDumpImageDescriptor(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -242,11 +238,7 @@ PDumpImageDescriptor_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -271,9 +263,7 @@ PVRSRVBridgePVRSRVPDumpComment(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -295,7 +285,6 @@ PVRSRVBridgePVRSRVPDumpComment(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psPVRSRVPDumpCommentIN), sizeof(unsigned long));
@@ -311,7 +300,6 @@ PVRSRVBridgePVRSRVPDumpComment(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -358,11 +346,7 @@ PVRSRVPDumpComment_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -410,9 +394,7 @@ PVRSRVBridgePDumpDataDescriptor(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -434,7 +416,6 @@ PVRSRVBridgePDumpDataDescriptor(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psPDumpDataDescriptorIN), sizeof(unsigned long));
@@ -450,7 +431,6 @@ PVRSRVBridgePDumpDataDescriptor(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -532,11 +512,7 @@ PDumpDataDescriptor_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -556,16 +532,24 @@ PVRSRV_ERROR InitPDUMPBridge(void)
 {
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_PDUMP, PVRSRV_BRIDGE_PDUMP_PDUMPIMAGEDESCRIPTOR,
-			      PVRSRVBridgePDumpImageDescriptor, NULL);
+			      PVRSRVBridgePDumpImageDescriptor, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_PDUMPIMAGEDESCRIPTOR),
+			      sizeof(PVRSRV_BRIDGE_OUT_PDUMPIMAGEDESCRIPTOR));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_PDUMP, PVRSRV_BRIDGE_PDUMP_PVRSRVPDUMPCOMMENT,
-			      PVRSRVBridgePVRSRVPDumpComment, NULL);
+			      PVRSRVBridgePVRSRVPDumpComment, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_PVRSRVPDUMPCOMMENT),
+			      sizeof(PVRSRV_BRIDGE_OUT_PVRSRVPDUMPCOMMENT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_PDUMP, PVRSRV_BRIDGE_PDUMP_PVRSRVPDUMPSETFRAME,
-			      PVRSRVBridgePVRSRVPDumpSetFrame, NULL);
+			      PVRSRVBridgePVRSRVPDumpSetFrame, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_PVRSRVPDUMPSETFRAME),
+			      sizeof(PVRSRV_BRIDGE_OUT_PVRSRVPDUMPSETFRAME));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_PDUMP, PVRSRV_BRIDGE_PDUMP_PDUMPDATADESCRIPTOR,
-			      PVRSRVBridgePDumpDataDescriptor, NULL);
+			      PVRSRVBridgePDumpDataDescriptor, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_PDUMPDATADESCRIPTOR),
+			      sizeof(PVRSRV_BRIDGE_OUT_PDUMPDATADESCRIPTOR));
 
 	return PVRSRV_OK;
 }

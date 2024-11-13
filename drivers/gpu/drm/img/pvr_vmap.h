@@ -64,19 +64,19 @@ static inline void *pvr_vmap(struct page **pages,
 #endif /* !defined(CONFIG_64BIT) || defined(PVRSRV_FORCE_SLOWER_VMAP_ON_64BIT_BUILDS) */
 }
 
-static inline void pvr_vunmap(void *pages,
+static inline void pvr_vunmap(const void *vaddr,
 			      __maybe_unused unsigned int count,
 			      __maybe_unused pgprot_t prot)
 {
 #if !defined(CONFIG_64BIT) || defined(PVRSRV_FORCE_SLOWER_VMAP_ON_64BIT_BUILDS)
-	vunmap(pages);
+	vunmap(vaddr);
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0))
-	vm_unmap_ram(pages, count);
+	vm_unmap_ram(vaddr, count);
 #else
 	if (pgprot_val(prot) == pgprot_val(PAGE_KERNEL))
-		vm_unmap_ram(pages, count);
+		vm_unmap_ram(vaddr, count);
 	else
-		vunmap(pages);
+		vunmap(vaddr);
 #endif /* !defined(CONFIG_64BIT) || defined(PVRSRV_FORCE_SLOWER_VMAP_ON_64BIT_BUILDS) */
 }
 

@@ -85,12 +85,18 @@ struct pvr_sw_sync_create_fence_data {
 	__u64 sync_pt_idx;
 };
 
+typedef struct pvr_sw_sync_create_fence_data pvr_exp_sync_create_fence_data_t;
+
 struct pvr_sw_timeline_advance_data {
 	__u64 sync_pt_idx;
 };
 
 #define PVR_SRVKM_SERVICES_INIT  1
 #define PVR_SRVKM_SYNC_INIT 2
+#define PVR_SRVKM_SYNC_EXP_FENCE_INIT 3
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+#define PVR_SRVKM_SERVICES_PAGE_MIGRATE_INIT 4
+#endif
 struct drm_pvr_srvkm_init_data {
 	__u32 init_module;
 };
@@ -119,6 +125,10 @@ struct drm_pvr_srvkm_init_data {
 /* PVR Services Render Device Init command */
 #define DRM_PVR_SRVKM_INIT		5
 
+/* PVR Services Export Fence Sync commands */
+#define DRM_PVR_EXP_FENCE_SYNC_FORCE_CMD	6
+#define DRM_PVR_SYNC_CREATE_EXPORT_FENCE_CMD	7
+
 /* These defines must be prefixed with "DRM_IOCTL_". */
 #define	DRM_IOCTL_PVR_SRVKM_CMD	\
 	DRM_IOWR(DRM_COMMAND_BASE + DRM_PVR_SRVKM_CMD, \
@@ -142,5 +152,13 @@ struct drm_pvr_srvkm_init_data {
 #define DRM_IOCTL_PVR_SRVKM_INIT \
 	DRM_IOW(DRM_COMMAND_BASE + DRM_PVR_SRVKM_INIT, \
 		struct drm_pvr_srvkm_init_data)
+
+#define DRM_IOCTL_PVR_EXP_FENCE_SYNC_FORCE_CMD \
+	DRM_IOWR(DRM_COMMAND_BASE + DRM_PVR_EXP_FENCE_SYNC_FORCE_CMD, \
+		pvr_exp_sync_create_fence_data_t)
+
+#define DRM_IOCTL_PVR_SYNC_CREATE_EXPORT_FENCE_CMD \
+	DRM_IOWR(DRM_COMMAND_BASE + DRM_PVR_SYNC_CREATE_EXPORT_FENCE_CMD, \
+		pvr_exp_sync_create_fence_data_t)
 
 #endif /* defined(__PVR_DRM_H__) */

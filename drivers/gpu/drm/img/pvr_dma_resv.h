@@ -47,12 +47,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 #include <linux/dma-resv.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
-#define dma_resv_get_excl		dma_resv_excl_fence
-#define dma_resv_get_list		dma_resv_shared_list
-#define dma_resv_test_signaled_rcu		dma_resv_test_signaled
-#define dma_resv_wait_timeout_rcu	dma_resv_wait_timeout
-#endif
 #else
 #include <linux/reservation.h>
 

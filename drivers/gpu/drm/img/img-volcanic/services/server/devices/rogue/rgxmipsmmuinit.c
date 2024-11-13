@@ -186,9 +186,11 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPCEConfig, no PC in MIPS MMU currently
 	 */
+	sRGXMMUPCEConfig.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPCEConfig.pszPxLevelStr = "UnD";
 	sRGXMMUPCEConfig.uiBytesPerEntry = 0; /* 32 bit entries */
-	sRGXMMUPCEConfig.uiAddrMask = 0; /* Mask to get significant address bits of PC entry */
 
+	sRGXMMUPCEConfig.uiAddrMask = 0; /* Mask to get significant address bits of PC entry */
 	sRGXMMUPCEConfig.uiAddrShift = 0; /* Shift this many bits to get PD address in PC entry */
 	sRGXMMUPCEConfig.uiAddrLog2Align = (IMG_UINT32)RGXMIPSFW_LOG2_PAGE_SIZE_4K; /* Alignment of PD AND PC */
 
@@ -211,7 +213,7 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 
 	sRGXMMUTopLevelDevVAddrConfig.uiPTIndexMask = IMG_UINT64_C(0xfffffff000); /* Get the PT address bits from a 40 bit virt. address (in a 64bit UINT) */
 	sRGXMMUTopLevelDevVAddrConfig.uiPTIndexShift = (IMG_UINT32)RGXMIPSFW_LOG2_PAGE_SIZE_4K;
-	sRGXMMUTopLevelDevVAddrConfig.uiNumEntriesPT = (RGX_NUM_OS_SUPPORTED << RGXMIPSFW_LOG2_PAGETABLE_SIZE_4K) >> RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
+	sRGXMMUTopLevelDevVAddrConfig.uiNumEntriesPT = (RGX_NUM_DRIVERS_SUPPORTED << RGXMIPSFW_LOG2_PAGETABLE_SIZE_4K) >> RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
 
 /*
  *
@@ -222,6 +224,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPDEConfig_4KBDP. No PD in MIPS MMU currently
 	 */
+	sRGXMMUPDEConfig_4KBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPDEConfig_4KBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPDEConfig_4KBDP.uiBytesPerEntry = 0;
 
 	/* No PD used for MIPS */
@@ -241,6 +245,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPTEConfig_4KBDP.
 	 */
+	sRGXMMUPTEConfig_4KBDP.ePxLevel = MMU_LEVEL_1;
+	sRGXMMUPTEConfig_4KBDP.pszPxLevelStr = "PT";
 	sRGXMMUPTEConfig_4KBDP.uiBytesPerEntry = 1 << RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
 
 
@@ -279,7 +285,7 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 
 	sRGXMMUDevVAddrConfig_4KBDP.uiPTIndexMask = ~RGX_MIPS_MMUCTRL_VADDR_PT_INDEX_CLRMSK;
 	sRGXMMUDevVAddrConfig_4KBDP.uiPTIndexShift = RGX_MIPS_MMUCTRL_VADDR_PT_INDEX_SHIFT;
-	sRGXMMUDevVAddrConfig_4KBDP.uiNumEntriesPT = (RGX_NUM_OS_SUPPORTED << RGXMIPSFW_LOG2_PAGETABLE_SIZE_4K) >> RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
+	sRGXMMUDevVAddrConfig_4KBDP.uiNumEntriesPT = (RGX_NUM_DRIVERS_SUPPORTED << RGXMIPSFW_LOG2_PAGETABLE_SIZE_4K) >> RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
 
 
 	sRGXMMUDevVAddrConfig_4KBDP.uiPageOffsetMask = IMG_UINT64_C(0x0000000fff);
@@ -305,6 +311,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPDEConfig_16KBDP
 	 */
+	sRGXMMUPDEConfig_16KBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPDEConfig_16KBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPDEConfig_16KBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPDEConfig_16KBDP.uiAddrMask = 0;
@@ -323,6 +331,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPTEConfig_16KBDP. Not supported yet
 	 */
+	sRGXMMUPTEConfig_16KBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPTEConfig_16KBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPTEConfig_16KBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPTEConfig_16KBDP.uiAddrMask = 0;
@@ -373,6 +383,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPDEConfig_64KBDP
 	 */
+	sRGXMMUPDEConfig_64KBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPDEConfig_64KBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPDEConfig_64KBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPDEConfig_64KBDP.uiAddrMask = 0;
@@ -392,6 +404,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	 * Setup sRGXMMUPTEConfig_64KBDP.
 	 *
 	 */
+	sRGXMMUPTEConfig_64KBDP.ePxLevel = MMU_LEVEL_1;
+	sRGXMMUPTEConfig_64KBDP.pszPxLevelStr = "PT";
 	sRGXMMUPTEConfig_64KBDP.uiBytesPerEntry = 1 << RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
 
 	if (bPhysBusAbove32Bit)
@@ -429,7 +443,7 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 
 	sRGXMMUDevVAddrConfig_64KBDP.uiPTIndexMask = IMG_UINT64_C(0x00ffff0000);
 	sRGXMMUDevVAddrConfig_64KBDP.uiPTIndexShift = (IMG_UINT32)RGXMIPSFW_LOG2_PAGE_SIZE_64K;
-	sRGXMMUDevVAddrConfig_64KBDP.uiNumEntriesPT = (RGX_NUM_OS_SUPPORTED << RGXMIPSFW_LOG2_PAGETABLE_SIZE_64K) >> RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
+	sRGXMMUDevVAddrConfig_64KBDP.uiNumEntriesPT = (RGX_NUM_DRIVERS_SUPPORTED << RGXMIPSFW_LOG2_PAGETABLE_SIZE_64K) >> RGXMIPSFW_LOG2_PTE_ENTRY_SIZE;
 
 	sRGXMMUDevVAddrConfig_64KBDP.uiPageOffsetMask = IMG_UINT64_C(0x000000ffff);
 	sRGXMMUDevVAddrConfig_64KBDP.uiPageOffsetShift = 0;
@@ -454,6 +468,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPDEConfig_256KBDP
 	 */
+	sRGXMMUPDEConfig_256KBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPDEConfig_256KBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPDEConfig_256KBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPDEConfig_256KBDP.uiAddrMask = 0;
@@ -472,6 +488,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup MMU_PxE_CONFIG sRGXMMUPTEConfig_256KBDP
 	 */
+	sRGXMMUPTEConfig_256KBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPTEConfig_256KBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPTEConfig_256KBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPTEConfig_256KBDP.uiAddrMask = 0;
@@ -515,6 +533,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPDEConfig_1MBDP.  Not supported yet
 	 */
+	sRGXMMUPDEConfig_1MBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPDEConfig_1MBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPDEConfig_1MBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPDEConfig_1MBDP.uiAddrMask = 0;
@@ -533,7 +553,9 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPTEConfig_1MBDP
 	 */
-	sRGXMMUPTEConfig_1MBDP.uiBytesPerEntry = 8;
+	sRGXMMUPTEConfig_1MBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPTEConfig_1MBDP.pszPxLevelStr = "UnD";
+	sRGXMMUPTEConfig_1MBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPTEConfig_1MBDP.uiAddrMask = 0;
 	sRGXMMUPTEConfig_1MBDP.uiAddrShift = 0;
@@ -576,6 +598,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPDEConfig_2MBDP. Not supported yet
 	 */
+	sRGXMMUPDEConfig_2MBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPDEConfig_2MBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPDEConfig_2MBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPDEConfig_2MBDP.uiAddrMask = 0;
@@ -594,6 +618,8 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	/*
 	 * Setup sRGXMMUPTEConfig_2MBDP
 	 */
+	sRGXMMUPTEConfig_2MBDP.ePxLevel = MMU_LEVEL_LAST;
+	sRGXMMUPTEConfig_2MBDP.pszPxLevelStr = "UnD";
 	sRGXMMUPTEConfig_2MBDP.uiBytesPerEntry = 0;
 
 	sRGXMMUPTEConfig_2MBDP.uiAddrMask = 0;
@@ -638,7 +664,6 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	 * Setup sRGXMMUDeviceAttributes
 	 */
 	sRGXMMUDeviceAttributes.eMMUType = PDUMP_MMU_TYPE_MIPS_MICROAPTIV;
-	sRGXMMUDeviceAttributes.eTopLevel = MMU_LEVEL_1;
 
 	/*
 	 * The page table fits in one or more big physically adjacent pages,
@@ -648,7 +673,7 @@ PVRSRV_ERROR RGXMipsMMUInit_Register(PVRSRV_DEVICE_NODE *psDeviceNode)
 	 * log2 page size (12, 14, 16 for a 4K, 16K, 64K page size).
 	 */
 	sRGXMMUDeviceAttributes.ui32BaseAlign =
-		(CeilLog2(RGX_NUM_OS_SUPPORTED) + RGXMIPSFW_LOG2_PAGETABLE_SIZE_4K) & ~1U;
+		(CeilLog2(RGX_NUM_DRIVERS_SUPPORTED) + RGXMIPSFW_LOG2_PAGETABLE_SIZE_4K) & ~1U;
 
 	/* 256K alignment might be too hard to achieve, fall back to 64K */
 	sRGXMMUDeviceAttributes.ui32BaseAlign =
@@ -1041,5 +1066,3 @@ void RGXMipsCheckFaultAddress(MMU_CONTEXT *psFwMMUCtx,
 	                                         RGXMIPSFW_TLB_VALID) ?
 	                             ("valid") : ("not valid");
 }
-
-

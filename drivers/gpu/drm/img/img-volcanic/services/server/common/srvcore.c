@@ -48,7 +48,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvr_bridge.h"
 #include "connection_server.h"
 #include "device.h"
-#include "htbuffer.h"
+#include "htbserver.h"
 
 #include "pdump_km.h"
 
@@ -60,6 +60,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "srvcore.h"
 #include "pvrsrv.h"
 #include "power.h"
+
+#include "os_apphint.h"
 
 #if defined(SUPPORT_RGX)
 #include "rgxdevice.h"
@@ -215,7 +217,7 @@ void BridgeDispatchTableStartOffsetsInit(void)
 #if defined(DEBUG_BRIDGE_KM)
 
 #if defined(INTEGRITY_OS)
-PVRSRV_ERROR PVRSRVPrintBridgeStats()
+void PVRSRVPrintBridgeStats(void)
 {
 	IMG_UINT32 ui32Index;
 	IMG_UINT32 ui32Remainder;
@@ -289,28 +291,100 @@ CopyToUserWrapper(CONNECTION_DATA *psConnection,
 
 	return OSBridgeCopyToUser(psConnection, pvDest, pvSrc, ui32Size);
 }
-#else
-INLINE PVRSRV_ERROR
-CopyFromUserWrapper(CONNECTION_DATA *psConnection,
-					IMG_UINT32 ui32DispatchTableEntry,
-					void *pvDest,
-					void __user *pvSrc,
-					IMG_UINT32 ui32Size)
-{
-	PVR_UNREFERENCED_PARAMETER (ui32DispatchTableEntry);
-	return OSBridgeCopyFromUser(psConnection, pvDest, pvSrc, ui32Size);
-}
-INLINE PVRSRV_ERROR
-CopyToUserWrapper(CONNECTION_DATA *psConnection,
-				  IMG_UINT32 ui32DispatchTableEntry,
-				  void __user *pvDest,
-				  void *pvSrc,
-				  IMG_UINT32 ui32Size)
-{
-	PVR_UNREFERENCED_PARAMETER (ui32DispatchTableEntry);
-	return OSBridgeCopyToUser(psConnection, pvDest, pvSrc, ui32Size);
-}
 #endif
+
+/**************************************************************************/ /*!
+@Function       DeviceDefaultPhysHeapFreeMemCheck
+
+@Description    Check if the required amount of free space is available in the
+                Default PhysHeap for a connection to be made.
+
+@Input          psDeviceNode    The device the connection is being
+                                made on.
+@Input          ui32MinMemInMBs The minimum memory required to be
+                                available in the Default PhysHeap.
+
+@Return         PVRSRV_OK if successful else a PVRSRV_ERROR.
+*/ /***************************************************************************/
+static PVRSRV_ERROR DeviceDefaultPhysHeapFreeMemCheck(PVRSRV_DEVICE_NODE *psDeviceNode,
+                                                      IMG_UINT32 ui32MinMemInMBs)
+{
+	PHYS_HEAP *psDefaultHeap = NULL;
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psDeviceNode != NULL, "psDeviceNode");
+
+	psDefaultHeap = psDeviceNode->apsPhysHeap[psDeviceNode->psDevConfig->eDefaultHeap];
+	if (psDefaultHeap == NULL)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "Failed to get device's default PhysHeap"));
+		return PVRSRV_ERROR_INVALID_HEAP;
+	}
+
+	if (PhysHeapGetType(psDefaultHeap) == PHYS_HEAP_TYPE_LMA)
+	{
+		IMG_UINT64 ui64FreePhysHeapMem;
+
+		eError = PhysHeapFreeMemCheck(psDefaultHeap,
+		                              MB2B(ui32MinMemInMBs),
+		                              &ui64FreePhysHeapMem);
+		if (eError == PVRSRV_ERROR_INSUFFICIENT_PHYS_HEAP_MEMORY)
+		{
+			PVR_DPF((PVR_DBG_ERROR, "Default PhysHeap contains less than the "
+				"minimum free space required to acquire a connection. "
+				"Free space: %"IMG_UINT64_FMTSPEC"MB "
+				"Minimum required: %uMB",
+				B2MB(ui64FreePhysHeapMem),
+				ui32MinMemInMBs));
+		}
+	}
+
+	return eError;
+}
+
+/**************************************************************************/ /*!
+@Function       CheckConnectionPhysHeapMem
+
+@Description    Check if there is enough memory in the PhysHeaps to allow a
+                connection to be made.
+
+@Input          psConnection    The connection being made.
+
+@Return         PVRSRV_OK if successful else a PVRSRV_ERROR.
+*/ /***************************************************************************/
+static PVRSRV_ERROR CheckConnectionPhysHeapMem(CONNECTION_DATA *psConnection)
+{
+	IMG_UINT32 ui32AppHintDefault = PVRSRV_APPHINT_PHYSHEAPMINMEMONCONNECTION;
+	IMG_UINT32 ui32AppHintPhysHeapMinMemOnConnection = 0;
+	void *pvAppHintState = NULL;
+	PVRSRV_DEVICE_NODE *psDeviceNode = NULL;
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
+	PVR_RETURN_IF_INVALID_PARAM(psConnection);
+
+	OSCreateAppHintState(&pvAppHintState);
+	OSGetAppHintUINT32(APPHINT_NO_DEVICE, pvAppHintState, PhysHeapMinMemOnConnection,
+		&ui32AppHintDefault, &ui32AppHintPhysHeapMinMemOnConnection);
+	OSFreeAppHintState(pvAppHintState);
+
+	psDeviceNode = OSGetDevNode(psConnection);
+
+	if (ui32AppHintPhysHeapMinMemOnConnection != 0)
+	{
+		eError = DeviceDefaultPhysHeapFreeMemCheck(psDeviceNode,
+		                                           ui32AppHintPhysHeapMinMemOnConnection);
+		PVR_LOG_RETURN_IF_ERROR(eError, "DeviceDefaultPhysHeapFreeMemCheck");
+
+		if (psDeviceNode->pfnCheckForSufficientFWPhysMem != NULL
+		    && RGX_FW_PHYSHEAP_MINMEM_ON_CONNECTION > 0)
+		{
+			eError = psDeviceNode->pfnCheckForSufficientFWPhysMem(psDeviceNode);
+			PVR_LOG_RETURN_IF_ERROR(eError, "pfnCheckForSufficientFWPhysMem");
+		}
+	}
+
+	return eError;
+}
 
 PVRSRV_ERROR
 PVRSRVConnectKM(CONNECTION_DATA *psConnection,
@@ -329,10 +403,16 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 	PVRSRV_DATA			*psSRVData = NULL;
 	IMG_UINT64			ui64ProcessVASpaceSize = OSGetCurrentProcessVASpaceSize();
 	static IMG_BOOL		bIsFirstConnection=IMG_FALSE;
-
 #if defined(SUPPORT_RGX)
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
+#endif
 
+	/* Check the minimum free PhysHeap memory is available before allowing
+	 * the connection to succeed */
+	eError = CheckConnectionPhysHeapMem(psConnection);
+	PVR_RETURN_IF_ERROR(eError);
+
+#if defined(SUPPORT_RGX)
 	/* Gather BVNC information to output to UM */
 
 	*ui64PackedBvnc = rgx_bvnc_pack(psDevInfo->sDevFeatureCfg.ui32B,
@@ -363,11 +443,6 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 		if (PVRSRVSystemSnoopingOfCPUCache(psDeviceNode->psDevConfig))
 		{
 			*pui32CapabilityFlags |= PVRSRV_CACHE_COHERENT_DEVICE_FLAG;
-		}
-		/*Is the system device cache coherent?*/
-		if (PVRSRVSystemSnoopingOfDeviceCache(psDeviceNode->psDevConfig))
-		{
-			*pui32CapabilityFlags |= PVRSRV_CACHE_COHERENT_CPU_FLAG;
 		}
 	}
 
@@ -403,7 +478,7 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 	}
 
 	/* Is the system DMA capable? */
-	if (psDeviceNode->bHasSystemDMA)
+	if (psDeviceNode->psDevConfig->bHasDma)
 	{
 		*pui32CapabilityFlags |= PVRSRV_SYSTEM_DMA_USED;
 	}
@@ -419,7 +494,7 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 	}
 #endif
 
-#if defined(SUPPORT_GPUVIRT_VALIDATION)
+#if defined(SUPPORT_CUSTOM_OSID_EMISSION)
 {
 	IMG_UINT32 ui32OSid = 0, ui32OSidReg = 0;
 	IMG_BOOL   bOSidAxiProtReg = IMG_FALSE;
@@ -459,7 +534,7 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 				ui32OSidReg,
 				bOSidAxiProtReg?"TRUE":"FALSE"));
 
-		SetAxiProtOSid(ui32OSidReg, ui32OSidAxiProtTD);
+		SetAxiProtOSid(psDeviceNode->psDevConfig->hSysData, ui32OSidReg, ui32OSidAxiProtTD);
 	}
 }
 #endif /* defined(EMULATOR) */
@@ -478,7 +553,7 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 	         ui32OSid,
 	         ui32OSidReg));
 }
-#endif	/* defined(SUPPORT_GPUVIRT_VALIDATION) */
+#endif	/* defined(SUPPORT_CUSTOM_OSID_EMISSION) */
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
 	/* Only enabled if enabled in the UM */
@@ -625,7 +700,7 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 		IMG_CHAR acStreamName[PRVSRVTL_MAX_STREAM_NAME_SIZE];
 		OSSNPrintf(acStreamName, PRVSRVTL_MAX_STREAM_NAME_SIZE,
 		           PVRSRV_TL_HWPERF_HOST_CLIENT_STREAM_FMTSPEC,
-		           psDeviceNode->sDevId.i32OsDeviceID,
+		           psDeviceNode->sDevId.i32KernelDeviceID,
 		           psConnection->pid);
 
 		eError = TLStreamCreate(&psConnection->hClientTLStream,
@@ -633,7 +708,7 @@ PVRSRVConnectKM(CONNECTION_DATA *psConnection,
 		                        PVRSRV_CLIENT_TL_STREAM_SIZE_DEFAULT,
 		                        TL_OPMODE_DROP_NEWER |
 		                        TL_FLAG_ALLOCATE_ON_FIRST_OPEN,
-		                        NULL, NULL, NULL, NULL);
+		                        NULL, NULL, NULL, NULL, NULL, NULL);
 		if (eError != PVRSRV_OK && eError != PVRSRV_ERROR_ALREADY_EXISTS)
 		{
 			PVR_LOG_ERROR(eError, "TLStreamCreate");
@@ -792,6 +867,16 @@ PVRSRVReleaseGlobalEventObjectKM(IMG_HANDLE hGlobalEventObject)
 	return PVRSRV_OK;
 }
 
+static void _DumpDebugUMReqPrintWrapper(void *pvPriv, const IMG_CHAR *pszFmt, ...)
+{
+	va_list pvArgs;
+	PVR_UNREFERENCED_PARAMETER(pvPriv);
+
+	va_start(pvArgs, pszFmt);
+	PVRSRVReleasePrintfVArgs(pszFmt, pvArgs);
+	va_end(pvArgs);
+}
+
 /*
 	PVRSRVDumpDebugInfoKM
 */
@@ -800,13 +885,15 @@ PVRSRVDumpDebugInfoKM(CONNECTION_DATA *psConnection,
 					  PVRSRV_DEVICE_NODE *psDeviceNode,
 					  IMG_UINT32 ui32VerbLevel)
 {
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
 	if (ui32VerbLevel > DEBUG_REQUEST_VERBOSITY_MAX)
 	{
 		return PVRSRV_ERROR_INVALID_PARAMS;
 	}
 	PVR_LOG(("User requested PVR debug info"));
 
-	PVRSRVDebugRequest(psDeviceNode, ui32VerbLevel, NULL, NULL);
+	PVRSRVDebugRequest(psDeviceNode, ui32VerbLevel, _DumpDebugUMReqPrintWrapper, NULL);
 
 	return PVRSRV_OK;
 }
@@ -838,6 +925,8 @@ PVRSRV_ERROR
 PVRSRVHWOpTimeoutKM(CONNECTION_DATA *psConnection,
 					PVRSRV_DEVICE_NODE *psDeviceNode)
 {
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
 #if defined(PVRSRV_RESET_ON_HWTIMEOUT)
 	PVR_LOG(("User requested OS reset"));
 	OSPanic();
@@ -1000,6 +1089,10 @@ UnsetDispatchTableEntry(IMG_UINT32 ui32BridgeGroup, IMG_UINT32 ui32Index)
  * @param pszIOCName
  * @param pfFunction
  * @param pszFunctionName
+ * @param hBridgeLock
+ * @param pszBridgeLockName
+ * @param ui32InBufferSize
+ * @param ui32OutBufferSize
  *
  * @return
  ********************************************************************************/
@@ -1010,7 +1103,9 @@ _SetDispatchTableEntry(IMG_UINT32 ui32BridgeGroup,
 					   BridgeWrapperFunction pfFunction,
 					   const IMG_CHAR *pszFunctionName,
 					   POS_LOCK hBridgeLock,
-					   const IMG_CHAR *pszBridgeLockName)
+					   const IMG_CHAR *pszBridgeLockName,
+					   IMG_UINT32 ui32InBufferSize,
+					   IMG_UINT32 ui32OutBufferSize)
 {
 	static IMG_UINT32 ui32PrevIndex = IMG_UINT32_MAX;		/* -1 */
 
@@ -1127,6 +1222,8 @@ _SetDispatchTableEntry(IMG_UINT32 ui32BridgeGroup,
 	{
 		g_BridgeDispatchTable[ui32Index].pfFunction = pfFunction;
 		g_BridgeDispatchTable[ui32Index].hBridgeLock = hBridgeLock;
+		g_BridgeDispatchTable[ui32Index].ui32InBufferSize = ui32InBufferSize;
+		g_BridgeDispatchTable[ui32Index].ui32OutBufferSize = ui32OutBufferSize;
 #if defined(DEBUG_BRIDGE_KM)
 		g_BridgeDispatchTable[ui32Index].pszIOCName = pszIOCName;
 		g_BridgeDispatchTable[ui32Index].pszFunctionName = pszFunctionName;
@@ -1228,6 +1325,10 @@ PVRSRV_ERROR BridgedDispatchKM(CONNECTION_DATA * psConnection,
 	PVR_DBG_BREAK;
 #endif
 
+#if !defined(PVRSRV_ENABLE_HTB)
+	PVR_UNREFERENCED_PARAMETER(ui32Timestamp);
+#endif
+
 	if (psBridgePackageKM->ui32BridgeID >= BRIDGE_DISPATCH_TABLE_START_ENTRY_COUNT)
 	{
 		PVR_DPF((PVR_DBG_ERROR, "%s: Out of range dispatch table group ID: %d",
@@ -1283,17 +1384,25 @@ PVRSRV_ERROR BridgedDispatchKM(CONNECTION_DATA * psConnection,
 #if defined(DEBUG_BRIDGE_KM)
 	BridgeGlobalStatsLock();
 
-	PVR_DPF((PVR_DBG_MESSAGE, "%s: Dispatch table entry index=%d, (bridge module %d, function %d)",
-			__func__,
+	PVR_DPF((PVR_DBG_MESSAGE, "%s: %s idx:%d mod:%d, func:%d",
+			__func__, g_BridgeDispatchTable[ui32DispatchTableEntryIndex].pszIOCName,
 			ui32DispatchTableEntryIndex, psBridgePackageKM->ui32BridgeID, psBridgePackageKM->ui32FunctionID));
-	PVR_DPF((PVR_DBG_MESSAGE, "%s: %s",
-			 __func__,
-			 g_BridgeDispatchTable[ui32DispatchTableEntryIndex].pszIOCName));
 
 	g_BridgeDispatchTable[ui32DispatchTableEntryIndex].ui32CallCount++;
 	g_BridgeGlobalStats.ui32IOCTLCount++;
 	BridgeGlobalStatsUnlock();
 #endif
+
+	if (psBridgePackageKM->ui32InBufferSize != g_BridgeDispatchTable[ui32DispatchTableEntryIndex].ui32InBufferSize ||
+	    psBridgePackageKM->ui32OutBufferSize != g_BridgeDispatchTable[ui32DispatchTableEntryIndex].ui32OutBufferSize)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Bridge buffer sizes mismatch! "
+		        "In: User(%u), Kernel(%u) - Out: User(%u), Kernel(%u)",
+		        __func__,
+		        psBridgePackageKM->ui32InBufferSize, g_BridgeDispatchTable[ui32DispatchTableEntryIndex].ui32InBufferSize,
+		        psBridgePackageKM->ui32OutBufferSize, g_BridgeDispatchTable[ui32DispatchTableEntryIndex].ui32OutBufferSize));
+		PVR_GOTO_WITH_ERROR(err, PVRSRV_ERROR_BRIDGE_EINVAL, return_error);
+	}
 
 	if (g_BridgeDispatchTable[ui32DispatchTableEntryIndex].hBridgeLock != NULL)
 	{
@@ -1314,23 +1423,7 @@ PVRSRV_ERROR BridgedDispatchKM(CONNECTION_DATA * psConnection,
 	ui64TimeStart = OSClockns64();
 #endif
 
-	if (psBridgePackageKM->ui32InBufferSize > PVRSRV_MAX_BRIDGE_IN_SIZE)
-	{
-		PVR_DPF((PVR_DBG_ERROR, "%s: Bridge input buffer too small "
-		        "(data size %u, buffer size %u)!", __func__,
-		        psBridgePackageKM->ui32InBufferSize, PVRSRV_MAX_BRIDGE_IN_SIZE));
-		PVR_GOTO_WITH_ERROR(err, PVRSRV_ERROR_BRIDGE_ERANGE, unlock_and_return_error);
-	}
-
 #if !defined(INTEGRITY_OS)
-	if (psBridgePackageKM->ui32OutBufferSize > PVRSRV_MAX_BRIDGE_OUT_SIZE)
-	{
-		PVR_DPF((PVR_DBG_ERROR, "%s: Bridge output buffer too small "
-		        "(data size %u, buffer size %u)!", __func__,
-		        psBridgePackageKM->ui32OutBufferSize, PVRSRV_MAX_BRIDGE_OUT_SIZE));
-		PVR_GOTO_WITH_ERROR(err, PVRSRV_ERROR_BRIDGE_ERANGE, unlock_and_return_error);
-	}
-
 	if ((CopyFromUserWrapper (psConnection,
 							  ui32DispatchTableEntryIndex,
 							  psBridgeIn,
@@ -1454,17 +1547,75 @@ return_error:
 	return err;
 }
 
-PVRSRV_ERROR PVRSRVFindProcessMemStatsKM(IMG_PID pid, IMG_UINT32 ui32ArrSize, IMG_BOOL bAllProcessStats, IMG_UINT32 *pui32MemStatArray)
+PVRSRV_ERROR PVRSRVFindProcessMemStatsKM(IMG_PID pid, IMG_UINT32 ui32ArrSize, IMG_BOOL bAllProcessStats, IMG_UINT64 *pui64MemStatArray)
 {
 #if !defined(__QNXNTO__)
 	return PVRSRVFindProcessMemStats(pid,
 					ui32ArrSize,
 					bAllProcessStats,
-					pui32MemStatArray);
+					pui64MemStatArray);
 #else
 	PVR_DPF((PVR_DBG_ERROR, "This functionality is not yet implemented for this platform"));
 
 	return PVRSRV_ERROR_NOT_SUPPORTED;
 #endif
 
+}
+
+void PVRSRVBlockIfFrozen(PVRSRV_DEVICE_NODE *psDevNode)
+{
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
+	/* Short-circuit if we're not marked as frozen */
+	if (OSAtomicRead(&psDevNode->eFrozen) == 0)
+	{
+		return;
+	}
+
+	while ((psDevNode->eDevState == PVRSRV_DEVICE_STATE_FROZEN) &&
+	       ((eError == PVRSRV_OK) || (eError == PVRSRV_ERROR_TIMEOUT)))
+	{
+		IMG_HANDLE hEvent;
+
+		eError = OSEventObjectOpen(psDevNode->hDeviceThreadEvObj, &hEvent);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,
+			        "%s: Failed to open event object (%d)", __func__,
+			        eError));
+
+			/* Continue with the loop by resetting to PVRSRV_OK. This makes it
+			 * a busy wait (with a 10ms delay) if we cannot grab an EvObj
+			 * reference.
+			 */
+			eError = PVRSRV_OK;
+			OSSleepms(10U);		/* Allow failure (OOM etc.) to resolve */
+			continue;
+		}
+
+		if (hEvent != NULL)
+		{
+			/* Register that we've got an interest in the device */
+			(void) OSAtomicIncrement(&psDevNode->iFreezeCount);
+
+			eError = OSEventObjectWait(hEvent);
+
+			OSEventObjectClose(hEvent);
+
+			(void) OSAtomicDecrement(&psDevNode->iFreezeCount);
+		}
+	}
+
+	/* We expect to exit the above loop only when the device is no longer
+	 * FROZEN. If we are still marked as frozen that is an unexpected error
+	 * so log it.
+	 */
+	if (psDevNode->eDevState == PVRSRV_DEVICE_STATE_FROZEN)
+	{
+		PVR_LOG_IF_ERROR(eError, "OSEventObjectWait");
+		if (eError != PVRSRV_OK)
+		{
+			OSDumpStack();
+		}
+	}
 }

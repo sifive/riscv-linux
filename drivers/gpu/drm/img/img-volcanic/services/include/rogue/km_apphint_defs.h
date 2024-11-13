@@ -81,6 +81,8 @@ X(ECCRAMErrInj,                     UINT32,         VALIDATION,  0,             
 X(TFBCCompressionControlGroup,      UINT32,         VALIDATION,  PVRSRV_APPHINT_TFBCCOMPRESSIONCONTROLGROUP,      NO_PARAM_TABLE,  ALWAYS   ) \
 X(TFBCCompressionControlScheme,     UINT32,         VALIDATION,  PVRSRV_APPHINT_TFBCCOMPRESSIONCONTROLSCHEME,     NO_PARAM_TABLE,  ALWAYS   ) \
 X(TFBCCompressionControlYUVFormat,  BOOL,           VALIDATION,  0,                                               NO_PARAM_TABLE,  ALWAYS   ) \
+X(TFBCCompressionControlLossyMinChannel, BOOL,      VALIDATION,  0,                                               NO_PARAM_TABLE,  ALWAYS   ) \
+X(TFBCVersionDowngrade,             UINT32,         ALWAYS,      PVRSRV_APPHINT_TFBCVERSION,                      NO_PARAM_TABLE,  ALWAYS   ) \
 
 /*
 *******************************************************************************

@@ -59,8 +59,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define PVRSRV_BRIDGE_RGXTQ_RGXDESTROYTRANSFERCONTEXT			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+1
 #define PVRSRV_BRIDGE_RGXTQ_RGXSETTRANSFERCONTEXTPRIORITY			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+2
 #define PVRSRV_BRIDGE_RGXTQ_RGXSUBMITTRANSFER2			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+3
-#define PVRSRV_BRIDGE_RGXTQ_RGXSETTRANSFERCONTEXTPROPERTY			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+4
-#define PVRSRV_BRIDGE_RGXTQ_CMD_LAST			(PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+4)
+#define PVRSRV_BRIDGE_RGXTQ_RGXTQGETSHAREDMEMORY			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+4
+#define PVRSRV_BRIDGE_RGXTQ_RGXTQRELEASESHAREDMEMORY			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+5
+#define PVRSRV_BRIDGE_RGXTQ_RGXSETTRANSFERCONTEXTPROPERTY			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+6
+#define PVRSRV_BRIDGE_RGXTQ_RGXSUBMITTRANSFER3			PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+7
+#define PVRSRV_BRIDGE_RGXTQ_CMD_LAST			(PVRSRV_BRIDGE_RGXTQ_CMD_FIRST+7)
 
 /*******************************************
             RGXCreateTransferContext
@@ -81,9 +84,7 @@ typedef struct PVRSRV_BRIDGE_IN_RGXCREATETRANSFERCONTEXT_TAG
 /* Bridge out structure for RGXCreateTransferContext */
 typedef struct PVRSRV_BRIDGE_OUT_RGXCREATETRANSFERCONTEXT_TAG
 {
-	IMG_HANDLE hCLIPMRMem;
 	IMG_HANDLE hTransferContext;
-	IMG_HANDLE hUSCPMRMem;
 	PVRSRV_ERROR eError;
 } __packed PVRSRV_BRIDGE_OUT_RGXCREATETRANSFERCONTEXT;
 
@@ -155,6 +156,39 @@ typedef struct PVRSRV_BRIDGE_OUT_RGXSUBMITTRANSFER2_TAG
 } __packed PVRSRV_BRIDGE_OUT_RGXSUBMITTRANSFER2;
 
 /*******************************************
+            RGXTQGetSharedMemory
+ *******************************************/
+
+/* Bridge in structure for RGXTQGetSharedMemory */
+typedef struct PVRSRV_BRIDGE_IN_RGXTQGETSHAREDMEMORY_TAG
+{
+	IMG_UINT32 ui32EmptyStructPlaceholder;
+} __packed PVRSRV_BRIDGE_IN_RGXTQGETSHAREDMEMORY;
+
+/* Bridge out structure for RGXTQGetSharedMemory */
+typedef struct PVRSRV_BRIDGE_OUT_RGXTQGETSHAREDMEMORY_TAG
+{
+	IMG_HANDLE hCLIPMRMem;
+	PVRSRV_ERROR eError;
+} __packed PVRSRV_BRIDGE_OUT_RGXTQGETSHAREDMEMORY;
+
+/*******************************************
+            RGXTQReleaseSharedMemory
+ *******************************************/
+
+/* Bridge in structure for RGXTQReleaseSharedMemory */
+typedef struct PVRSRV_BRIDGE_IN_RGXTQRELEASESHAREDMEMORY_TAG
+{
+	IMG_HANDLE hPMRMem;
+} __packed PVRSRV_BRIDGE_IN_RGXTQRELEASESHAREDMEMORY;
+
+/* Bridge out structure for RGXTQReleaseSharedMemory */
+typedef struct PVRSRV_BRIDGE_OUT_RGXTQRELEASESHAREDMEMORY_TAG
+{
+	PVRSRV_ERROR eError;
+} __packed PVRSRV_BRIDGE_OUT_RGXTQRELEASESHAREDMEMORY;
+
+/*******************************************
             RGXSetTransferContextProperty
  *******************************************/
 
@@ -172,5 +206,40 @@ typedef struct PVRSRV_BRIDGE_OUT_RGXSETTRANSFERCONTEXTPROPERTY_TAG
 	IMG_UINT64 ui64Output;
 	PVRSRV_ERROR eError;
 } __packed PVRSRV_BRIDGE_OUT_RGXSETTRANSFERCONTEXTPROPERTY;
+
+/*******************************************
+            RGXSubmitTransfer3
+ *******************************************/
+
+/* Bridge in structure for RGXSubmitTransfer3 */
+typedef struct PVRSRV_BRIDGE_IN_RGXSUBMITTRANSFER3_TAG
+{
+	IMG_HANDLE hTransferContext;
+	IMG_UINT32 *pui32ClientUpdateCount;
+	IMG_UINT32 *pui32CommandSize;
+	IMG_UINT32 *pui32SyncPMRFlags;
+	IMG_UINT32 *pui32TQPrepareFlags;
+	IMG_UINT32 **pui32UpdateSyncOffset;
+	IMG_UINT32 **pui32UpdateValue;
+	IMG_UINT8 **pui8FWCommand;
+	IMG_CHAR *puiUpdateFenceName;
+	IMG_HANDLE *phSyncPMRs;
+	IMG_HANDLE **phUpdateUFOSyncPrimBlock;
+	PVRSRV_TIMELINE h2DUpdateTimeline;
+	PVRSRV_TIMELINE h3DUpdateTimeline;
+	PVRSRV_FENCE hCheckFenceFD;
+	PVRSRV_FENCE hExportFenceToSignal;
+	IMG_UINT32 ui32ExtJobRef;
+	IMG_UINT32 ui32PrepareCount;
+	IMG_UINT32 ui32SyncPMRCount;
+} __packed PVRSRV_BRIDGE_IN_RGXSUBMITTRANSFER3;
+
+/* Bridge out structure for RGXSubmitTransfer3 */
+typedef struct PVRSRV_BRIDGE_OUT_RGXSUBMITTRANSFER3_TAG
+{
+	PVRSRV_ERROR eError;
+	PVRSRV_FENCE h2DUpdateFence;
+	PVRSRV_FENCE h3DUpdateFence;
+} __packed PVRSRV_BRIDGE_OUT_RGXSUBMITTRANSFER3;
 
 #endif /* COMMON_RGXTQ_BRIDGE_H */

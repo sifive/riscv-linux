@@ -54,9 +54,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * and the IRQ context when applying a configuration request. */
 typedef struct
 {
-	/* Padded to IMG_UINT32 to workaround pdump alignment requirements */
-	IMG_UINT32              bValid;
-	IMG_UINT32              bEnabled;
+	/* Few members could be booleans but padded to IMG_UINT32
+	 * to workaround pdump alignment requirements */
+	IMG_UINT32              ui32Valid;
+	IMG_UINT32              ui32Enabled;
 	IMG_UINT32              eBlockID;
 	IMG_UINT32              uiCounterMask;
 	IMG_UINT64  RGXFW_ALIGN aui64CounterCfg[RGX_CNTBLK_MUX_COUNTERS_MAX];
@@ -71,7 +72,7 @@ typedef struct
 
 /* Structure used to hold a Direct-Addressable block's parameters for passing
  * between the BG context and the IRQ context when applying a configuration
- * request. RGX_FEATURE_HWPERF_OCEANIC use only.
+ * request. HWPERF_UNIFIED use only.
  */
 typedef struct
 {
@@ -236,8 +237,7 @@ static INLINE RGXFWIF_HWPERF_CTL_BLK *rgxfw_hwperf_get_block_ctl(
 	return &psHWPerfInitData->sBlkCfg[ui32Idx];
 }
 
-/* Stub routine for rgxfw_hwperf_get_da_block_ctl() for non
- * RGX_FEATURE_HWPERF_OCEANIC systems. Just return a NULL.
+/* Stub routine for rgxfw_hwperf_get_da_block_ctl(). Just return a NULL.
  */
 #ifdef INLINE_IS_PRAGMA
 #pragma inline(rgxfw_hwperf_get_da_block_ctl)

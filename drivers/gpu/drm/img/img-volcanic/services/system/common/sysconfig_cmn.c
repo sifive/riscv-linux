@@ -47,6 +47,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvrsrv_device.h"
 #include "syscommon.h"
 #include "pvr_debug.h"
+#include "os_apphint.h"
+//#include "physmem.h"
 
 void SysRGXErrorNotify(IMG_HANDLE hSysData,
                        PVRSRV_ROBUSTNESS_NOTIFY_DATA *psErrorData)
@@ -73,6 +75,8 @@ void SysRGXErrorNotify(IMG_HANDLE hSysData,
 			}
 			case RGX_CONTEXT_RESET_REASON_GPU_ECC_HWR:
 			case RGX_CONTEXT_RESET_REASON_FW_EXEC_ERR:
+			case RGX_CONTEXT_RESET_REASON_GPU_PARITY_HWR:
+			case RGX_CONTEXT_RESET_REASON_GPU_LATENT_HWR:
 			{
 				ui32DgbLvl = PVR_DBG_WARNING;
 				break;
@@ -80,9 +84,13 @@ void SysRGXErrorNotify(IMG_HANDLE hSysData,
 			case RGX_CONTEXT_RESET_REASON_WGP_CHECKSUM:
 			case RGX_CONTEXT_RESET_REASON_TRP_CHECKSUM:
 			case RGX_CONTEXT_RESET_REASON_FW_ECC_ERR:
+			case RGX_CONTEXT_RESET_REASON_FW_PTE_PARITY_ERR:
+			case RGX_CONTEXT_RESET_REASON_FW_PARITY_ERR:
 			case RGX_CONTEXT_RESET_REASON_FW_WATCHDOG:
 			case RGX_CONTEXT_RESET_REASON_FW_PAGEFAULT:
 			case RGX_CONTEXT_RESET_REASON_HOST_WDG_FW_ERR:
+			case RGX_CONTEXT_PVRIC_SIGNATURE_MISMATCH:
+			case RGX_CONTEXT_RESET_REASON_DCLS_ERR:
 			{
 				ui32DgbLvl = PVR_DBG_ERROR;
 				break;
@@ -127,6 +135,33 @@ void SysRGXErrorNotify(IMG_HANDLE hSysData,
 #endif /* PVRSRV_NEED_PVR_DPF */
 }
 
+IMG_UINT64 SysRestrictGpuLocalPhysheap(IMG_UINT64 uiHeapSize)
+{
+	return uiHeapSize;
+}
+
+IMG_BOOL SysRestrictGpuLocalAddPrivateHeap(void)
+{
+	return IMG_FALSE;
+}
+
+IMG_BOOL SysDefaultToCpuLocalHeap(void)
+{
+//#if (TC_MEMORY_CONFIG == TC_MEMORY_HYBRID)
+	void *pvAppHintState = NULL;
+	IMG_BOOL bAppHintDefault = IMG_FALSE;
+	IMG_BOOL bSetToCPULocal = IMG_FALSE;
+
+	OSCreateAppHintState(&pvAppHintState);
+	OSGetAppHintBOOL(APPHINT_NO_DEVICE, pvAppHintState,
+			PhysHeapHybridDefault2CpuLocal, &bAppHintDefault, &bSetToCPULocal);
+	OSFreeAppHintState(pvAppHintState);
+
+	return bSetToCPULocal;
+//#else
+//	return IMG_FALSE;
+//#endif
+}
 /******************************************************************************
  End of file (sysconfig_cmn.c)
 ******************************************************************************/

@@ -122,7 +122,7 @@ struct DEVMEM_CONTEXT_TAG
 #define DEVMEM_HEAP_MANAGER_USER         (1U << 0)
 /* Heap VAs managed by the OSs kernel, VA from CPU mapping call used */
 #define DEVMEM_HEAP_MANAGER_KERNEL       (1U << 1)
-/* Heap VAs managed by the heap's own RA  */
+/* Heap VAs managed by the heap's own RA */
 #define DEVMEM_HEAP_MANAGER_RA           (1U << 2)
 /* Heap VAs managed jointly by Services and the client of Services.
  * The reserved region of the heap is managed explicitly by the client of Services

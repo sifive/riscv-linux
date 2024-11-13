@@ -61,6 +61,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <linux/slab.h>
 
+#if defined(SUPPORT_RGXKICKSYNC_BRIDGE)
+
 /* ***************************************************************************
  * Server-side bridge entry points
  */
@@ -228,9 +230,7 @@ PVRSRVBridgeRGXKickSync2(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -257,7 +257,6 @@ PVRSRVBridgeRGXKickSync2(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psRGXKickSync2IN), sizeof(unsigned long));
@@ -273,7 +272,6 @@ PVRSRVBridgeRGXKickSync2(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -461,11 +459,7 @@ RGXKickSync2_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -532,6 +526,9 @@ RGXSetKickSyncContextProperty_exit:
  * Server bridge dispatch related glue
  */
 
+#endif /* SUPPORT_RGXKICKSYNC_BRIDGE */
+
+#if defined(SUPPORT_RGXKICKSYNC_BRIDGE)
 PVRSRV_ERROR InitRGXKICKSYNCBridge(void);
 void DeinitRGXKICKSYNCBridge(void);
 
@@ -543,18 +540,25 @@ PVRSRV_ERROR InitRGXKICKSYNCBridge(void)
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXKICKSYNC,
 			      PVRSRV_BRIDGE_RGXKICKSYNC_RGXCREATEKICKSYNCCONTEXT,
-			      PVRSRVBridgeRGXCreateKickSyncContext, NULL);
+			      PVRSRVBridgeRGXCreateKickSyncContext, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXCREATEKICKSYNCCONTEXT),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXCREATEKICKSYNCCONTEXT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXKICKSYNC,
 			      PVRSRV_BRIDGE_RGXKICKSYNC_RGXDESTROYKICKSYNCCONTEXT,
-			      PVRSRVBridgeRGXDestroyKickSyncContext, NULL);
+			      PVRSRVBridgeRGXDestroyKickSyncContext, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXDESTROYKICKSYNCCONTEXT),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXDESTROYKICKSYNCCONTEXT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXKICKSYNC, PVRSRV_BRIDGE_RGXKICKSYNC_RGXKICKSYNC2,
-			      PVRSRVBridgeRGXKickSync2, NULL);
+			      PVRSRVBridgeRGXKickSync2, NULL, sizeof(PVRSRV_BRIDGE_IN_RGXKICKSYNC2),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXKICKSYNC2));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXKICKSYNC,
 			      PVRSRV_BRIDGE_RGXKICKSYNC_RGXSETKICKSYNCCONTEXTPROPERTY,
-			      PVRSRVBridgeRGXSetKickSyncContextProperty, NULL);
+			      PVRSRVBridgeRGXSetKickSyncContextProperty, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXSETKICKSYNCCONTEXTPROPERTY),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXSETKICKSYNCCONTEXTPROPERTY));
 
 	return PVRSRV_OK;
 }
@@ -577,3 +581,13 @@ void DeinitRGXKICKSYNCBridge(void)
 				PVRSRV_BRIDGE_RGXKICKSYNC_RGXSETKICKSYNCCONTEXTPROPERTY);
 
 }
+#else /* SUPPORT_RGXKICKSYNC_BRIDGE */
+/* This bridge is conditional on SUPPORT_RGXKICKSYNC_BRIDGE - when not defined,
+ * do not populate the dispatch table with its functions
+ */
+#define InitRGXKICKSYNCBridge() \
+	PVRSRV_OK
+
+#define DeinitRGXKICKSYNCBridge()
+
+#endif /* SUPPORT_RGXKICKSYNC_BRIDGE */

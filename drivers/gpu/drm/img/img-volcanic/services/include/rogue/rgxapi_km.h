@@ -44,21 +44,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef RGXAPI_KM_H
 #define RGXAPI_KM_H
 
-#if defined(SUPPORT_SHARED_SLC)
-/*************************************************************************/ /*!
-@Function       RGXInitSLC
-@Description    Init the SLC after a power up. It is required to call this
-                 function if using SUPPORT_SHARED_SLC. Otherwise, it shouldn't
-                 be called.
-
-@Input          hDevHandle   RGX Device Node
-@Return         PVRSRV_ERROR System error code
-*/ /**************************************************************************/
-PVRSRV_ERROR RGXInitSLC(IMG_HANDLE hDevHandle);
-#endif
-
 #include "rgx_hwperf.h"
-
 
 /******************************************************************************
  * RGX HW Performance Profiling Control API(s)

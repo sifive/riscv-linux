@@ -74,12 +74,6 @@ void RGXSetFWMemContextDevVirtAddr(SERVER_MMU_CONTEXT *psServerMMUContext,
 void RGXMMUSyncPrimAlloc(PVRSRV_DEVICE_NODE *psDevNode);
 void RGXMMUSyncPrimFree(void);
 
-PVRSRV_ERROR RGXSLCFlushRange(PVRSRV_DEVICE_NODE *psDevNode,
-							  MMU_CONTEXT *psMMUContext,
-							  IMG_DEV_VIRTADDR sDevVAddr,
-							  IMG_DEVMEM_SIZE_T uiLength,
-							  IMG_BOOL bInvalidate);
-
 PVRSRV_ERROR RGXInvalidateFBSCTable(PVRSRV_DEVICE_NODE *psDeviceNode,
 									MMU_CONTEXT *psMMUContext,
 									IMG_UINT64 ui64FBSCEntryMask);
@@ -123,6 +117,22 @@ PVRSRV_ERROR RGXMMUCacheInvalidateKick(PVRSRV_DEVICE_NODE *psDevNode,
 PVRSRV_ERROR RGXPreKickCacheCommand(PVRSRV_RGXDEV_INFO *psDevInfo,
 									RGXFWIF_DM eDM,
 									IMG_UINT32 *pui32MMUInvalidateUpdate);
+
+/* Needed for Volcanic architectures with BRN71422 */
+#if defined(RGX_BRN71422_TARGET_HARDWARE_PHYSICAL_ADDR)
+void RGXMapBRN71422TargetPhysicalAddress(struct _CONNECTION_DATA_ *psConnection,
+		                                 struct _PVRSRV_DEVICE_NODE_ *psDevNode,
+		                                 IMG_DEV_PHYADDR sPhysAddrL1Px,
+		                                 void *pxL1PxCpuVAddr);
+#endif
+
+/* Needed for Rogue architecture where a MIPS FW CPU is used */
+#if defined(RGX_FEATURE_MIPS_BIT_MASK)
+void RGXMMUTweakProtFlags(struct _PVRSRV_DEVICE_NODE_ *psDevNode,
+		                  MMU_DEVICEATTRIBS *psDevAttrs,
+		                  PVRSRV_MEMALLOCFLAGS_T uiMappingFlags,
+		                  MMU_PROTFLAGS_T *uiMMUProtFlags);
+#endif
 
 void RGXUnregisterMemoryContext(IMG_HANDLE hPrivData);
 PVRSRV_ERROR RGXRegisterMemoryContext(PVRSRV_DEVICE_NODE	*psDevNode,

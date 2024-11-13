@@ -82,7 +82,7 @@ extern "C" {
 #if defined(SUPPORT_SECURE_EXPORT)
 #include "common_smm_bridge.h"
 #endif
-#if !defined(EXCLUDE_HTBUFFER_BRIDGE)
+#if defined(PVRSRV_ENABLE_HTB)
 #include "common_htbuffer_bridge.h"
 #endif
 #include "common_pvrtl_bridge.h"
@@ -94,9 +94,6 @@ extern "C" {
 #include "common_validation_bridge.h"
 #endif
 
-#if defined(PVR_TESTING_UTILS)
-#include "common_tutils_bridge.h"
-#endif
 
 #include "common_devicememhistory_bridge.h"
 #include "common_synctracking_bridge.h"
@@ -272,13 +269,8 @@ extern "C" {
 
 /*  18: TUTILS interface functions */
 #define PVRSRV_BRIDGE_TUTILS				18UL
-#if defined(PVR_TESTING_UTILS)
-#define PVRSRV_BRIDGE_TUTILS_DISPATCH_FIRST (PVRSRV_BRIDGE_VALIDATION_DISPATCH_LAST + 1)
-#define PVRSRV_BRIDGE_TUTILS_DISPATCH_LAST  (PVRSRV_BRIDGE_TUTILS_DISPATCH_FIRST + PVRSRV_BRIDGE_TUTILS_CMD_LAST)
-#else
 #define PVRSRV_BRIDGE_TUTILS_DISPATCH_FIRST 0
 #define PVRSRV_BRIDGE_TUTILS_DISPATCH_LAST  (PVRSRV_BRIDGE_VALIDATION_DISPATCH_LAST)
-#endif
 
 /*  19: DevMem history interface functions */
 #define PVRSRV_BRIDGE_DEVICEMEMHISTORY		19UL
@@ -287,13 +279,13 @@ extern "C" {
 
 /*  20: Host Trace Buffer interface functions */
 #define PVRSRV_BRIDGE_HTBUFFER				20UL
-#if !defined(EXCLUDE_HTBUFFER_BRIDGE)
+#if defined(PVRSRV_ENABLE_HTB)
 #define PVRSRV_BRIDGE_HTBUFFER_DISPATCH_FIRST (PVRSRV_BRIDGE_DEVICEMEMHISTORY_DISPATCH_LAST + 1)
 #define PVRSRV_BRIDGE_HTBUFFER_DISPATCH_LAST  (PVRSRV_BRIDGE_HTBUFFER_DISPATCH_FIRST + PVRSRV_BRIDGE_HTBUFFER_CMD_LAST)
-#else
+#else	/* !PVRSRV_ENABLE_HTB */
 #define PVRSRV_BRIDGE_HTBUFFER_DISPATCH_FIRST 0
 #define PVRSRV_BRIDGE_HTBUFFER_DISPATCH_LAST  (PVRSRV_BRIDGE_DEVICEMEMHISTORY_DISPATCH_LAST)
-#endif
+#endif	/* PVRSRV_ENABLE_HTB */
 
 /*  21: Non-Linux Display functions */
 #define PVRSRV_BRIDGE_DCPLAT				21UL
@@ -391,14 +383,8 @@ static const IMG_UINT32 gui32PVRBridges =
 #if defined(PVRSRV_ENABLE_GPU_MEMORY_INFO)
 	| (1U << (PVRSRV_BRIDGE_RI - PVRSRV_BRIDGE_FIRST))
 #endif
-#if defined(SUPPORT_VALIDATION)
-	| (1U << (PVRSRV_BRIDGE_VALIDATION - PVRSRV_BRIDGE_FIRST))
-#endif
-#if defined(PVR_TESTING_UTILS)
-	| (1U << (PVRSRV_BRIDGE_TUTILS - PVRSRV_BRIDGE_FIRST))
-#endif
 	| (1U << (PVRSRV_BRIDGE_DEVICEMEMHISTORY - PVRSRV_BRIDGE_FIRST))
-#if defined(SUPPORT_HTBUFFER)
+#if defined(PVRSRV_ENABLE_HTB)
 	| (1U << (PVRSRV_BRIDGE_HTBUFFER - PVRSRV_BRIDGE_FIRST))
 #endif
 #if defined(SUPPORT_DISPLAY_CLASS) && defined(SUPPORT_DCPLAT_BRIDGE)

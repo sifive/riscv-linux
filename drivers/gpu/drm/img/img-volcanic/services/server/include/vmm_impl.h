@@ -48,18 +48,37 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "img_types.h"
 #include "pvrsrv_error.h"
+#include "pvrsrv_device.h"
 
 typedef enum _VMM_CONF_PARAM_
 {
-	VMM_CONF_PRIO_OSID0 = 0,
-	VMM_CONF_PRIO_OSID1 = 1,
-	VMM_CONF_PRIO_OSID2 = 2,
-	VMM_CONF_PRIO_OSID3 = 3,
-	VMM_CONF_PRIO_OSID4 = 4,
-	VMM_CONF_PRIO_OSID5 = 5,
-	VMM_CONF_PRIO_OSID6 = 6,
-	VMM_CONF_PRIO_OSID7 = 7,
-	VMM_CONF_HCS_DEADLINE = 8
+	VMM_CONF_PRIO_DRV0 = 0,
+	VMM_CONF_PRIO_DRV1 = 1,
+	VMM_CONF_PRIO_DRV2 = 2,
+	VMM_CONF_PRIO_DRV3 = 3,
+	VMM_CONF_PRIO_DRV4 = 4,
+	VMM_CONF_PRIO_DRV5 = 5,
+	VMM_CONF_PRIO_DRV6 = 6,
+	VMM_CONF_PRIO_DRV7 = 7,
+	VMM_CONF_HCS_DEADLINE = 8,
+	VMM_CONF_ISOLATION_GROUP_DRV0 = 9,
+	VMM_CONF_ISOLATION_GROUP_DRV1 = 10,
+	VMM_CONF_ISOLATION_GROUP_DRV2 = 11,
+	VMM_CONF_ISOLATION_GROUP_DRV3 = 12,
+	VMM_CONF_ISOLATION_GROUP_DRV4 = 13,
+	VMM_CONF_ISOLATION_GROUP_DRV5 = 14,
+	VMM_CONF_ISOLATION_GROUP_DRV6 = 15,
+	VMM_CONF_ISOLATION_GROUP_DRV7 = 16,
+	VMM_CONF_TIME_SLICE_DRV0 = 17,
+	VMM_CONF_TIME_SLICE_DRV1 = 18,
+	VMM_CONF_TIME_SLICE_DRV2 = 19,
+	VMM_CONF_TIME_SLICE_DRV3 = 20,
+	VMM_CONF_TIME_SLICE_DRV4 = 21,
+	VMM_CONF_TIME_SLICE_DRV5 = 22,
+	VMM_CONF_TIME_SLICE_DRV6 = 23,
+	VMM_CONF_TIME_SLICE_DRV7 = 24,
+	VMM_CONF_TIME_SLICE_INTERVAL = 25,
+	VMM_CONF_VZ_CONNECTION_COOLDOWN_PERIOD = 26,
 } VMM_CONF_PARAM;
 
 /*
@@ -135,19 +154,19 @@ typedef struct _VMM_PVZ_CONNECTION_
 		/*
 			Corresponding server side entries to handle guest PVZ calls
 			NOTE:
-				 - Additional PVZ function ui32OSID parameter
-					 - OSID determination is responsibility of VM manager
-					 - Actual OSID value must be supplied by VM manager
+				 - Additional PVZ function ui32DriverID parameter
+					 - Driver ID determination is responsibility of VM manager
+					 - Actual Driver ID value must be supplied by VM manager
 						- This can be done either in client/VMM/host side
 					 - Must be done before host pvz function(s) are called
-					 - Host pvz function validates incoming OSID values
+					 - Host pvz function validates incoming Driver ID values
 		 */
-		PVRSRV_ERROR (*pfnMapDevPhysHeap)(IMG_UINT32 ui32OSID,
+		PVRSRV_ERROR (*pfnMapDevPhysHeap)(IMG_UINT32 ui32DriverID,
 										  IMG_UINT32 ui32DevID,
 										  IMG_UINT64 ui64Size,
 										  IMG_UINT64 ui64PAddr);
 
-		PVRSRV_ERROR (*pfnUnmapDevPhysHeap)(IMG_UINT32 ui32OSID,
+		PVRSRV_ERROR (*pfnUnmapDevPhysHeap)(IMG_UINT32 ui32DriverID,
 											IMG_UINT32 ui32DevID);
 	} sServerFuncTab;
 
@@ -157,10 +176,10 @@ typedef struct _VMM_PVZ_CONNECTION_
 		   information to the host; these events may in turn be forwarded to
 		   the firmware
 		 */
-		PVRSRV_ERROR (*pfnOnVmOnline)(IMG_UINT32 ui32OSID,
+		PVRSRV_ERROR (*pfnOnVmOnline)(IMG_UINT32 ui32DriverID,
 									  IMG_UINT32 ui32DevID);
 
-		PVRSRV_ERROR (*pfnOnVmOffline)(IMG_UINT32 ui32OSID,
+		PVRSRV_ERROR (*pfnOnVmOffline)(IMG_UINT32 ui32DriverID,
 									   IMG_UINT32 ui32DevID);
 
 		PVRSRV_ERROR (*pfnVMMConfigure)(VMM_CONF_PARAM eVMMParamType,
@@ -179,7 +198,9 @@ typedef struct _VMM_PVZ_CONNECTION_
                 connection to the host.
  @Return        PVRSRV_OK on success. Otherwise, a PVRSRV error code
 ******************************************************************************/
-PVRSRV_ERROR VMMCreatePvzConnection(VMM_PVZ_CONNECTION **psPvzConnection);
-void VMMDestroyPvzConnection(VMM_PVZ_CONNECTION *psPvzConnection);
+PVRSRV_ERROR VMMCreatePvzConnection(VMM_PVZ_CONNECTION **psPvzConnection,
+									PVRSRV_DEVICE_CONFIG *psDevConfig);
+void VMMDestroyPvzConnection(VMM_PVZ_CONNECTION *psPvzConnection,
+							 PVRSRV_DEVICE_CONFIG *psDevConfig);
 
 #endif /* VMM_IMPL_H */

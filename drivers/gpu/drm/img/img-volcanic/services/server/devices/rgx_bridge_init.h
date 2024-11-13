@@ -49,7 +49,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "device.h"
 #include "rgxdevice.h"
 
-PVRSRV_ERROR DeviceDepBridgeInit(PVRSRV_RGXDEV_INFO *psDevInfo);
-void DeviceDepBridgeDeInit(PVRSRV_RGXDEV_INFO *psDevInfo);
+void RGXBridgeDriverInit(void);
+PVRSRV_ERROR RGXRegisterBridges(PVRSRV_RGXDEV_INFO *psDevInfo);
+void RGXUnregisterBridges(PVRSRV_RGXDEV_INFO *psDevInfo);
 
 #endif /* RGX_BRIDGE_INIT_H */

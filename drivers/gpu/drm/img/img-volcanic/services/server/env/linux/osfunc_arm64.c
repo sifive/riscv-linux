@@ -101,29 +101,34 @@ static inline void FlushRange(void *pvRangeAddrStart,
 	begin_user_mode_access();
 
 	pbEnd = (IMG_BYTE *) PVR_ALIGN((uintptr_t)pbEnd, (uintptr_t)ui32CacheLineSize);
-	for (pbBase = pbStart; pbBase < pbEnd; pbBase += ui32CacheLineSize)
+
+	/* Memory-barrier */
+	asm volatile("dsb sy" : : : "memory");
+
+	switch (eCacheOp)
 	{
-		switch (eCacheOp)
-		{
-			case PVRSRV_CACHE_OP_CLEAN:
+		case PVRSRV_CACHE_OP_CLEAN:
+			for (pbBase = pbStart; pbBase < pbEnd; pbBase += ui32CacheLineSize)
+			{
 				asm volatile ("dc cvac, %0" :: "r" (pbBase));
-				break;
-
-			case PVRSRV_CACHE_OP_INVALIDATE:
-				asm volatile ("dc ivac, %0" :: "r" (pbBase));
-				break;
-
-			case PVRSRV_CACHE_OP_FLUSH:
+			}
+			break;
+		case PVRSRV_CACHE_OP_INVALIDATE:
+		case PVRSRV_CACHE_OP_FLUSH:
+			for (pbBase = pbStart; pbBase < pbEnd; pbBase += ui32CacheLineSize)
+			{
 				asm volatile ("dc civac, %0" :: "r" (pbBase));
-				break;
-
-			default:
-				PVR_DPF((PVR_DBG_ERROR,
-						"%s: Cache maintenance operation type %d is invalid",
-						__func__, eCacheOp));
-				break;
-		}
+			}
+			break;
+		default:
+			PVR_DPF((PVR_DBG_ERROR,
+					"%s: Cache maintenance operation type %d is invalid",
+					__func__, eCacheOp));
+			break;
 	}
+
+	/* Memory-barrier */
+	asm volatile("dsb sy" : : : "memory");
 
 	end_user_mode_access();
 }
@@ -134,43 +139,20 @@ void OSCPUCacheFlushRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
 							IMG_CPU_PHYADDR sCPUPhysStart,
 							IMG_CPU_PHYADDR sCPUPhysEnd)
 {
-	struct device *dev;
-
-	if (pvVirtStart)
-	{
-		FlushRange(pvVirtStart, pvVirtEnd, PVRSRV_CACHE_OP_FLUSH);
-		return;
-	}
-
-	dev = psDevNode->psDevConfig->pvOSDevice;
-
-	if (dev)
-	{
-		dma_sync_single_for_device(dev, sCPUPhysStart.uiAddr,
-								   sCPUPhysEnd.uiAddr - sCPUPhysStart.uiAddr,
-								   DMA_TO_DEVICE);
-		dma_sync_single_for_cpu(dev, sCPUPhysStart.uiAddr,
-								sCPUPhysEnd.uiAddr - sCPUPhysStart.uiAddr,
-								DMA_FROM_DEVICE);
-	}
-	else
+	if (pvVirtStart == NULL)
 	{
 		/*
-		 * Allocations done prior to obtaining device pointer may
-		 * affect in cache operations being scheduled.
-		 *
-		 * Ignore operations with null device pointer.
-		 * This prevents crashes on newer kernels that don't return dummy ops
-		 * when null pointer is passed to get_dma_ops.
-		 *
+		 * Converting the physical addresses to virtual addresses allows us to
+		 * utilize the assembly instruction that makes the Flush + Invalidate
+		 * cache operation atomic.
+		 * There is no state in-between the flush and the invalidate operation.
 		 */
-
-		/* Don't spam on nohw */
-#if !defined(NO_HARDWARE)
-		PVR_DPF((PVR_DBG_WARNING, "Cache operation cannot be completed!"));
-#endif
+		pvVirtStart = phys_to_virt(sCPUPhysStart.uiAddr);
+		pvVirtEnd = phys_to_virt(sCPUPhysEnd.uiAddr);
 	}
 
+	FlushRange(pvVirtStart, pvVirtEnd, PVRSRV_CACHE_OP_FLUSH);
+	return;
 }
 
 void OSCPUCacheCleanRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
@@ -197,21 +179,7 @@ void OSCPUCacheCleanRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
 	}
 	else
 	{
-		/*
-		 * Allocations done prior to obtaining device pointer may
-		 * affect in cache operations being scheduled.
-		 *
-		 * Ignore operations with null device pointer.
-		 * This prevents crashes on newer kernels that don't return dummy ops
-		 * when null pointer is passed to get_dma_ops.
-		 *
-		 */
-
-
-		/* Don't spam on nohw */
-#if !defined(NO_HARDWARE)
-		PVR_DPF((PVR_DBG_WARNING, "Cache operation cannot be completed!"));
-#endif
+		PVR_DPF((PVR_DBG_ERROR, "Cache operation cannot be completed!"));
 	}
 
 }
@@ -240,26 +208,21 @@ void OSCPUCacheInvalidateRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
 	}
 	else
 	{
-		/*
-		 * Allocations done prior to obtaining device pointer may
-		 * affect in cache operations being scheduled.
-		 *
-		 * Ignore operations with null device pointer.
-		 * This prevents crashes on newer kernels that don't return dummy ops
-		 * when null pointer is passed to get_dma_ops.
-		 *
-		 */
-
-		/* Don't spam on nohw */
-#if !defined(NO_HARDWARE)
-		PVR_DPF((PVR_DBG_WARNING, "Cache operation cannot be completed!"));
-#endif
+		PVR_DPF((PVR_DBG_ERROR, "Cache operation cannot be completed!"));
 	}
 }
 
 
-OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(void)
+OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(PVRSRV_DEVICE_NODE *psDevNode)
 {
+	if (!psDevNode->psDevConfig->pvOSDevice)
+	{
+		/* Host Mem device node doesn't have an associated Linux dev ptr.
+		   Use virtual addr ops instead of asking kernel to do physical
+		   maintenance */
+		return OS_CACHE_OP_ADDR_TYPE_VIRTUAL;
+	}
+
 	return OS_CACHE_OP_ADDR_TYPE_PHYSICAL;
 }
 

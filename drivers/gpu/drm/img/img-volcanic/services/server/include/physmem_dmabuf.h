@@ -47,6 +47,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <linux/dma-buf.h>
 
+#include "pvr_dma_resv.h"
+
 #if defined(__KERNEL__) && defined(__linux__) && !defined(__GENKSYMS__)
 #define __pvrsrv_defined_struct_enum__
 #include <services_kernel_client.h>
@@ -59,14 +61,15 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pmr.h"
 
-typedef PVRSRV_ERROR (*PFN_DESTROY_DMABUF_PMR)(PHYS_HEAP *psHeap,
-                                               struct dma_buf_attachment *psAttachment);
+typedef void (*PFN_DESTROY_DMABUF_PMR)(PHYS_HEAP *psHeap,
+                                       struct dma_buf_attachment *psAttachment);
 
 PVRSRV_ERROR
 PhysmemCreateNewDmaBufBackedPMR(PHYS_HEAP *psHeap,
                                 struct dma_buf_attachment *psAttachment,
                                 PFN_DESTROY_DMABUF_PMR pfnDestroy,
                                 PVRSRV_MEMALLOCFLAGS_T uiFlags,
+                                IMG_PID uiPid,
                                 IMG_DEVMEM_SIZE_T uiChunkSize,
                                 IMG_UINT32 ui32NumPhysChunks,
                                 IMG_UINT32 ui32NumVirtChunks,
@@ -78,11 +81,28 @@ PhysmemCreateNewDmaBufBackedPMR(PHYS_HEAP *psHeap,
 struct dma_buf *
 PhysmemGetDmaBuf(PMR *psPMR);
 
+struct dma_resv *
+PhysmemGetDmaResv(PMR *psPMR);
+
+#if defined(SUPPORT_SECURE_ALLOC_KM) && defined(PVR_ANDROID_HAS_DMA_HEAP_FIND)
+struct dma_heap *
+PhysmemGetDmaHeap(PMR *psPMR);
+
+void
+PhysmemSetDmaHeap(PMR *psPMR, struct dma_heap *psDmaHeap);
+#endif /* #if defined(SUPPORT_SECURE_ALLOC_KM) && defined(PVR_ANDROID_HAS_DMA_HEAP_FIND) */
+
 PVRSRV_ERROR
 PhysmemExportDmaBuf(CONNECTION_DATA *psConnection,
                     PVRSRV_DEVICE_NODE *psDevNode,
                     PMR *psPMR,
                     IMG_INT *piFd);
+
+PVRSRV_ERROR
+PhysmemExportGemHandle(CONNECTION_DATA *psConnection,
+		       PVRSRV_DEVICE_NODE *psDevNode,
+		       PMR *psPMR,
+		       IMG_UINT32 *puHandle);
 
 PVRSRV_ERROR
 PhysmemImportDmaBuf(CONNECTION_DATA *psConnection,
@@ -94,17 +114,6 @@ PhysmemImportDmaBuf(CONNECTION_DATA *psConnection,
                     PMR **ppsPMRPtr,
                     IMG_DEVMEM_SIZE_T *puiSize,
                     IMG_DEVMEM_ALIGN_T *puiAlign);
-
-PVRSRV_ERROR
-PhysmemImportDmaBufLocked(CONNECTION_DATA *psConnection,
-                          PVRSRV_DEVICE_NODE *psDevNode,
-                          IMG_INT fd,
-                          PVRSRV_MEMALLOCFLAGS_T uiFlags,
-                          IMG_UINT32 ui32NameSize,
-                          const IMG_CHAR pszName[DEVMEM_ANNOTATION_MAX_LEN],
-                          PMR **ppsPMRPtr,
-                          IMG_DEVMEM_SIZE_T *puiSize,
-                          IMG_DEVMEM_ALIGN_T *puiAlign);
 
 PVRSRV_ERROR
 PhysmemImportSparseDmaBuf(CONNECTION_DATA *psConnection,

@@ -48,7 +48,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "device.h"
 #include "rgxfwutils.h"
 #include "rgx_fwif_resetframework.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "pvr_notifier.h"
 
 #include "sync_server.h"
@@ -108,7 +108,6 @@ PVRSRV_ERROR PVRSRVRGXCreateComputeContextKM(CONNECTION_DATA			*psConnection,
 ******************************************************************************/
 PVRSRV_ERROR PVRSRVRGXDestroyComputeContextKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeContext);
 
-
 /*!
 *******************************************************************************
  @Function	PVRSRVRGXKickCDMKM
@@ -127,6 +126,7 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 								PVRSRV_TIMELINE				iUpdateTimeline,
 								PVRSRV_FENCE				*piUpdateFence,
 								IMG_CHAR					pcszUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH],
+								PVRSRV_FENCE				iExportFenceToSignal,
 								IMG_UINT32					ui32CmdSize,
 								IMG_PBYTE					pui8DMCmd,
 								IMG_UINT32					ui32PDumpFlags,
@@ -136,7 +136,8 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 								PMR							**ppsSyncPMRs,
 								IMG_UINT32					ui32NumWorkgroups,
 								IMG_UINT32					ui32NumWorkitems,
-								IMG_UINT64					ui64DeadlineInus);
+								IMG_UINT64					ui64DeadlineInus,
+								IMG_PUINT32					pui32IntJobRef);
 
 /*!
 *******************************************************************************
@@ -150,6 +151,25 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
  @Return   PVRSRV_ERROR
 ******************************************************************************/
 PVRSRV_ERROR PVRSRVRGXFlushComputeDataKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeContext);
+
+
+
+/*!
+*******************************************************************************
+ @Function	PVRSRVRGXSendCancelCmd
+
+ @Description
+	Server-side implementation of RGXSendCancelCmd
+
+ @Input psComputeContext - Compute context to cancel work on
+ @Input ui32LastIntJobRefToCancel - Last IntJobRef to cancel
+
+ @Return   PVRSRV_ERROR
+******************************************************************************/
+PVRSRV_ERROR PVRSRVRGXSendCancelCmdKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeContext,
+                                      IMG_UINT32 ui32FirstIntJobRefToCancel,
+                                      IMG_UINT32 ui32LastIntJobRefToCancel);
+
 
 /*!
 *******************************************************************************
@@ -178,6 +198,15 @@ PVRSRV_ERROR PVRSRVRGXGetLastDeviceErrorKM(CONNECTION_DATA    *psConnection,
                                            PVRSRV_DEVICE_NODE *psDeviceNode,
                                            IMG_UINT32         *ui32Error);
 
+PVRSRV_ERROR PVRSRVRGXKickTimestampQueryKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeContext,
+                                           PVRSRV_FENCE iCheckFence,
+										   PVRSRV_TIMELINE iUpdateTimeline,
+										   PVRSRV_FENCE *piUpdateFence,
+                                           IMG_CHAR pszUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH],
+                                           IMG_UINT32 ui32CmdSize,
+                                           IMG_PBYTE pui8DMCmd,
+                                           IMG_UINT32 ui32ExtJobRef);
+
 /* Debug - Dump debug info of compute contexts on this device */
 void DumpComputeCtxtsInfo(PVRSRV_RGXDEV_INFO *psDevInfo,
                           DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf,
@@ -186,5 +215,12 @@ void DumpComputeCtxtsInfo(PVRSRV_RGXDEV_INFO *psDevInfo,
 
 /* Debug/Watchdog - check if client compute contexts are stalled */
 IMG_UINT32 CheckForStalledClientComputeCtxt(PVRSRV_RGXDEV_INFO *psDevInfo);
+
+PVRSRV_ERROR PVRSRVRGXCDMGetSharedMemoryKM(
+	CONNECTION_DATA           * psConnection,
+	PVRSRV_DEVICE_NODE        * psDeviceNode,
+	PMR                      ** ppsCLIPMRMem);
+
+PVRSRV_ERROR PVRSRVRGXCDMReleaseSharedMemoryKM(PMR * psUSCPMRMem);
 
 #endif /* RGXCOMPUTE_H */

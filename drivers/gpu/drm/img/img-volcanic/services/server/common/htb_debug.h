@@ -51,7 +51,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  @Returns      eError          internal error code, PVRSRV_OK on success
 
  */ /**************************************************************************/
-PVRSRV_ERROR HTB_CreateDIEntry(void);
+PVRSRV_ERROR HTB_CreateDIEntry_Impl(void);
 
 /**************************************************************************/ /*!
  @Function     HTB_DestroyFSEntry
@@ -59,6 +59,14 @@ PVRSRV_ERROR HTB_CreateDIEntry(void);
  @Description  Destroy the debugFS entry-point created by earlier
                HTB_CreateDIEntry() call.
 */ /**************************************************************************/
-void HTB_DestroyDIEntry(void);
+void HTB_DestroyDIEntry_Impl(void);
+
+#if defined(PVRSRV_ENABLE_HTB)
+#define HTB_CreateDIEntry() HTB_CreateDIEntry_Impl()
+#define HTB_DestroyDIEntry() HTB_DestroyDIEntry_Impl()
+#else /* !PVRSRV_ENABLE_HTB */
+#define HTB_CreateDIEntry() PVRSRV_OK
+#define HTB_DestroyDIEntry()
+#endif /* PVRSRV_ENABLE_HTB */
 
 #endif /* HTB_DEBUG_H */

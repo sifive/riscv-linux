@@ -62,8 +62,7 @@ IMG_INTERNAL PVRSRV_ERROR BridgeRIWriteMEMDESCEntry(IMG_HANDLE hBridge,
 						    const IMG_CHAR * puiTextB,
 						    IMG_UINT64 ui64Offset,
 						    IMG_UINT64 ui64Size,
-						    IMG_BOOL bIsImport,
-						    IMG_BOOL bIsSuballoc, IMG_HANDLE * phRIHandle);
+						    IMG_UINT64 ui64Flags, IMG_HANDLE * phRIHandle);
 
 IMG_INTERNAL PVRSRV_ERROR BridgeRIWriteProcListEntry(IMG_HANDLE hBridge,
 						     IMG_UINT32 ui32TextBSize,

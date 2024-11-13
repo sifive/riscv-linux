@@ -52,9 +52,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgx_fwif_resetframework.h"
 #include "sync_server.h"
 #include "connection_server.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "pvr_notifier.h"
-#include "ri_server.h"
 
 typedef struct _RGX_SERVER_RENDER_CONTEXT_ RGX_SERVER_RENDER_CONTEXT;
 typedef struct _RGX_FREELIST_ RGX_FREELIST;
@@ -117,28 +116,28 @@ typedef struct _RGX_PMR_NODE_ RGX_PMR_NODE;
 
 typedef struct _RGX_HWRTDATA_COMMON_COOKIE_
 {
-	DEVMEM_MEMDESC			*psHWRTDataCommonFwMemDesc;
-	RGXFWIF_DEV_VIRTADDR	sHWRTDataCommonFwAddr;
-	IMG_UINT32				ui32RefCount;
-
+	DEVMEMINT_RESERVATION* psPMStateReservation;
+	DEVMEMINT_RESERVATION* psPMSecureStateReservation;
+	DEVMEMINT_RESERVATION* psPMMListsReservation;
+	IMG_UINT32             ui32RefCount;
 } RGX_HWRTDATA_COMMON_COOKIE;
 
 typedef struct _RGX_KM_HW_RT_DATASET_
 {
-	RGX_HWRTDATA_COMMON_COOKIE *psHWRTDataCommonCookie;
-
 	/* RGX_RTDATA_CLEANUP_DATA */
 	/* RGXMKIF_NUM_RTDATAS */
-    PVRSRV_DEVICE_NODE *psDeviceNode;
+	RGX_HWRTDATA_COMMON_COOKIE* psHWRTDataCommonCookie;
+
+	PVRSRV_DEVICE_NODE *psDeviceNode;
 	RGXFWIF_DEV_VIRTADDR sHWRTDataFwAddr;
 
-    DEVMEM_MEMDESC *psHWRTDataFwMemDesc;
-    DEVMEM_MEMDESC *psRTArrayFwMemDesc;
-    DEVMEM_MEMDESC *psRendersAccArrayFwMemDesc;
+	DEVMEM_MEMDESC *psHWRTDataFwMemDesc;
+	DEVMEM_MEMDESC *psRTArrayFwMemDesc;
+	DEVMEM_MEMDESC *psRendersAccArrayFwMemDesc;
 
-    RGX_FREELIST *apsFreeLists[RGXFW_MAX_FREELISTS];
+	RGX_FREELIST *apsFreeLists[RGXFW_MAX_FREELISTS];
 #if !defined(SUPPORT_SHADOW_FREELISTS)
-    DLLIST_NODE sNodeHWRTData;
+	DLLIST_NODE			sNodeHWRTData;
 #endif
 
 } RGX_KM_HW_RT_DATASET;
@@ -154,6 +153,8 @@ struct _RGX_FREELIST_ {
 	/* Free list PM state PMR */
 	PMR						*psFreeListStatePMR;
 	IMG_DEVMEM_OFFSET_T		uiFreeListStatePMROffset;
+
+	DEVMEMINT_RESERVATION	*psFreeListAndStateReservation;
 
 	/* Freelist config */
 	IMG_UINT32				ui32MaxFLPages;
@@ -186,6 +187,7 @@ struct _RGX_FREELIST_ {
 	/* FW data structures */
 	DEVMEM_MEMDESC			*psFWFreelistMemDesc;
 	RGXFWIF_DEV_VIRTADDR	sFreeListFWDevVAddr;
+	IMG_DEV_VIRTADDR		sFreeListBaseDevVAddr;
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
 	HASH_TABLE*				psWorkloadHashTable;
@@ -211,11 +213,10 @@ typedef struct {
 
 	DEVMEMINT_RESERVATION	*psReservation;
 	PMR						*psPMR;
-	DEVMEMINT_MAPPING		*psMapping;
-	PVRSRV_MEMALLOCFLAGS_T	uiMapFlags;
 	IMG_UINT32				ui32ZSBufferID;
 	IMG_UINT32				ui32RefCount;
 	IMG_BOOL				bOnDemand;
+	IMG_BOOL				bIsBacked;
 
 	IMG_UINT32				ui32NumReqByApp;		/* Number of Backing Requests from Application */
 	IMG_UINT32				ui32NumReqByFW;			/* Number of Backing Requests from Firmware */
@@ -232,46 +233,40 @@ typedef struct {
 /* Dump the physical pages of a freelist */
 IMG_BOOL RGXDumpFreeListPageList(RGX_FREELIST *psFreeList);
 
-
+PVRSRV_ERROR RGXCreateHWRTDataSet2(CONNECTION_DATA          *psConnection,
+                                   PVRSRV_DEVICE_NODE       *psDeviceNode,
+                                   IMG_DEV_VIRTADDR         psVHeapTableDevVAddr,
+                                   DEVMEMINT_RESERVATION    *psPMMListsReservation,
+                                   DEVMEMINT_RESERVATION    *psPMStateReservation,
+                                   DEVMEMINT_RESERVATION    *psPMSecureStateReservation,
+                                   RGX_FREELIST             *apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
+                                   IMG_DEV_VIRTADDR         asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                   IMG_UINT16               ui16MaxRTs,
+                                   RGX_KM_HW_RT_DATASET     *pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS]);
 
 /* Create HWRTDataSet */
 PVRSRV_ERROR RGXCreateHWRTDataSet(CONNECTION_DATA          *psConnection,
                                   PVRSRV_DEVICE_NODE       *psDeviceNode,
-								  IMG_DEV_VIRTADDR          psVHeapTableDevVAddr,
-								  IMG_DEV_VIRTADDR          sPMDataDevVAddr[RGXMKIF_NUM_RTDATAS],
-								  IMG_DEV_VIRTADDR          sPMSecureDataDevVAddr[RGXMKIF_NUM_RTDATAS],
-							      RGX_FREELIST	           *apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
-							      IMG_UINT32                ui32ScreenPixelMax,
-							      IMG_UINT64                ui64PPPMultiSampleCtl,
-							      IMG_UINT32                ui32TEStride,
-							      IMG_DEV_VIRTADDR          asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
-							      IMG_UINT32                ui32TPCSize,
-							      IMG_UINT32                ui32TEScreen,
-							      IMG_UINT32                ui32TEAA,
-							      IMG_UINT32                ui32TEMTILE1,
-							      IMG_UINT32                ui32TEMTILE2,
-							      IMG_UINT32                ui32RgnStride,
-							      IMG_UINT32                ui32ISPMergeLowerX,
-							      IMG_UINT32                ui32ISPMergeLowerY,
-							      IMG_UINT32                ui32ISPMergeUpperX,
-							      IMG_UINT32                ui32ISPMergeUpperY,
-							      IMG_UINT32                ui32ISPMergeScaleX,
-							      IMG_UINT32                ui32ISPMergeScaleY,
-							      IMG_UINT16                ui16MaxRTs,
-							      RGX_KM_HW_RT_DATASET     *pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS]);
+                                  IMG_DEV_VIRTADDR          psVHeapTableDevVAddr,
+                                  IMG_DEV_VIRTADDR          sPMDataDevVAddr[RGXMKIF_NUM_RTDATAS],
+                                  IMG_DEV_VIRTADDR          sPMSecureDataDevVAddr[RGXMKIF_NUM_RTDATAS],
+                                  RGX_FREELIST	           *apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
+                                  IMG_DEV_VIRTADDR          asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                  IMG_UINT16                ui16MaxRTs,
+                                  RGX_KM_HW_RT_DATASET     *pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS]);
 
 /* Destroy HWRTDataSet */
-PVRSRV_ERROR RGXDestroyHWRTDataSet(RGX_KM_HW_RT_DATASET *psKmHwRTDataSet);
+PVRSRV_ERROR RGXDestroyHWRTDataSet(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet);
 
 /*
-	RGXCreateZSBuffer
+	RGXCreateZSBufferKM
 */
 PVRSRV_ERROR RGXCreateZSBufferKM(CONNECTION_DATA * psConnection,
-                                 PVRSRV_DEVICE_NODE	* psDeviceNode,
+                                 PVRSRV_DEVICE_NODE	*psDeviceNode,
                                  DEVMEMINT_RESERVATION	*psReservation,
                                  PMR					*psPMR,
                                  PVRSRV_MEMALLOCFLAGS_T		uiMapFlags,
-                                 RGX_ZSBUFFER_DATA			**ppsZSBuffer);
+                                 RGX_ZSBUFFER_DATA **ppsZSBuffer);
 
 /*
 	RGXDestroyZSBufferKM
@@ -329,22 +324,17 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
                              PDLLIST_NODE pListHeader);
 
 /* Create free list */
-PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
-                               PVRSRV_DEVICE_NODE	*psDeviceNode,
-							   IMG_HANDLE			hMemCtxPrivData,
-							   IMG_UINT32			ui32MaxFLPages,
-							   IMG_UINT32			ui32InitFLPages,
-							   IMG_UINT32			ui32GrowFLPages,
-                               IMG_UINT32           ui32GrowParamThreshold,
-							   RGX_FREELIST			*psGlobalFreeList,
-							   IMG_BOOL				bCheckFreelist,
-							   IMG_DEV_VIRTADDR		sFreeListBaseDevVAddr,
-							   IMG_DEV_VIRTADDR		sFreeListStateDevVAddr,
-							   PMR					*psFreeListPMR,
-							   IMG_DEVMEM_OFFSET_T	uiFreeListPMROffset,
-							   PMR					*psFreeListStatePMR,
-							   IMG_DEVMEM_OFFSET_T	uiFreeListStatePMROffset,
-							   RGX_FREELIST			**ppsFreeList);
+PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA       *psConnection,
+                               PVRSRV_DEVICE_NODE	     *psDeviceNode,
+                               IMG_HANDLE             hMemCtxPrivData,
+                               IMG_UINT32             ui32MaxFLPages,
+                               IMG_UINT32             ui32InitFLPages,
+                               IMG_UINT32             ui32GrowFLPages,
+                               IMG_UINT32             ui32GrowParamThreshold,
+                               RGX_FREELIST           *psGlobalFreeList,
+                               IMG_BOOL               bCheckFreelist,
+                               DEVMEMINT_RESERVATION	 *psFreeListAndStateReservation,
+                               RGX_FREELIST           **ppsFreeList);
 
 /* Destroy free list */
 PVRSRV_ERROR RGXDestroyFreeList(RGX_FREELIST *psFreeList);
@@ -369,16 +359,21 @@ void RGXProcessRequestFreelistsReconstruction(PVRSRV_RGXDEV_INFO *psDevInfo,
  @Description
 	Server-side implementation of RGXCreateRenderContext
 
- @Input pvDeviceNode - device node
+ @Input psConnection -
+ @Input psDeviceNode - device node
  @Input i32Priority - context priority
+ @Input ui32FrameworkCommandSize - framework command size
+ @Input pabyFrameworkCommand - ptr to framework command
  @Input hMemCtxPrivData - memory context private data
+ @Input ui32StaticRenderContextStateSize - size of fixed render state
+ @Input pStaticRenderContextState - ptr to fixed render state buffer
  @Input ui32PackedCCBSizeU8888 :
 		ui8TACCBAllocSizeLog2 - TA CCB size
 		ui8TACCBMaxAllocSizeLog2 - maximum size to which TA CCB can grow
 		ui83DCCBAllocSizeLog2 - 3D CCB size
 		ui83DCCBMaxAllocSizeLog2 - maximum size to which 3D CCB can grow
  @Input ui32ContextFlags - flags which specify properties of the context
- @Output ppsRenderContext - clean up data
+ @Output ppsRenderContext -
 
  @Return   PVRSRV_ERROR
 
@@ -477,6 +472,14 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 								 IMG_UINT32					ui32NumberOfIndices,
 								 IMG_UINT32					ui32NumberOfMRTs,
 								 IMG_UINT64					ui64DeadlineInus);
+
+
+PVRSRV_ERROR PVRSRVRGXSendZSStoreDisableKM(CONNECTION_DATA *psConnection,
+									PVRSRV_DEVICE_NODE * psDeviceNode,
+									RGX_SERVER_RENDER_CONTEXT *psRenderContext,
+									IMG_BOOL    bDisableDepthStore,
+									IMG_BOOL    bDisableStencilStore,
+									IMG_UINT32  ui32ExtJobRefToDisableZSStore);
 
 
 PVRSRV_ERROR PVRSRVRGXSetRenderContextPriorityKM(CONNECTION_DATA *psConnection,

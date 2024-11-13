@@ -61,18 +61,14 @@ static void x86_flush_cache_range(const void *pvStart, const void *pvEnd)
 
 	mb();
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,168))
 	__uaccess_begin();
-#endif
 
 	for (pbBase = pbStart; pbBase < pbEnd; pbBase += boot_cpu_data.x86_clflush_size)
 	{
 		clflush(pbBase);
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,168))
 	__uaccess_end();
-#endif
 
 	mb();
 }
@@ -118,8 +114,9 @@ void OSCPUCacheInvalidateRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
 	x86_flush_cache_range(pvVirtStart, pvVirtEnd);
 }
 
-OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(void)
+OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(PVRSRV_DEVICE_NODE *psDevNode)
 {
+	PVR_UNREFERENCED_PARAMETER(psDevNode);
 	return OS_CACHE_OP_ADDR_TYPE_VIRTUAL;
 }
 

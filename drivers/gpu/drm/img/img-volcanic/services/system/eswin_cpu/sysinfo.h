@@ -18,6 +18,7 @@
 //#define RGX_ESWIN_PROJECT_V91
 
 #define SYS_RGX_DEV_NAME    "pvrsrvkm"
+#define EVENT_OBJECT_TIMEOUT_US                  (100000)
 
 #define RGX_ESWIN_DISP_NUM_BUFS 2 //pay attention to this val
 

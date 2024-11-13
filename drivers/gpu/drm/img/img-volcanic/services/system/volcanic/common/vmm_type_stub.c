@@ -49,6 +49,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "vmm_impl.h"
 #include "vmm_pvz_server.h"
 
+#if 0
+//eswin: conflict with eswin version!
 static PVRSRV_ERROR
 StubVMMMapDevPhysHeap(IMG_UINT64 ui64Size,
 					  IMG_UINT64 ui64Addr)
@@ -94,18 +96,23 @@ static VMM_PVZ_CONNECTION gsStubVmmPvz =
 	}
 };
 
-PVRSRV_ERROR VMMCreatePvzConnection(VMM_PVZ_CONNECTION **psPvzConnection)
+PVRSRV_ERROR VMMCreatePvzConnection(VMM_PVZ_CONNECTION **psPvzConnection,
+									PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
+	PVR_UNREFERENCED_PARAMETER(psDevConfig);
 	PVR_LOG_RETURN_IF_FALSE((NULL != psPvzConnection), "VMMCreatePvzConnection", PVRSRV_ERROR_INVALID_PARAMS);
 	*psPvzConnection = &gsStubVmmPvz;
-	PVR_DPF((PVR_DBG_ERROR, "Using a stub VM manager type, no runtime VZ support"));
+	PVR_DPF((PVR_DBG_MESSAGE, "Using a stub VM manager type, no hypercall support"));
 	return PVRSRV_OK;
 }
 
-void VMMDestroyPvzConnection(VMM_PVZ_CONNECTION *psPvzConnection)
+void VMMDestroyPvzConnection(VMM_PVZ_CONNECTION *psPvzConnection,
+							 PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
+	PVR_UNREFERENCED_PARAMETER(psDevConfig);
 	PVR_LOG_IF_FALSE((NULL != psPvzConnection), "VMMDestroyPvzConnection");
 }
+#endif
 
 /******************************************************************************
  End of file (vmm_type_stub.c)

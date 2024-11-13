@@ -54,8 +54,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "img_types.h"
 #include "trace_events.h"
+#if defined(PVRSRV_TRACE_ROGUE_EVENTS)
 #include "rogue_trace_events.h"
+#endif
 #include "sync_checkpoint_external.h"
+
+#if defined(PVRSRV_TRACE_ROGUE_EVENTS)
 
 static bool fence_update_event_enabled, fence_check_event_enabled;
 
@@ -229,30 +233,23 @@ void trace_rogue_ufo_checks_fail(IMG_UINT64 ui64OSTimestamp,
 		puData = IMG_OFFSET_ADDR(puData, sizeof(puData->sCheckFail));
 	}
 }
-#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
 
 int PVRGpuTraceEnableUfoCallbackWrapper(void)
 {
-
-#if defined(SUPPORT_RGX)
 	PVRGpuTraceEnableUfoCallback();
-#endif
-
 	return 0;
 }
 
 int PVRGpuTraceEnableFirmwareActivityCallbackWrapper(void)
 {
-
-#if defined(SUPPORT_RGX)
 	PVRGpuTraceEnableFirmwareActivityCallback();
-#endif
-
 	return 0;
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) */
+#endif /* defined(SUPPORT_RGX) */
+#endif /* defined(PVRSRV_TRACE_ROGUE_EVENTS) */
 
 void TracepointUpdateGPUMemGlobal(IMG_UINT8 ui8GPUId,
 								  IMG_UINT64 ui64Size)
