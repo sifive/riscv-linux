@@ -65,9 +65,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 static INLINE IMG_PUINT32 GetInfoPage(SHARED_DEV_CONNECTION hDevConnection)
 {
 #if defined(__KERNEL__)
+	PVR_UNREFERENCED_PARAMETER(hDevConnection);
+
 	return (PVRSRVGetPVRSRVData())->pui32InfoPage;
 #else
-    return hDevConnection->pui32InfoPage;
+	return hDevConnection->pui32InfoPage;
 #endif
 }
 

@@ -60,25 +60,15 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(SUPPORT_ION)
 #include "ion_support.h"
 #endif
+#include "uma_heap_fns.h"
 
 #include "mt8173_mfgsys.h"
 
 #define SYS_RGX_ACTIVE_POWER_LATENCY_MS 10
 #define RGX_HW_CORE_CLOCK_SPEED 395000000
+#define MT8173_SYSTEM_NAME "mt8173"
 
-/* Setup RGX specific timing data */
-static RGX_TIMING_INFORMATION gsRGXTimingInfo = {
-	.ui32CoreClockSpeed = RGX_HW_CORE_CLOCK_SPEED,
-	.bEnableActivePM = IMG_TRUE,
-	.ui32ActivePMLatencyms = SYS_RGX_ACTIVE_POWER_LATENCY_MS,
-	.bEnableRDPowIsland = IMG_TRUE,
-};
-
-static RGX_DATA gsRGXData = {
-	.psRGXTimingInfo = &gsRGXTimingInfo,
-};
-
-static PVRSRV_DEVICE_CONFIG	gsDevice;
+static IMG_HANDLE ghSysData;
 
 typedef struct
 {
@@ -98,59 +88,6 @@ static irqreturn_t MTKLISRWrapper(int iIrq, void *pvData)
 
 	return IRQ_NONE;
 }
-
-/*
- * CPU to Device physical address translation
- */
-static
-void UMAPhysHeapCpuPAddrToDevPAddr(IMG_HANDLE hPrivData,
-				   IMG_UINT32 ui32NumOfAddr,
-				   IMG_DEV_PHYADDR *psDevPAddr,
-				   IMG_CPU_PHYADDR *psCpuPAddr)
-{
-	PVR_UNREFERENCED_PARAMETER(hPrivData);
-
-	/* Optimise common case */
-	psDevPAddr[0].uiAddr = psCpuPAddr[0].uiAddr;
-	if (ui32NumOfAddr > 1) {
-		IMG_UINT32 ui32Idx;
-		for (ui32Idx = 1; ui32Idx < ui32NumOfAddr; ++ui32Idx)
-			psDevPAddr[ui32Idx].uiAddr = psCpuPAddr[ui32Idx].uiAddr;
-	}
-}
-
-/*
- * Device to CPU physical address translation
- */
-static
-void UMAPhysHeapDevPAddrToCpuPAddr(IMG_HANDLE hPrivData,
-				   IMG_UINT32 ui32NumOfAddr,
-				   IMG_CPU_PHYADDR *psCpuPAddr,
-				   IMG_DEV_PHYADDR *psDevPAddr)
-{
-	PVR_UNREFERENCED_PARAMETER(hPrivData);
-
-	/* Optimise common case */
-	psCpuPAddr[0].uiAddr = psDevPAddr[0].uiAddr;
-	if (ui32NumOfAddr > 1) {
-		IMG_UINT32 ui32Idx;
-		for (ui32Idx = 1; ui32Idx < ui32NumOfAddr; ++ui32Idx)
-			psCpuPAddr[ui32Idx].uiAddr = psDevPAddr[ui32Idx].uiAddr;
-	}
-}
-
-static PHYS_HEAP_FUNCTIONS gsPhysHeapFuncs = {
-	.pfnCpuPAddrToDevPAddr = UMAPhysHeapCpuPAddrToDevPAddr,
-	.pfnDevPAddrToCpuPAddr = UMAPhysHeapDevPAddrToCpuPAddr,
-};
-
-static PHYS_HEAP_CONFIG gsPhysHeapConfig = {
-	.pszPDumpMemspaceName = "SYSMEM",
-	.eType = PHYS_HEAP_TYPE_UMA,
-	.psMemFuncs = &gsPhysHeapFuncs,
-	.hPrivData = NULL,
-	.ui32UsageFlags = PHYS_HEAP_USAGE_GPU_LOCAL,
-};
 
 static PVRSRV_ERROR MTKSysDevPrePowerState(
 		IMG_HANDLE hSysData,
@@ -267,14 +204,10 @@ static unsigned long mtk_mfg_get_static_power(struct devfreq *df,
 static unsigned long mtk_mfg_get_static_power(unsigned long voltage)
 #endif
 {
-	struct mtk_mfg *mfg = gsDevice.hSysData;
+	struct mtk_mfg *mfg = ghSysData;
 	struct thermal_zone_device *tz = mfg->tz;
 	unsigned long power;
-#if !defined(CHROMIUMOS_KERNEL) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-	unsigned long temperature = FALLBACK_STATIC_TEMPERATURE;
-#else
 	int temperature = FALLBACK_STATIC_TEMPERATURE;
-#endif
 	int low_idx = 0, high_idx = POWER_TABLE_NUM_VOLT - 1;
 	int i;
 
@@ -393,31 +326,126 @@ static struct devfreq_cooling_power sPowerOps = {
 };
 #endif
 
-static void SetFrequency(IMG_UINT32 freq)
+static void SetFrequency(IMG_HANDLE hSysData, IMG_UINT32 freq)
 {
-	struct mtk_mfg *mfg = gsDevice.hSysData;
+	struct mtk_mfg *mfg = hSysData;
 
 	/* freq is in Hz */
 	mtk_mfg_freq_set(mfg, freq);
 }
 
-static void SetVoltage(IMG_UINT32 volt)
+static void SetVoltage(IMG_HANDLE hSysData, IMG_UINT32 volt)
 {
-	struct mtk_mfg *mfg = gsDevice.hSysData;
+	struct mtk_mfg *mfg = hSysData;
 
 	mtk_mfg_volt_set(mfg, volt);
 }
 #endif
 
+static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice,
+									   struct mtk_mfg *mfg,
+									   PVRSRV_DEVICE_CONFIG **ppsDevConfigOut)
+{
+	PVRSRV_DEVICE_CONFIG *psDevConfig;
+	RGX_DATA *psRGXData;
+	RGX_TIMING_INFORMATION *psRGXTimingInfo;
+	PHYS_HEAP_CONFIG *psPhysHeapConfig;
+
+	psDevConfig = OSAllocZMem(sizeof(*psDevConfig) +
+							  sizeof(*psRGXData) +
+							  sizeof(*psRGXTimingInfo) +
+							  sizeof(*psPhysHeapConfig));
+	if (!psDevConfig)
+	{
+		return PVRSRV_ERROR_OUT_OF_MEMORY;
+	}
+
+	psRGXData = (RGX_DATA *)((IMG_CHAR *)psDevConfig + sizeof(*psDevConfig));
+	psRGXTimingInfo = (RGX_TIMING_INFORMATION *)((IMG_CHAR *)psRGXData + sizeof(*psRGXData));
+	psPhysHeapConfig = (PHYS_HEAP_CONFIG *)((IMG_CHAR *)psRGXTimingInfo + sizeof(*psRGXTimingInfo));
+
+	/* Set up the RGX timing information */
+	psRGXTimingInfo->ui32CoreClockSpeed = RGX_HW_CORE_CLOCK_SPEED;
+	psRGXTimingInfo->bEnableActivePM = IMG_TRUE;
+	psRGXTimingInfo->bEnableRDPowIsland = IMG_TRUE;
+	psRGXTimingInfo->ui32ActivePMLatencyms = SYS_RGX_ACTIVE_POWER_LATENCY_MS;
+
+	/* Set up the RGX data */
+	psRGXData->psRGXTimingInfo = psRGXTimingInfo;
+
+	psPhysHeapConfig->eType = PHYS_HEAP_TYPE_UMA;
+	psPhysHeapConfig->ui32UsageFlags = PHYS_HEAP_USAGE_GPU_LOCAL;
+	psPhysHeapConfig->uConfig.sUMA.pszPDumpMemspaceName = "SYSMEM";
+	psPhysHeapConfig->uConfig.sUMA.psMemFuncs = &g_sUmaHeapFns;
+	psPhysHeapConfig->uConfig.sUMA.pszHeapName = "uma_gpu_local";
+	psPhysHeapConfig->uConfig.sUMA.hPrivData = NULL;
+
+	psDevConfig->pasPhysHeaps = psPhysHeapConfig;
+	psDevConfig->ui32PhysHeapCount = 1U;
+
+	psDevConfig->pvOSDevice = pvOSDevice;
+	psDevConfig->pszName = MT8173_SYSTEM_NAME;
+	psDevConfig->pszVersion = NULL;
+
+	psDevConfig->eDefaultHeap = PVRSRV_PHYS_HEAP_GPU_LOCAL;
+
+	psDevConfig->bHasFBCDCVersion31 = IMG_FALSE;
+	psDevConfig->bDevicePA0IsValid = IMG_FALSE;
+
+	psDevConfig->hDevData = psRGXData;
+	psDevConfig->hSysData = (IMG_HANDLE) mfg;
+	ghSysData = psDevConfig->hSysData;
+
+	psDevConfig->pfnSysDevFeatureDepInit = NULL;
+
+	psDevConfig->ui32IRQ = mfg->rgx_irq;
+
+	psDevConfig->sRegsCpuPBase.uiAddr = mfg->rgx_start;
+	psDevConfig->ui32RegsSize = mfg->rgx_size;
+
+#ifdef SUPPORT_LINUX_DVFS
+	psDevConfig->sDVFS.sDVFSDeviceCfg.bIdleReq = IMG_TRUE;
+	psDevConfig->sDVFS.sDVFSDeviceCfg.pfnSetFrequency = SetFrequency;
+	psDevConfig->sDVFS.sDVFSDeviceCfg.pfnSetVoltage = SetVoltage;
+	psDevConfig->sDVFS.sDVFSDeviceCfg.ui32PollMs = MTK_DVFS_SWITCH_INTERVAL;
+#if defined(CONFIG_DEVFREQ_THERMAL)
+	psDevConfig->sDVFS.sDVFSDeviceCfg.psPowerOps = &sPowerOps;
+#endif
+
+	psDevConfig->sDVFS.sDVFSGovernorCfg.ui32UpThreshold = 90;
+	psDevConfig->sDVFS.sDVFSGovernorCfg.ui32DownDifferential = 10;
+#endif
+
+	/* power management on HW system */
+	psDevConfig->pfnPrePowerState = MTKSysDevPrePowerState;
+	psDevConfig->pfnPostPowerState = MTKSysDevPostPowerState;
+
+	/* clock frequency */
+	psDevConfig->pfnClockFreqGet = NULL;
+
+	/* device error notify callback function */
+	psDevConfig->pfnSysDevErrorNotify = NULL;
+
+	*ppsDevConfigOut = psDevConfig;
+
+	return PVRSRV_OK;
+}
+
+static void DeviceConfigDestroy(PVRSRV_DEVICE_CONFIG *psDevConfig)
+{
+	/*
+	 * The device config, RGX data and RGX timing info are part of the same
+	 * allocation so do only one free.
+	 */
+	OSFreeMem(psDevConfig);
+}
+
 PVRSRV_ERROR SysDevInit(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **ppsDevConfig)
 {
+	PVRSRV_DEVICE_CONFIG *psDevConfig;
 	struct device *dev = pvOSDevice;
 	struct mtk_mfg *mfg;
-
-	if (gsDevice.pvOSDevice)
-	{
-		return PVRSRV_ERROR_INVALID_DEVICE;
-	}
+	PVRSRV_ERROR eError;
 
 	mfg = mtk_mfg_create(dev);
 	if (IS_ERR(mfg)) {
@@ -429,54 +457,15 @@ PVRSRV_ERROR SysDevInit(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **ppsDevConfig)
 
 	dma_set_mask(dev, DMA_BIT_MASK(33));
 
-	/* Make sure everything we don't care about is set to 0 */
-	memset(&gsDevice, 0, sizeof(gsDevice));
+	eError = DeviceConfigCreate(pvOSDevice, mfg, &psDevConfig);
+	if (eError != PVRSRV_OK)
+	{
+		mtk_mfg_destroy(mfg);
 
-	/* Setup RGX device */
-	gsDevice.pvOSDevice = pvOSDevice;
-	gsDevice.pszName = "mt8173";
-	gsDevice.pszVersion = NULL;
+		return eError;
+	}
 
-	/* Device's physical heaps */
-	gsDevice.pasPhysHeaps = &gsPhysHeapConfig;
-	gsDevice.ui32PhysHeapCount = 1;
-	gsDevice.eDefaultHeap = PVRSRV_PHYS_HEAP_GPU_LOCAL;
-
-	gsDevice.ui32IRQ = mfg->rgx_irq;
-
-	gsDevice.sRegsCpuPBase.uiAddr = mfg->rgx_start;
-	gsDevice.ui32RegsSize = mfg->rgx_size;
-
-#ifdef SUPPORT_LINUX_DVFS
-	gsDevice.sDVFS.sDVFSDeviceCfg.bIdleReq = IMG_TRUE;
-	gsDevice.sDVFS.sDVFSDeviceCfg.pfnSetFrequency = SetFrequency;
-	gsDevice.sDVFS.sDVFSDeviceCfg.pfnSetVoltage = SetVoltage;
-	gsDevice.sDVFS.sDVFSDeviceCfg.ui32PollMs = MTK_DVFS_SWITCH_INTERVAL;
-#if defined(CONFIG_DEVFREQ_THERMAL)
-	gsDevice.sDVFS.sDVFSDeviceCfg.psPowerOps = &sPowerOps;
-#endif
-
-	gsDevice.sDVFS.sDVFSGovernorCfg.ui32UpThreshold = 90;
-	gsDevice.sDVFS.sDVFSGovernorCfg.ui32DownDifferential = 10;
-#endif
-
-	/* power management on HW system */
-	gsDevice.pfnPrePowerState = MTKSysDevPrePowerState;
-	gsDevice.pfnPostPowerState = MTKSysDevPostPowerState;
-
-	/* clock frequency */
-	gsDevice.pfnClockFreqGet = NULL;
-
-	gsDevice.hDevData = &gsRGXData;
-	gsDevice.hSysData = mfg;
-
-	gsDevice.bHasFBCDCVersion31 = IMG_FALSE;
-	gsDevice.bDevicePA0IsValid  = IMG_FALSE;
-
-	/* device error notify callback function */
-	gsDevice.pfnSysDevErrorNotify = NULL;
-
-	*ppsDevConfig = &gsDevice;
+	*ppsDevConfig = psDevConfig;
 
 #if defined(SUPPORT_ION)
 	IonInit(NULL);
@@ -493,9 +482,9 @@ void SysDevDeInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
 	IonDeinit();
 #endif
 
-	mtk_mfg_destroy(mfg);
+	DeviceConfigDestroy(psDevConfig);
 
-	psDevConfig->pvOSDevice = NULL;
+	mtk_mfg_destroy(mfg);
 }
 
 PVRSRV_ERROR SysInstallDeviceLISR(IMG_HANDLE hSysData,
@@ -509,7 +498,7 @@ PVRSRV_ERROR SysInstallDeviceLISR(IMG_HANDLE hSysData,
 
 	PVR_UNREFERENCED_PARAMETER(hSysData);
 
-	psWrapperData = kmalloc(sizeof(*psWrapperData), GFP_KERNEL);
+	psWrapperData = OSAllocMem(sizeof(*psWrapperData));
 	if (!psWrapperData)
 	{
 		return PVRSRV_ERROR_OUT_OF_MEMORY;
@@ -522,7 +511,7 @@ PVRSRV_ERROR SysInstallDeviceLISR(IMG_HANDLE hSysData,
 	if (request_irq(ui32IRQ, MTKLISRWrapper, IRQF_TRIGGER_LOW, pszName,
 					psWrapperData))
 	{
-		kfree(psWrapperData);
+		OSFreeMem(psWrapperData);
 
 		return PVRSRV_ERROR_UNABLE_TO_REGISTER_ISR_HANDLER;
 	}

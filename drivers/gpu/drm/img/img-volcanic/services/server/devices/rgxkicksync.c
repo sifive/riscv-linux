@@ -46,7 +46,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "rgxdevice.h"
 #include "rgxmem.h"
+#include "rgxutils.h"
 #include "rgxfwutils.h"
+#include "rgxfwcmnctx.h"
 #include "allocmem.h"
 #include "sync.h"
 #include "rgxhwperf.h"
@@ -65,6 +67,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #else
 #define CHKPT_DBG(X)
 #endif
+
 
 struct _RGX_SERVER_KICKSYNC_CONTEXT_
 {
@@ -165,17 +168,9 @@ PVRSRV_ERROR PVRSRVRGXDestroyKickSyncContextKM(RGX_SERVER_KICKSYNC_CONTEXT * psK
 	                                          RGXFWIF_DM_GP,
 	                                          PDUMP_FLAGS_NONE);
 
-	if (eError == PVRSRV_ERROR_RETRY)
-	{
-		return eError;
-	}
-	else if (eError != PVRSRV_OK)
-	{
-		PVR_LOG(("%s: Unexpected error from RGXFWRequestCommonContextCleanUp (%s)",
-				__func__,
-				PVRSRVGetErrorString(eError)));
-		return eError;
-	}
+	RGX_RETURN_IF_ERROR_AND_DEVICE_RECOVERABLE(psKickSyncContext->psDeviceNode,
+						   eError,
+						   RGXFWRequestCommonContextCleanUp);
 
 	/* ... it has so we can free its resources */
 
@@ -184,6 +179,7 @@ PVRSRV_ERROR PVRSRVRGXDestroyKickSyncContextKM(RGX_SERVER_KICKSYNC_CONTEXT * psK
 	OSWRLockReleaseWrite(psDevInfo->hKickSyncCtxListLock);
 
 	FWCommonContextFree(psKickSyncContext->psServerCommonContext);
+	psKickSyncContext->psServerCommonContext = NULL;
 
 	SyncAddrListDeinit(&psKickSyncContext->sSyncAddrListFence);
 	SyncAddrListDeinit(&psKickSyncContext->sSyncAddrListUpdate);
@@ -192,7 +188,7 @@ PVRSRV_ERROR PVRSRVRGXDestroyKickSyncContextKM(RGX_SERVER_KICKSYNC_CONTEXT * psK
 
 	OSFreeMem(psKickSyncContext);
 
-	return PVRSRV_OK;
+	return eError;
 }
 
 PVRSRV_ERROR PVRSRVRGXSetKickSyncContextPropertyKM(RGX_SERVER_KICKSYNC_CONTEXT *psKickSyncContext,
@@ -334,7 +330,7 @@ PVRSRV_ERROR PVRSRVRGXKickSyncKM(RGX_SERVER_KICKSYNC_CONTEXT * psKickSyncContext
 		pauiClientUpdateUFOAddress = psKickSyncContext->sSyncAddrListUpdate.pasFWAddrs;
 	}
 	/* Ensure the string is null-terminated (Required for safety) */
-	szUpdateFenceName[31] = '\0';
+	szUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH-1] = '\0';
 
 	/* This will never be true if called from the bridge since piUpdateFence will always be valid */
 	if (iUpdateTimeline >= 0 && !piUpdateFence)
@@ -619,8 +615,9 @@ PVRSRV_ERROR PVRSRVRGXKickSyncKM(RGX_SERVER_KICKSYNC_CONTEXT * psKickSyncContext
 	eError = RGXCmdHelperAcquireCmdCCB(ARRAY_SIZE(asCmdHelperData), asCmdHelperData);
 	if (eError != PVRSRV_OK)
 	{
-		goto fail_cmdaquire;
+		goto fail_cmdacquire;
 	}
+
 
 	/*
 	 *  We should reserve space in the kernel CCB here and fill in the command
@@ -633,6 +630,20 @@ PVRSRV_ERROR PVRSRVRGXKickSyncKM(RGX_SERVER_KICKSYNC_CONTEXT * psKickSyncContext
 	 * All the required resources are ready at this point, we can't fail so
 	 * take the required server sync operations and commit all the resources
 	 */
+	eError = PVRSRVPowerLock(psDevInfo->psDeviceNode);
+	if (unlikely(eError != PVRSRV_OK))
+	{
+		PVR_DPF((PVR_DBG_WARNING, "%s: failed to acquire powerlock (%s)",
+			__func__, PVRSRVGetErrorString(eError)));
+
+		/* If system is found powered OFF, Retry scheduling the command */
+		if (likely(eError == PVRSRV_ERROR_SYSTEM_STATE_POWERED_OFF))
+		{
+			eError = PVRSRV_ERROR_RETRY;
+		}
+		goto fail_acquirepowerlock;
+	}
+
 	RGXCmdHelperReleaseCmdCCB(1,
 							  asCmdHelperData,
 							  "KickSync",
@@ -666,9 +677,9 @@ PVRSRV_ERROR PVRSRVRGXKickSyncKM(RGX_SERVER_KICKSYNC_CONTEXT * psKickSyncContext
 	                  NO_DEADLINE,
 	                  NO_CYCEST);
 
-	LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 	{
-		eError2 = RGXScheduleCommand(psKickSyncContext->psDeviceNode->pvDevice,
+		eError2 = RGXScheduleCommandWithoutPowerLock(psKickSyncContext->psDeviceNode->pvDevice,
 		                             RGXFWIF_DM_GP,
 		                             & sKickSyncKCCBCmd,
 		                             PDUMP_FLAGS_NONE);
@@ -677,7 +688,9 @@ PVRSRV_ERROR PVRSRVRGXKickSyncKM(RGX_SERVER_KICKSYNC_CONTEXT * psKickSyncContext
 			break;
 		}
 		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-	} END_LOOP_UNTIL_TIMEOUT();
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	PVRSRVPowerUnlock(psDevInfo->psDeviceNode);
 
 	PVRGpuTraceEnqueueEvent(psKickSyncContext->psDeviceNode,
 	                        ui32FWCtx, ui32ExtJobRef, ui32IntJobRef,
@@ -698,7 +711,7 @@ PVRSRV_ERROR PVRSRVRGXKickSyncKM(RGX_SERVER_KICKSYNC_CONTEXT * psKickSyncContext
 	 */
 	if (eError != PVRSRV_OK )
 	{
-		goto fail_cmdaquire;
+		goto fail_cmdacquire;
 	}
 
 #if defined(NO_HARDWARE)
@@ -749,7 +762,8 @@ PVRSRV_ERROR PVRSRVRGXKickSyncKM(RGX_SERVER_KICKSYNC_CONTEXT * psKickSyncContext
 	OSLockRelease(psKickSyncContext->hLock);
 	return PVRSRV_OK;
 
-fail_cmdaquire:
+fail_acquirepowerlock:
+fail_cmdacquire:
 	SyncAddrListRollbackCheckpoints(psKickSyncContext->psDeviceNode, &psKickSyncContext->sSyncAddrListFence);
 	SyncAddrListRollbackCheckpoints(psKickSyncContext->psDeviceNode, &psKickSyncContext->sSyncAddrListUpdate);
 	if (iUpdateFence != PVRSRV_NO_FENCE)

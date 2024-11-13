@@ -86,7 +86,7 @@ typedef struct _PMR_WRAP_DATA_
 	 * for pfn mappings this stays empty */
 	struct page **ppsPageArray;
 
-	/* VM Area structure */
+	/* VM Area structure reference */
 	struct vm_area_struct *psVMArea;
 
 	/* This should always be filled and hold the physical addresses */

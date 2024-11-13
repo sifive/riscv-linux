@@ -38,25 +38,18 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### ###########################################################################
-
-PVRSRVKM_NAME = $(PVRSRV_MODNAME)
-
 ifeq ($(KERNEL_DRIVER_DIR),)
  SYSTEM_BASEDIR := services/system/rogue/$(PVR_SYSTEM)
 else
  SYSTEM_BASEDIR := external/$(KERNEL_DRIVER_DIR)/$(PVR_SYSTEM)
 endif
 
-$(PVRSRVKM_NAME)-y += \
+$(PVRSRV_MODNAME)-y += \
  $(SYSTEM_BASEDIR)/mt8173_mfgsys.o \
  $(SYSTEM_BASEDIR)/mt8173_sysconfig.o \
- services/server/common/vmm_pvz_client.o \
- services/server/common/vmm_pvz_server.o \
- services/server/common/vz_vmm_pvz.o \
- services/server/common/vz_vmm_vm.o \
- services/system/rogue/common/vmm_type_$(VMM_TYPE).o
+ services/system/common/uma_heap_fns.o
 
 ifeq ($(SUPPORT_ION),1)
- $(PVRSRVKM_NAME)-y += \
+ $(PVRSRV_MODNAME)-y += \
   services/system/common/env/linux/ion_support_generic.o
 endif

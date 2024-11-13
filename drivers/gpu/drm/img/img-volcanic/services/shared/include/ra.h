@@ -61,6 +61,9 @@ typedef struct _RA_ARENA_ITERATOR_ RA_ARENA_ITERATOR;
 typedef struct _RA_ITERATOR_DATA_ {
 	IMG_UINT64 uiAddr;
 	IMG_UINT64 uiSize;
+	/* Standard Iteration: is the segment free
+	 * Span Iteration: is the span a free import
+	 */
 	IMG_BOOL bFree;
 } RA_ITERATOR_DATA;
 
@@ -70,7 +73,7 @@ typedef struct _RA_ITERATOR_DATA_ {
 typedef struct _RA_USAGE_STATS {
 	IMG_UINT64	ui64TotalArenaSize;
 	IMG_UINT64	ui64FreeArenaSize;
-}RA_USAGE_STATS, *PRA_USAGE_STATS;
+} RA_USAGE_STATS, *PRA_USAGE_STATS;
 
 /*
  * Per-Arena handle - this is private data for the caller of the RA.
@@ -96,6 +99,8 @@ typedef IMG_UINT32 RA_POLICY_T;
 typedef struct _RA_BASE_MULTI_ RA_BASE_MULTI_T;
 
 typedef IMG_UINT32 RA_BASE_ARRAY_SIZE_T;
+
+
 /*
  * RA_BASE_ARRAY can represent a number of bases of which are packed,
  * that is, they can be one of two types, a Real Base or a Ghost base.
@@ -113,7 +118,8 @@ typedef IMG_UINT32 RA_BASE_ARRAY_SIZE_T;
  * they appear Real from another perspective but we the RA know they are a ghost of the
  * Real Base.
  * */
-typedef RA_BASE_T *RA_BASE_ARRAY_T;
+typedef RA_BASE_T RA_BASE_ARRAY_T[IMG_FLEX_ARRAY_MEMBER];
+
 /* Since 0x0 is a valid BaseAddr, we rely on max 64-bit value to be an invalid
  * page address.
  */
@@ -134,10 +140,13 @@ typedef RA_BASE_T *RA_BASE_ARRAY_T;
 
 typedef struct _RA_MULTIBASE_ITERATOR_ RA_MULTIBASE_ITERATOR;
 
-/* Lock classes: describes the level of nesting between different arenas. */
+/* Lock classes: describes the level of nesting between different arenas.
+ * A RA with lockclass x is permitted to obtain locks of a lockclass less than x.
+ * A RA with lockclass 0 cannot obtain the lock of any other RA. */
 #define RA_LOCKCLASS_0 0
 #define RA_LOCKCLASS_1 1
 #define RA_LOCKCLASS_2 2
+#define RA_LOCKCLASS_3 3
 
 #define RA_NO_IMPORT_MULTIPLIER 1
 
@@ -213,38 +222,73 @@ typedef struct _RA_MULTIBASE_ITERATOR_ RA_MULTIBASE_ITERATOR;
  */
 typedef IMG_UINT64 RA_FLAGS_T;
 
+typedef struct _RA_IMPORT_ {
+	RA_BASE_T base;           /* Allocation base */
+	RA_LENGTH_T uSize;        /* Allocation size */
+	RA_PERISPAN_HANDLE hPriv; /* Per import private data */
+} RA_IMPORT;
+
 /*************************************************************************/ /*!
-@Function       Callback function PFN_RA_ALLOC
-@Description    RA import allocate function
+@Function       Callback function PFN_RA_IMPORT_ALLOC_SINGLE
+@Description    RA import allocate function create a single span when
+                requesting extra resource for the arena.
 @Input          RA_PERARENA_HANDLE RA handle
 @Input          RA_LENGTH_T        Request size
 @Input          RA_FLAGS_T         RA flags
 @Input          RA_LENGTH_T        Base Alignment
 @Input          IMG_CHAR           Annotation
-@Input          RA_BASE_T          Allocation base
-@Input          RA_LENGTH_T        Actual size
-@Input          RA_PERISPAN_HANDLE Per import private data
+@Output         RA_IMPORT          Attributes of an import.
 @Return         PVRSRV_ERROR       PVRSRV_OK or error code
 */ /**************************************************************************/
-typedef PVRSRV_ERROR (*PFN_RA_ALLOC)(RA_PERARENA_HANDLE,
-									 RA_LENGTH_T,
-									 RA_FLAGS_T,
-									 RA_LENGTH_T,
-									 const IMG_CHAR*,
-									 RA_BASE_T*,
-									 RA_LENGTH_T*,
-									 RA_PERISPAN_HANDLE*);
+typedef PVRSRV_ERROR (*PFN_RA_IMPORT_ALLOC_SINGLE)(RA_PERARENA_HANDLE,
+                                                   RA_LENGTH_T,
+                                                   RA_FLAGS_T,
+                                                   RA_LENGTH_T,
+                                                   const IMG_CHAR*,
+                                                   RA_IMPORT*);
 
 /*************************************************************************/ /*!
-@Function       Callback function PFN_RA_FREE
+@Function       Callback function PFN_RA_IMPORT_ALLOC_MULTI
+@Description    RA import allocate function is able to create multiple spans
+                for a single import request.
+                The pointer to the array of inputs will be provided but
+                can be set to a larger array via OSAllocMem
+                if the count is not large enough.
+                The pointer will be freed by OSFreeMem after the callback.
+                It is permissible for the callback to set:
+                count == 0 or array pointer == NULL
+                but the callback MUST return an error in these cases.
+@Input          RA_PERARENA_HANDLE RA handle
+@Input          RA_LENGTH_T        Request size
+@Input          RA_FLAGS_T         RA flags
+@Input          RA_LENGTH_T        Base Alignment
+@Input          IMG_CHAR           Annotation
+@Inout          IMG_UINT32         Num of imports = Num of elements in array below.
+                                   Will always be >= 1. Must be set to the number of
+                                   imports returned.
+@Inout          RA_IMPORT          Pointer to array of imports. Will always point
+                                   to an array of equal length as Num of Imports.
+                                   Will be freed by OSFreeMem.
+@Return         PVRSRV_ERROR       PVRSRV_OK or error code
+*/ /**************************************************************************/
+typedef PVRSRV_ERROR (*PFN_RA_IMPORT_ALLOC_MULTI)(RA_PERARENA_HANDLE,
+                                                  RA_LENGTH_T,
+                                                  RA_FLAGS_T,
+                                                  RA_LENGTH_T,
+                                                  const IMG_CHAR*,
+                                                  IMG_UINT32*,
+                                                  RA_IMPORT**);
+
+/*************************************************************************/ /*!
+@Function       Callback function PFN_RA_IMPORT_FREE
 @Description    RA free imported allocation
 @Input          RA_PERARENA_HANDLE   RA handle
 @Input          RA_BASE_T            Allocation base
-@Output         RA_PERISPAN_HANDLE   Per import private data
+@Input          RA_PERISPAN_HANDLE   Per import private data
 */ /**************************************************************************/
-typedef void (*PFN_RA_FREE)(RA_PERARENA_HANDLE,
-							RA_BASE_T,
-							RA_PERISPAN_HANDLE);
+typedef void (*PFN_RA_IMPORT_FREE)(RA_PERARENA_HANDLE,
+                                   RA_BASE_T,
+                                   RA_PERISPAN_HANDLE);
 
 /**
  *  @Function   RA_Create
@@ -265,10 +309,34 @@ RA_Create(IMG_CHAR *name,
           /* subsequent imports: */
           RA_LOG2QUANTUM_T uLog2Quantum,
           IMG_UINT32 ui32LockClass,
-          PFN_RA_ALLOC imp_alloc,
-          PFN_RA_FREE imp_free,
+          PFN_RA_IMPORT_ALLOC_SINGLE imp_alloc,
+          PFN_RA_IMPORT_FREE imp_free,
           RA_PERARENA_HANDLE per_arena_handle,
           RA_POLICY_T ui32PolicyFlags);
+
+/**
+ *  @Function   RA_CreateMulti
+ *
+ *  @Description    To create a resource arena using the
+ *                  ALLOC_MULTI callback.
+ *
+ *  @Input name - the name of the arena for diagnostic purposes.
+ *  @Input uLog2Quantum - the arena allocation quantum.
+ *  @Input ui32LockClass - the lock class level this arena uses.
+ *  @Input imp_alloc - a resource allocation callback or 0.
+ *  @Input imp_free - a resource de-allocation callback or 0.
+ *  @Input arena_handle - private handle passed to alloc and free or 0.
+ *  @Input ui32PolicyFlags - Policies that govern the arena.
+ *  @Return pointer to arena, or NULL.
+ */
+RA_ARENA *
+RA_CreateMulti(IMG_CHAR *name,
+               RA_LOG2QUANTUM_T uLog2Quantum,
+               IMG_UINT32 ui32LockClass,
+               PFN_RA_IMPORT_ALLOC_MULTI imp_alloc,
+               PFN_RA_IMPORT_FREE imp_free,
+               RA_PERARENA_HANDLE arena_handle,
+               RA_POLICY_T ui32PolicyFlags);
 
 /**
  *  @Function   RA_Create_With_Span
@@ -509,6 +577,39 @@ RA_FreeMultiSparse(RA_ARENA *pArena,
                     IMG_UINT32 *puiFreeIndices,
                     IMG_UINT32 *puiFreeCount);
 
+#if defined(SUPPORT_PMR_PAGES_DEFERRED_FREE)
+/**
+ *  @Function   RA_TransferMultiSparseIndices
+ *
+ *  @Description   Transfers a set of indices specified in puiTransferIndices from
+ *                 aSrcBaseArray to aDstBaseArray.
+ *                 Called when some pages of the base array need to be
+ *                 transfered to another base array. As a result of this call,
+ *                 some ghost addresses in aBaseArray might be converted to
+ *                 real addresses before being transferred..
+ *
+ *  @Input  pArena     - The arena the segment was originally allocated from.
+ *  @Input  aSrcBaseArray - The array to transfer bases from.
+ *  @Input  uiSrcBaseArraySize - Size of the array to transfer bases from.
+ *  @Input  aDstBaseArray - The array to transfer bases to.
+ *  @Input  uiDstBaseArraySize - Size of the array to transfer bases to.
+ *  @Input  uiLog2ChunkSize - The log2 chunk size used to generate the Ghost bases.
+ *  @Input  puiTransferIndices - The indices into the array to be extracted.
+ *  @InOut  puiTransferCount - The number of bases to prepare for extraction.
+ *
+ *  @Return PVRSRV_OK - success
+ */
+PVRSRV_ERROR
+RA_TransferMultiSparseIndices(RA_ARENA *pArena,
+                              RA_BASE_ARRAY_T aSrcBaseArray,
+                              RA_BASE_ARRAY_SIZE_T uiSrcBaseArraySize,
+                              RA_BASE_ARRAY_T aDstBaseArray,
+                              RA_BASE_ARRAY_SIZE_T uiDstBaseArraySize,
+                              IMG_UINT32 uiLog2ChunkSize,
+                              IMG_UINT32 *puiTransferIndices,
+                              IMG_UINT32 *puiTransferCount);
+#endif /* defined(SUPPORT_PMR_PAGES_DEFERRED_FREE) */
+
 /**
  *  @Function   RA_Alloc_Range
  *
@@ -590,6 +691,18 @@ RA_SwapSparseMem(RA_ARENA *pArena,
 IMG_INTERNAL void
 RA_Get_Usage_Stats(RA_ARENA *pArena, PRA_USAGE_STATS psRAStats);
 
+/**
+ *  @Function   RA_GetArenaName
+ *
+ *  @Description    To obtain the arena name.
+ *
+ *  @Input  pArena - the arena to acquire the name from.
+ *
+ *  @Return IMG_CHAR* Arena name.
+ */
+IMG_INTERNAL IMG_CHAR *
+RA_GetArenaName(RA_ARENA *pArena);
+
 IMG_INTERNAL RA_ARENA_ITERATOR *
 RA_IteratorAcquire(RA_ARENA *pArena, IMG_BOOL bIncludeFreeSegments);
 
@@ -599,8 +712,38 @@ RA_IteratorReset(RA_ARENA_ITERATOR *pIter);
 IMG_INTERNAL void
 RA_IteratorRelease(RA_ARENA_ITERATOR *pIter);
 
+/*************************************************************************/ /*!
+@Function       RA_IteratorNext
+@Description    Function used to iterate over segments in the arena. Segments
+                can either be allocated or free. Iteration can be configured
+                to include free segments when creating the iterator via
+                RA_IteratorAcquire.
+
+@Input          pIter        Iteration handle used to keep state between calls
+@InOut          pData        Data about current block iteration, base and size
+                             etc...
+@Return         IMG_BOOL     Boolean value signalling if next element exists
+*/ /**************************************************************************/
 IMG_INTERNAL IMG_BOOL
 RA_IteratorNext(RA_ARENA_ITERATOR *pIter, RA_ITERATOR_DATA *pData);
+
+/*************************************************************************/ /*
+@Function       RA_IteratorNextSpan
+@Description    Function used to iterate over spans in the arena. Spans
+                can either be allocated or free. Iteration can be configured
+                to include free spans when creating the iterator via
+                RA_IteratorAcquire. Spans are not allocations on the arena but
+                instead the regions of resource added that allocations can
+                be made from.
+                See RA_Add().
+
+@Input          pIter        Iteration handle used to keep state between calls
+@InOut          pData        Data about current block iteration, base and size
+                             etc...
+@Return         IMG_BOOL     Boolean value signalling if next element exists
+*/ /**************************************************************************/
+IMG_INTERNAL IMG_BOOL
+RA_IteratorNextSpan(RA_ARENA_ITERATOR *pIter, RA_ITERATOR_DATA *pData);
 
 /*************************************************************************/ /*!
 @Function       RA_BlockDump

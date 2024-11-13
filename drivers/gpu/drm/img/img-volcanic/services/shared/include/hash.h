@@ -227,6 +227,14 @@ uintptr_t HASH_Retrieve(HASH_TABLE *pHash, uintptr_t k);
 */ /**************************************************************************/
 PVRSRV_ERROR HASH_Iterate(HASH_TABLE *pHash, HASH_pfnCallback pfnCallback, void* args);
 
+/*************************************************************************/ /*!
+@Function       HASH_Count
+@Description    Retrieve the number of entries in the hash table.
+@Input          pHash        The hash table.
+@Return         The number of entries.
+*/ /**************************************************************************/
+IMG_UINT32 HASH_Count(HASH_TABLE *pHash);
+
 #ifdef HASH_TRACE
 /*************************************************************************/ /*!
 @Function       HASH_Dump

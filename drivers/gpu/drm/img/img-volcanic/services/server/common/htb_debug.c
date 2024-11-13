@@ -42,7 +42,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */ /**************************************************************************/
 #include "rgxdevice.h"
 #include "htbserver.h"
-#include "htbuffer.h"
 #include "htbuffer_types.h"
 #include "tlstream.h"
 #include "tlclient.h"
@@ -170,7 +169,12 @@ static IMG_PBYTE HTB_GetNextMessage(HTB_Sentinel_t *pSentinel)
 		if (pNext >= pLast)
 		{
 			eError = TLClientReleaseData(DIRECT_BRIDGE_HANDLE, g_sHTBData.hStream);
-			PVR_ASSERT(eError == PVRSRV_OK);
+			if (PVRSRV_OK != eError)
+			{
+				PVR_DPF((PVR_DBG_ERROR, "%s: %s FAILED '%s'", __func__,
+					"TLClientReleaseData", PVRSRVGETERRORSTRING(eError)));
+				return NULL;
+			}
 
 			eError = TLClientAcquireData(DIRECT_BRIDGE_HANDLE,
 				g_sHTBData.hStream, &pSentinel->pBuf, &pSentinel->uiBufLen);
@@ -648,10 +652,11 @@ typedef struct _HTB_TRACEBUF_LOG_ {
 	IMG_CHAR      *pszName;
 	IMG_CHAR      *pszFmt;
 	IMG_UINT32    ui32ArgNum;
+	IMG_UINT32    ui32StrArgIdx; /* This is 1 indexed, if 0, there is not a string arg. */
 } HTB_TRACEBUF_LOG;
 
 static const HTB_TRACEBUF_LOG aLogs[] = {
-#define X(a, b, c, d, e) {HTB_LOG_CREATESFID(a,b,e), #c, d, e},
+#define X(a, b, c, d, e, f) {HTB_LOG_CREATESFID(a,b,e,f), #c, d, e, f},
 	HTB_LOG_SFIDLIST
 #undef X
 };
@@ -821,9 +826,9 @@ DecodeHTB(HTB_Sentinel_t *pSentinel, OSDI_IMPL_ENTRY *pvDumpDebugFile,
 
 	if (ppHdr == NULL)
 	{
-			PVR_DPF((PVR_DBG_ERROR,
-			    "%s: Unexpected NULL packet in Host Trace buffer", __func__));
-			return -1;
+		PVR_DPF((PVR_DBG_ERROR,
+			"%s: Unexpected NULL packet in Host Trace buffer", __func__));
+		return -1;
 	}
 
 	uiHdrType = GET_PACKET_TYPE(ppHdr);
@@ -958,13 +963,21 @@ DecodeHTB(HTB_Sentinel_t *pSentinel, OSDI_IMPL_ENTRY *pvDumpDebugFile,
 		{
 			if (pszFmt)
 			{
-				nPrinted = OSStringLCopy(pszBuffer, pszFmt, uBufBytesAvailable);
-				if (nPrinted >= uBufBytesAvailable)
+				const ssize_t iCopiedCnt =
+					OSStringSafeCopy(pszBuffer, pszFmt, uBufBytesAvailable);
+				if (iCopiedCnt < 0)
 				{
-					PVR_DUMPDEBUG_LOG("Buffer overrun - "IMG_SIZE_FMTSPEC" printed,"
-						" max space "IMG_SIZE_FMTSPEC"\n", nPrinted,
-						uBufBytesAvailable);
-					nPrinted = uBufBytesAvailable;	/* Ensure we don't overflow buffer */
+					PVR_DUMPDEBUG_LOG("Buffer overrun - %zu required,"
+					                  " max space %zu\n",
+					                   OSStringLength(pszFmt),
+					                   uBufBytesAvailable);
+
+					/* Ensure we don't overflow buffer */
+					nPrinted = uBufBytesAvailable;
+				}
+				else
+				{
+					nPrinted = iCopiedCnt;
 				}
 				PVR_DUMPDEBUG_LOG("%s", pszBuffer);
 				pszBuffer += nPrinted;
@@ -1039,8 +1052,20 @@ DecodeHTB(HTB_Sentinel_t *pSentinel, OSDI_IMPL_ENTRY *pvDumpDebugFile,
 							break;
 
 						case TRACEBUF_ARG_TYPE_NONE:
-							nPrinted = OSStringLCopy(pszBuffer, pszFmt,
-								uBufBytesAvailable);
+							{
+								const ssize_t iCopiedCnt =
+									OSStringSafeCopy(pszBuffer,
+									                 pszFmt,
+									                 uBufBytesAvailable);
+								if (iCopiedCnt < 0)
+								{
+									nPrinted = OSStringLength(pszFmt);
+								}
+								else
+								{
+									nPrinted = iCopiedCnt;
+								}
+							}
 							break;
 
 						default:
@@ -1063,13 +1088,21 @@ DecodeHTB(HTB_Sentinel_t *pSentinel, OSDI_IMPL_ENTRY *pvDumpDebugFile,
 				/* Display any remaining text in pszFmt string */
 				if (pszFmt)
 				{
-					nPrinted = OSStringLCopy(pszBuffer, pszFmt, uBufBytesAvailable);
-					if (nPrinted >= uBufBytesAvailable)
+					const ssize_t iCopiedCnt =
+						OSStringSafeCopy(pszBuffer, pszFmt, uBufBytesAvailable);
+					if (iCopiedCnt < 0)
 					{
-						PVR_DUMPDEBUG_LOG("Buffer overrun - "IMG_SIZE_FMTSPEC" printed,"
-							" max space "IMG_SIZE_FMTSPEC"\n", nPrinted,
-							uBufBytesAvailable);
-						nPrinted = uBufBytesAvailable;	/* Ensure we don't overflow buffer */
+						PVR_DUMPDEBUG_LOG("Buffer overrun - %zu required,"
+						                  " max space %zu\n",
+						                   OSStringLength(pszFmt),
+						                   uBufBytesAvailable);
+
+						/* Ensure we don't overflow buffer */
+						nPrinted = uBufBytesAvailable;
+					}
+					else
+					{
+						nPrinted = iCopiedCnt;
 					}
 					PVR_DUMPDEBUG_LOG("%s", pszBuffer);
 					pszBuffer += nPrinted;
@@ -1151,7 +1184,7 @@ static int HTBDumpBuffer(DI_PRINTF pfnPrintf, OSDI_IMPL_ENTRY *psEntry,
  @Returns      eError          internal error code, PVRSRV_OK on success
 
  */ /*************************************************************************/
-PVRSRV_ERROR HTB_CreateDIEntry(void)
+PVRSRV_ERROR HTB_CreateDIEntry_Impl(void)
 {
 	PVRSRV_ERROR eError;
 
@@ -1178,7 +1211,7 @@ PVRSRV_ERROR HTB_CreateDIEntry(void)
  @Description  Destroy the debugFS entry-point created by earlier
                HTB_CreateDIEntry() call.
 */ /**************************************************************************/
-void HTB_DestroyDIEntry(void)
+void HTB_DestroyDIEntry_Impl(void)
 {
 	if (g_sHTBData.psDumpHostDiEntry != NULL)
 	{

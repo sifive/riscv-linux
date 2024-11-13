@@ -81,6 +81,7 @@ X(HWValEnableSPUPowerMaskChange,    BOOL,           VALIDATION,  PVRSRV_APPHINT_
 X(HWValAvailableSPUMask,            UINT32,         VALIDATION,  PVRSRV_APPHINT_HWVALAVAILABLESPUMASK,            NO_PARAM_TABLE,  ALWAYS          ) \
 X(HWValAvailableRACMask,            UINT32,         VALIDATION,  PVRSRV_APPHINT_HWVALAVAILABLERACMASK,            NO_PARAM_TABLE,  ALWAYS          ) \
 X(EnableSPUClockGating,             BOOL,           ALWAYS,      PVRSRV_APPHINT_ENABLESPUCLOCKGATING,             NO_PARAM_TABLE,  ALWAYS          ) \
+X(HWValTpuF20BilPrecision,          UINT32,         VALIDATION,  PVRSRV_APPHINT_HWVALTPUF20BILPRECISION,          NO_PARAM_TABLE,  ALWAYS          ) \
 \
 X(HWPerfDisableCounterFilter,       BOOL,           VALIDATION,  PVRSRV_APPHINT_HWPERFDISABLECOUNTERFILTER,       NO_PARAM_TABLE,  ALWAYS          ) \
 \
@@ -96,20 +97,26 @@ X(USRMNumRegionsTDM,                UINT32,         VALIDATION,  0,             
 X(UVBRMNumRegionsVDM,               UINT64,         VALIDATION,  0,                                               NO_PARAM_TABLE,  ALWAYS          ) \
 X(UVBRMNumRegionsDDM,               UINT32,         VALIDATION,  0,                                               NO_PARAM_TABLE,  ALWAYS          ) \
 \
-X(CDMArbitrationOverride,           UINT32,         ALWAYS,      PVRSRV_APPHINT_CDMARBITRATIONOVERRIDE,           NO_PARAM_TABLE,  ALWAYS          ) \
-\
-X(DualLockstepFWProcessor,          BOOL,           VALIDATION,  1,                                               NO_PARAM_TABLE,  ALWAYS          ) \
 X(GPUStatePin,                      BOOL,           VALIDATION,  0,                                               NO_PARAM_TABLE,  ALWAYS          ) \
 X(PowerDomainKickInterval,          UINT32,         VALIDATION,  0,                                               NO_PARAM_TABLE,  ALWAYS          ) \
 \
 X(RCEDisableMask,                   UINT64,         VALIDATION,  PVRSRV_APPHINT_RCEDISABLEMASK,                   NO_PARAM_TABLE,  ALWAYS          ) \
 X(PCGPktDropThresh,                 UINT32,         VALIDATION,  PVRSRV_APPHINT_PCGPKTDROPTHRESH,                 NO_PARAM_TABLE,  ALWAYS          ) \
+X(RaySLCMMUAutoCacheOps,            UINT32,         VALIDATION,  PVRSRV_APPHINT_RAYSLCMMUAUTOCACHEOPS,            NO_PARAM_TABLE,  ALWAYS          ) \
+\
+X(ClkCtrl0,                         UINT64,         VALIDATION,  PVRSRV_APPHINT_CLKCTRL0,                         NO_PARAM_TABLE,  ALWAYS          ) \
+X(ClkCtrl1,                         UINT64,         VALIDATION,  PVRSRV_APPHINT_CLKCTRL1,                         NO_PARAM_TABLE,  ALWAYS          ) \
+X(ClkCtrl2,                         UINT32,         VALIDATION,  PVRSRV_APPHINT_CLKCTRL2,                         NO_PARAM_TABLE,  ALWAYS          ) \
+X(TPUTAGCtrl,                       UINT32,         VALIDATION,  0x10,                                            NO_PARAM_TABLE,  ALWAYS          ) \
+X(TPUMADDCtrl,                      UINT32,         VALIDATION,  0,                                               NO_PARAM_TABLE,  ALWAYS          ) \
+
 /*
 *******************************************************************************
  Debugfs parameters (volcanic-specific) - driver configuration
 ******************************************************************************/
 #define APPHINT_LIST_DEBUGINFO \
 /* name,                            type,           class,       default,                                         helper,          guest,         */ \
+X(MMUVal_ParityFlipPMR,             STRING,         VALIDATION,  PVRSRV_APPHINT_MMUVAL_PARITYFLIPPMR,             NO_PARAM_TABLE,  ALWAYS          ) \
 
 /*
 *******************************************************************************

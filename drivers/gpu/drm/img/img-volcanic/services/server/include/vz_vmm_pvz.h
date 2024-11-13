@@ -56,15 +56,15 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                 be a hyper-call or cross-VM call
  @Return        PVRSRV_OK on success. Otherwise, a PVRSRV error code
 ******************************************************************************/
-PVRSRV_ERROR PvzConnectionInit(void);
-void PvzConnectionDeInit(void);
+PVRSRV_ERROR PvzConnectionInit(PVRSRV_DEVICE_CONFIG *psDevConfig);
+void PvzConnectionDeInit(PVRSRV_DEVICE_CONFIG *psDevConfig);
 
 /*!
 *******************************************************************************
  @Function      PvzConnectionAcquire() and PvzConnectionRelease()
  @Description   These are to acquire/release a handle to the VM manager
                 para-virtz connection to make a pvz call; on the client, use it
-                it to make the actual pvz call and on the server handler /
+                to make the actual pvz call and on the server handler /
                 VM manager, use it to complete the processing for the pvz call
                 or make a VM manager to host pvzbridge call
 @Return         VMM_PVZ_CONNECTION* on success. Otherwise NULL

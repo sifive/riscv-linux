@@ -53,7 +53,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGX_USCCODE_HEAP_IDENT              "USC Code"                  /*!< RGX USC Code Heap Identifier */
 #define RGX_USCCODE_BPH_HEAP_IDENT          "BP Handler USC Code"       /*!< RGX USC Code for breakpoint handlers Heap Identifier */
 #define RGX_VK_CAPT_REPLAY_HEAP_IDENT       "Vulkan Capture Replay"     /*!< RGX vulkan capture replay buffer Heap Identifier */
-#define RGX_SIGNALS_HEAP_IDENT              "Signals"                   /*!< Compute Signals Heap Identifier */
 #define RGX_COMPONENT_CTRL_HEAP_IDENT       "Component Control"         /*!< RGX DCE Component Control Heap Identifier */
 #define RGX_FBCDC_HEAP_IDENT                "FBCDC"                     /*!< RGX FBCDC State Table Heap Identifier */
 #define RGX_FBCDC_LARGE_HEAP_IDENT          "Large FBCDC"               /*!< RGX Large FBCDC State Table Heap Identifier */

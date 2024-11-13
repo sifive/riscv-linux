@@ -457,9 +457,7 @@ PVRSRVBridgeAlignmentCheck(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -481,7 +479,6 @@ PVRSRVBridgeAlignmentCheck(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psAlignmentCheckIN), sizeof(unsigned long));
@@ -497,7 +494,6 @@ PVRSRVBridgeAlignmentCheck(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -542,11 +538,7 @@ AlignmentCheck_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -587,9 +579,7 @@ PVRSRVBridgeGetMultiCoreInfo(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -613,7 +603,6 @@ PVRSRVBridgeGetMultiCoreInfo(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psGetMultiCoreInfoIN), sizeof(unsigned long));
@@ -629,7 +618,6 @@ PVRSRVBridgeGetMultiCoreInfo(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -679,11 +667,7 @@ GetMultiCoreInfo_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -758,17 +742,15 @@ PVRSRVBridgeFindProcessMemStats(IMG_UINT32 ui32DispatchTableEntry,
 	    (PVRSRV_BRIDGE_OUT_FINDPROCESSMEMSTATS *) IMG_OFFSET_ADDR(psFindProcessMemStatsOUT_UI8,
 								      0);
 
-	IMG_UINT32 *pui32MemStatsArrayInt = NULL;
+	IMG_UINT64 *pui64MemStatsArrayInt = NULL;
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
-	    ((IMG_UINT64) psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT32)) + 0;
+	    ((IMG_UINT64) psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT64)) + 0;
 
 	if (psFindProcessMemStatsIN->ui32ArrSize > PVRSRV_PROCESS_STAT_TYPE_COUNT)
 	{
@@ -778,7 +760,7 @@ PVRSRVBridgeFindProcessMemStats(IMG_UINT32 ui32DispatchTableEntry,
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	psFindProcessMemStatsOUT->pui32MemStatsArray = psFindProcessMemStatsIN->pui32MemStatsArray;
+	psFindProcessMemStatsOUT->pui64MemStatsArray = psFindProcessMemStatsIN->pui64MemStatsArray;
 
 	if (ui64BufferSize > IMG_UINT32_MAX)
 	{
@@ -790,7 +772,6 @@ PVRSRVBridgeFindProcessMemStats(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psFindProcessMemStatsIN), sizeof(unsigned long));
@@ -806,7 +787,6 @@ PVRSRVBridgeFindProcessMemStats(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -820,16 +800,16 @@ PVRSRVBridgeFindProcessMemStats(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (psFindProcessMemStatsIN->ui32ArrSize != 0)
 	{
-		pui32MemStatsArrayInt =
-		    (IMG_UINT32 *) IMG_OFFSET_ADDR(pArrayArgsBuffer, ui32NextOffset);
-		ui32NextOffset += psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT32);
+		pui64MemStatsArrayInt =
+		    (IMG_UINT64 *) IMG_OFFSET_ADDR(pArrayArgsBuffer, ui32NextOffset);
+		ui32NextOffset += psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT64);
 	}
 
 	psFindProcessMemStatsOUT->eError =
 	    PVRSRVFindProcessMemStatsKM(psFindProcessMemStatsIN->ui32PID,
 					psFindProcessMemStatsIN->ui32ArrSize,
 					psFindProcessMemStatsIN->bbAllProcessStats,
-					pui32MemStatsArrayInt);
+					pui64MemStatsArrayInt);
 	/* Exit early if bridged call fails */
 	if (unlikely(psFindProcessMemStatsOUT->eError != PVRSRV_OK))
 	{
@@ -837,14 +817,14 @@ PVRSRVBridgeFindProcessMemStats(IMG_UINT32 ui32DispatchTableEntry,
 	}
 
 	/* If dest ptr is non-null and we have data to copy */
-	if ((pui32MemStatsArrayInt) &&
-	    ((psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT32)) > 0))
+	if ((pui64MemStatsArrayInt) &&
+	    ((psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT64)) > 0))
 	{
 		if (unlikely
 		    (OSCopyToUser
-		     (NULL, (void __user *)psFindProcessMemStatsOUT->pui32MemStatsArray,
-		      pui32MemStatsArrayInt,
-		      (psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT32))) != PVRSRV_OK))
+		     (NULL, (void __user *)psFindProcessMemStatsOUT->pui64MemStatsArray,
+		      pui64MemStatsArrayInt,
+		      (psFindProcessMemStatsIN->ui32ArrSize * sizeof(IMG_UINT64))) != PVRSRV_OK))
 		{
 			psFindProcessMemStatsOUT->eError = PVRSRV_ERROR_INVALID_PARAMS;
 
@@ -860,11 +840,7 @@ FindProcessMemStats_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -978,55 +954,82 @@ PVRSRV_ERROR InitSRVCOREBridge(void)
 {
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_CONNECT,
-			      PVRSRVBridgeConnect, NULL);
+			      PVRSRVBridgeConnect, NULL, sizeof(PVRSRV_BRIDGE_IN_CONNECT),
+			      sizeof(PVRSRV_BRIDGE_OUT_CONNECT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_DISCONNECT,
-			      PVRSRVBridgeDisconnect, NULL);
+			      PVRSRVBridgeDisconnect, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_DISCONNECT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_ACQUIREGLOBALEVENTOBJECT,
-			      PVRSRVBridgeAcquireGlobalEventObject, NULL);
+			      PVRSRVBridgeAcquireGlobalEventObject, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_ACQUIREGLOBALEVENTOBJECT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_RELEASEGLOBALEVENTOBJECT,
-			      PVRSRVBridgeReleaseGlobalEventObject, NULL);
+			      PVRSRVBridgeReleaseGlobalEventObject, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RELEASEGLOBALEVENTOBJECT),
+			      sizeof(PVRSRV_BRIDGE_OUT_RELEASEGLOBALEVENTOBJECT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_EVENTOBJECTOPEN,
-			      PVRSRVBridgeEventObjectOpen, NULL);
+			      PVRSRVBridgeEventObjectOpen, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_EVENTOBJECTOPEN),
+			      sizeof(PVRSRV_BRIDGE_OUT_EVENTOBJECTOPEN));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_EVENTOBJECTWAIT,
-			      PVRSRVBridgeEventObjectWait, NULL);
+			      PVRSRVBridgeEventObjectWait, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_EVENTOBJECTWAIT),
+			      sizeof(PVRSRV_BRIDGE_OUT_EVENTOBJECTWAIT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_EVENTOBJECTCLOSE,
-			      PVRSRVBridgeEventObjectClose, NULL);
+			      PVRSRVBridgeEventObjectClose, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_EVENTOBJECTCLOSE),
+			      sizeof(PVRSRV_BRIDGE_OUT_EVENTOBJECTCLOSE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_DUMPDEBUGINFO,
-			      PVRSRVBridgeDumpDebugInfo, NULL);
+			      PVRSRVBridgeDumpDebugInfo, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_DUMPDEBUGINFO),
+			      sizeof(PVRSRV_BRIDGE_OUT_DUMPDEBUGINFO));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_GETDEVCLOCKSPEED,
-			      PVRSRVBridgeGetDevClockSpeed, NULL);
+			      PVRSRVBridgeGetDevClockSpeed, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_GETDEVCLOCKSPEED));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_HWOPTIMEOUT,
-			      PVRSRVBridgeHWOpTimeout, NULL);
+			      PVRSRVBridgeHWOpTimeout, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_HWOPTIMEOUT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_ALIGNMENTCHECK,
-			      PVRSRVBridgeAlignmentCheck, NULL);
+			      PVRSRVBridgeAlignmentCheck, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_ALIGNMENTCHECK),
+			      sizeof(PVRSRV_BRIDGE_OUT_ALIGNMENTCHECK));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_GETDEVICESTATUS,
-			      PVRSRVBridgeGetDeviceStatus, NULL);
+			      PVRSRVBridgeGetDeviceStatus, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_GETDEVICESTATUS));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_GETMULTICOREINFO,
-			      PVRSRVBridgeGetMultiCoreInfo, NULL);
+			      PVRSRVBridgeGetMultiCoreInfo, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_GETMULTICOREINFO),
+			      sizeof(PVRSRV_BRIDGE_OUT_GETMULTICOREINFO));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_EVENTOBJECTWAITTIMEOUT,
-			      PVRSRVBridgeEventObjectWaitTimeout, NULL);
+			      PVRSRVBridgeEventObjectWaitTimeout, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_EVENTOBJECTWAITTIMEOUT),
+			      sizeof(PVRSRV_BRIDGE_OUT_EVENTOBJECTWAITTIMEOUT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_FINDPROCESSMEMSTATS,
-			      PVRSRVBridgeFindProcessMemStats, NULL);
+			      PVRSRVBridgeFindProcessMemStats, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_FINDPROCESSMEMSTATS),
+			      sizeof(PVRSRV_BRIDGE_OUT_FINDPROCESSMEMSTATS));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_ACQUIREINFOPAGE,
-			      PVRSRVBridgeAcquireInfoPage, NULL);
+			      PVRSRVBridgeAcquireInfoPage, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_ACQUIREINFOPAGE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SRVCORE, PVRSRV_BRIDGE_SRVCORE_RELEASEINFOPAGE,
-			      PVRSRVBridgeReleaseInfoPage, NULL);
+			      PVRSRVBridgeReleaseInfoPage, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RELEASEINFOPAGE),
+			      sizeof(PVRSRV_BRIDGE_OUT_RELEASEINFOPAGE));
 
 	return PVRSRV_OK;
 }

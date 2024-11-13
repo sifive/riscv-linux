@@ -181,6 +181,7 @@ typedef PVRSRV_ERROR (*TL_STREAM_SOURCECB)(IMG_HANDLE hStream,
 		IMG_UINT32 ui32ReqOp, IMG_UINT32* ui32Resp, void* pvUser);
 
 typedef void (*TL_STREAM_ONREADEROPENCB)(void *pvArg);
+typedef void (*TL_STREAM_ONREADERCLOSECB)(void *pvArg);
 
 /*************************************************************************/ /*!
  @Function      TLAllocSharedMemIfNull
@@ -220,6 +221,10 @@ TLFreeSharedMem(IMG_HANDLE hStream);
                                     opens this stream, may be null.
  @Input         pvOnReaderOpenUD    Optional user data for pfOnReaderOpenCB,
                                     may be null.
+ @Input         pfOnReaderCloseCB   Optional callback called when a client
+                                    closes this stream, may be null.
+ @Input         pvOnReaderCloseUD   Optional user data for pfOnReaderCloseCB,
+                                    may be null.
  @Input         pfProducerCB    Optional callback, may be null.
  @Input         pvProducerUD    Optional user data for callback, may be null.
  @Return        PVRSRV_ERROR_INVALID_PARAMS  NULL stream handle or string name
@@ -239,6 +244,8 @@ TLStreamCreate(IMG_HANDLE *phStream,
                IMG_UINT32 ui32StreamFlags,
                TL_STREAM_ONREADEROPENCB pfOnReaderOpenCB,
                void *pvOnReaderOpenUD,
+               TL_STREAM_ONREADERCLOSECB pfOnReaderCloseCB,
+               void *pvOnReaderCloseUD,
                TL_STREAM_SOURCECB pfProducerCB,
                void *pvProducerUD);
 
@@ -584,7 +591,7 @@ IMG_BOOL TLStreamOutOfData(IMG_HANDLE hStream);
  @Function      TLStreamResetProducerByteCount
  @Description   Reset the producer byte counter on the specified stream.
  @Input         hStream         Stream handle.
- @Input         IMG_UINT32      Value to reset counter to, often 0.
+ @Input         ui32Value       Value to reset counter to, often 0.
  @Return        PVRSRV_OK                   Success.
  @Return        PVRSRV_ERROR_STREAM_MISUSE  Success but the read and write
                                             positions did not match,
@@ -593,6 +600,18 @@ IMG_BOOL TLStreamOutOfData(IMG_HANDLE hStream);
 
 PVRSRV_ERROR
 TLStreamResetProducerByteCount(IMG_HANDLE hStream, IMG_UINT32 ui32Value);
+
+/*************************************************************************/ /*!
+ @Function      TLStreamGetMaxTransfer
+ @Description   Obtain the maximum number of bytes that can be submitted to
+                 a given stream.
+ @Input         uiXferSize         Requested transfer size from producer.
+ @Input         hConsumerStream    Stream handle for consumer.
+ @Return        IMG_UINT32         Amount of data that can be submitted to
+                                    the consumer stream.
+*/ /**************************************************************************/
+IMG_UINT32
+TLStreamGetMaxTransfer(IMG_UINT32 uiXferSize, IMG_HANDLE hConsumerStream);
 
 #endif /* TLSTREAM_H */
 /*****************************************************************************

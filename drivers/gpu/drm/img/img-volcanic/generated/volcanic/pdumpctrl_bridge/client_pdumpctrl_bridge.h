@@ -63,7 +63,8 @@ IMG_INTERNAL PVRSRV_ERROR BridgePVRSRVPDumpSetDefaultCaptureParams(IMG_HANDLE hB
 								   IMG_UINT32 ui32Start,
 								   IMG_UINT32 ui32End,
 								   IMG_UINT32 ui32Interval,
-								   IMG_UINT32 ui32MaxParamFileSize);
+								   IMG_UINT32 ui32MaxParamFileSize,
+								   IMG_UINT32 ui32AutoTermTimeout);
 
 IMG_INTERNAL PVRSRV_ERROR BridgePVRSRVPDumpIsLastCaptureFrame(IMG_HANDLE hBridge,
 							      IMG_BOOL * pbpbIsLastCaptureFrame);

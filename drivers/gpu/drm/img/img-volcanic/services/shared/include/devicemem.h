@@ -584,10 +584,17 @@ DevmemFindHeapByName(const DEVMEM_CONTEXT *psCtx,
  *
  * returns the device virtual address of the base of the heap.
  */
-
 PVRSRV_ERROR
 DevmemGetHeapBaseDevVAddr(DEVMEM_HEAP *psHeap,
 			  IMG_DEV_VIRTADDR *pDevVAddr);
+
+/*
+ * DevmemGetHeapSize()
+ *
+ * returns the size of the heap.
+ */
+IMG_INTERNAL DEVMEM_SIZE_T
+DevmemGetHeapSize(struct DEVMEM_HEAP_TAG *psHeap);
 
 PVRSRV_ERROR
 DevmemLocalGetImportHandle(DEVMEM_MEMDESC *psMemDesc,
@@ -630,12 +637,6 @@ DevmemGetFaultAddress(DEVMEM_CONTEXT *psContext,
                       IMG_DEV_VIRTADDR *psFaultAddress);
 
 IMG_INTERNAL PVRSRV_ERROR
-DevmemFlushDeviceSLCRange(DEVMEM_MEMDESC *psMemDesc,
-                          IMG_DEV_VIRTADDR sDevVAddr,
-                          IMG_DEVMEM_SIZE_T uiSize,
-                          IMG_BOOL bInvalidate);
-
-IMG_INTERNAL PVRSRV_ERROR
 DevmemInvalidateFBSCTable(DEVMEM_CONTEXT *psContext,
                           IMG_UINT64 ui64FBSCEntries);
 
@@ -667,14 +668,12 @@ DevmemGetHeapReservedSize(DEVMEM_HEAP *psHeap);
 
 @Input          psContext      Memory context the process that would like to
                                be notified about.
-@Input          ui32PID        The PID  of the calling process.
 @Input          bRegister      If true, register. If false, de-register.
 @Return         PVRSRV_ERROR:  PVRSRV_OK on success. Otherwise, a PVRSRV_
                                error code
 */ /**************************************************************************/
 IMG_INTERNAL PVRSRV_ERROR
 RegisterDevmemPFNotify(DEVMEM_CONTEXT *psContext,
-                       IMG_UINT32     ui32PID,
                        IMG_BOOL       bRegister);
 
 /*************************************************************************/ /*!

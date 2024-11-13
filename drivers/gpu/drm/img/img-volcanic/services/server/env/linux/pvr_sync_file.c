@@ -46,6 +46,7 @@
 #include "pvr_sync.h"
 #include "pvr_fence.h"
 #include "pvr_counting_timeline.h"
+#include "pvr_export_fence.h"
 
 #include "linux_sw_sync.h"
 
@@ -58,6 +59,7 @@
 #include <linux/uaccess.h>
 
 #include "pvr_sync_api.h"
+#include "osfunc_common.h"
 
 /* This header must always be included last */
 #include "kernel_compatibility.h"
@@ -107,10 +109,14 @@ struct pvr_sync_timeline {
 	char name[32];
 	void *file_handle;
 	bool is_sw;
+	bool is_export;
 	/* Fence context used for hw fences */
 	struct pvr_fence_context *hw_fence_context;
 	/* Timeline and context for sw fences */
-	struct pvr_counting_fence_timeline *sw_fence_timeline;
+	union {
+		struct pvr_counting_fence_timeline *sw_fence_timeline;
+		struct pvr_exp_fence_context *exp_fence_context;
+	};
 #if defined(NO_HARDWARE)
 	/* List of all timelines (used to advance all timelines in nohw builds) */
 	struct list_head list;
@@ -135,6 +141,17 @@ void pvr_sync_nohw_signal_fence(void *fence_data_to_signal)
 		pvr_fence_context_signal_fences_nohw(this_timeline->hw_fence_context);
 	}
 	mutex_unlock(&pvr_timeline_active_list_lock);
+}
+static
+void pvr_sync_nohw_signal_exp_fence(PVRSRV_FENCE fence_to_signal)
+{
+	struct dma_fence *fence;
+
+	fence = sync_file_get_fence(fence_to_signal);
+	if (fence && pvr_is_exp_fence(fence))
+		dma_fence_signal(fence);
+
+	dma_fence_put(fence);
 }
 #endif
 
@@ -176,9 +193,10 @@ int pvr_sync_api_init(void *file_handle, void **api_priv)
 	if (!timeline)
 		return -ENOMEM;
 
-	strlcpy(timeline->name, task_comm, sizeof(timeline->name));
+	OSStringSafeCopy(timeline->name, task_comm, sizeof(timeline->name));
 	timeline->file_handle = file_handle;
 	timeline->is_sw = false;
+	timeline->is_export = false;
 
 	*api_priv = (void *)timeline;
 
@@ -192,7 +210,7 @@ int pvr_sync_api_deinit(void *api_priv, bool is_sw)
 	if (!timeline)
 		return 0;
 
-	if (timeline->sw_fence_timeline) {
+	if (timeline->is_sw && timeline->sw_fence_timeline) {
 		/* This makes sure any outstanding SW syncs are marked as
 		 * complete at timeline close time. Otherwise it'll leak the
 		 * timeline (as outstanding fences hold a ref) and possibly
@@ -202,6 +220,8 @@ int pvr_sync_api_deinit(void *api_priv, bool is_sw)
 		pvr_counting_fence_timeline_force_complete(
 			timeline->sw_fence_timeline);
 		pvr_counting_fence_timeline_put(timeline->sw_fence_timeline);
+	} else if (timeline->is_export && timeline->exp_fence_context) {
+		pvr_exp_fence_context_destroy(timeline->exp_fence_context);
 	}
 
 	if (timeline->hw_fence_context) {
@@ -374,7 +394,7 @@ pvr_sync_create_fence(
 		err = PVRSRV_ERROR_OUT_OF_MEMORY;
 		goto err_destroy_fence;
 	}
-	strlcpy(sync_file_user_name(sync_file),
+	OSStringSafeCopy(sync_file_user_name(sync_file),
 		pvr_fence->name,
 		sizeof(sync_file_user_name(sync_file)));
 	dma_fence_put(&pvr_fence->base);
@@ -518,24 +538,39 @@ pvr_sync_resolve_fence(PSYNC_CHECKPOINT_CONTEXT psSyncCheckpointContext,
 			      &fences[i]->flags))
 #endif
 		{
-			struct pvr_fence *pvr_fence =
-				pvr_fence_create_from_fence(
-					pvr_sync_data.foreign_fence_context,
-					psSyncCheckpointContext,
-					fences[i],
-					fence_to_resolve,
-					"foreign");
-			if (!pvr_fence) {
-				pr_err(FILE_NAME ": %s: Failed to create fence\n",
-				       __func__);
-				err = PVRSRV_ERROR_OUT_OF_MEMORY;
-				goto err_free_checkpoints;
+			struct pvr_fence *pvr_fence;
+
+			/* Check if fences[i] is an export fence */
+			if (pvr_is_exp_fence(fences[i])) {
+				/* Assign export fence a sync checkpoint if it does not already
+				 * have one.
+				 */
+				err = pvr_exp_fence_assign_checkpoint(PVRSRV_NO_FENCE,
+				                                      fences[i],
+				                                      psSyncCheckpointContext,
+				                                      &checkpoints[num_used_fences]);
+				SyncCheckpointTakeRef(checkpoints[num_used_fences]);
+				++num_used_fences;
 			}
-			checkpoints[num_used_fences] =
-				pvr_fence_get_checkpoint(pvr_fence);
-			SyncCheckpointTakeRef(checkpoints[num_used_fences]);
-			++num_used_fences;
-			dma_fence_put(&pvr_fence->base);
+			else {
+				pvr_fence = pvr_fence_create_from_fence(
+				            pvr_sync_data.foreign_fence_context,
+			            psSyncCheckpointContext,
+			            fences[i],
+			            fence_to_resolve,
+			            "foreign");
+				if (!pvr_fence) {
+					pr_err(FILE_NAME ": %s: Failed to create fence\n",
+					       __func__);
+					err = PVRSRV_ERROR_OUT_OF_MEMORY;
+					goto err_free_checkpoints;
+				}
+				checkpoints[num_used_fences] =
+				        pvr_fence_get_checkpoint(pvr_fence);
+				SyncCheckpointTakeRef(checkpoints[num_used_fences]);
+				++num_used_fences;
+				dma_fence_put(&pvr_fence->base);
+			}
 		}
 	}
 	/* If we don't return any checkpoints, delete the array because
@@ -563,6 +598,97 @@ err_free_checkpoints:
 	}
 	kfree(checkpoints);
 	goto err_put_fence;
+}
+
+/*
+ * This is the function that kick code will call in order to obtain the
+ * PSYNC_CHECKPOINT for a given export fence (PVRSRV_FENCE) passed to a kick
+ * function.
+ * If export_fence is not a valid export fence, (ie fops != &pvr_exp_fence_ops)
+ * this function will return (error).
+ *
+ * Input:  export_fence              The export fence to resolve
+ * Input:  checkpoint_context        The context in which to create the new
+ *                                   sync checkpoint for the export fence
+ * Output: checkpoint_handle         The returned PVRSRV_SYNC_CHECKPOINT.
+ */
+static enum PVRSRV_ERROR_TAG
+pvr_sync_resolve_export_fence(PVRSRV_FENCE fence_to_resolve,
+			      PSYNC_CHECKPOINT_CONTEXT checkpoint_context,
+			      PSYNC_CHECKPOINT *checkpoint_handle)
+{
+	PVRSRV_ERROR err = PVRSRV_OK;
+	struct dma_fence *fence;
+
+	fence = sync_file_get_fence(fence_to_resolve);
+	if (!fence) {
+		pr_err(FILE_NAME ": %s: Failed to read sync private data for fd %d\n",
+			__func__, fence_to_resolve);
+		err = PVRSRV_ERROR_HANDLE_NOT_FOUND;
+		goto err_out;
+	}
+
+	if (!pvr_is_exp_fence(fence)) {
+		pr_err(FILE_NAME ": %s: Fence not a pvr export fence\n", __func__);
+		dma_fence_put(fence);
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	err = pvr_exp_fence_assign_checkpoint(fence_to_resolve,
+					      fence,
+					      checkpoint_context,
+					      checkpoint_handle);
+	if (err != PVRSRV_OK) {
+		pr_err(FILE_NAME ": %s: Failed to assign export fence a sync checkpoint\n",
+		       __func__);
+	}
+
+	dma_fence_put(fence);
+
+err_out:
+	return err;
+}
+
+/*
+ * This is the function that kick code will call in order to rollback the
+ * PSYNC_CHECKPOINT assigned to an export fence (PVRSRV_FENCE) passed to a kick
+ * function.
+ * If export_fence is not a valid export fence, (ie fops != &pvr_exp_fence_ops)
+ * this function will return (error).
+ *
+ * Input:  fence_to_rollback              The export fence to rollback
+ */
+static enum PVRSRV_ERROR_TAG
+pvr_sync_rollback_export_fence(PVRSRV_FENCE fence_to_rollback)
+{
+	PVRSRV_ERROR err = PVRSRV_OK;
+	struct dma_fence *fence;
+
+	fence = sync_file_get_fence(fence_to_rollback);
+	if (!fence) {
+		pr_err("%s: Failed to read sync private data for fd %d\n",
+			__func__, fence_to_rollback);
+		err = PVRSRV_ERROR_HANDLE_NOT_FOUND;
+		goto err_get_fence;
+	}
+
+	if (!pvr_is_exp_fence(fence)) {
+		pr_err(FILE_NAME ": %s: Fence not a pvr export fence\n", __func__);
+		err = PVRSRV_ERROR_INVALID_PARAMS;
+		goto err_is_exp_fence;
+	}
+
+	err = pvr_exp_fence_rollback(fence);
+	if (err != PVRSRV_OK) {
+		pr_err("%s: Failed to rollback export fence\n",
+		       __func__);
+	}
+
+err_is_exp_fence:
+	dma_fence_put(fence);
+
+err_get_fence:
+	return err;
 }
 
 /*
@@ -640,11 +766,20 @@ pvr_sync_fence_get_checkpoints(PVRSRV_FENCE fence_to_pdump, u32 *nr_checkpoints,
 	}
 
 	for (i = 0; i < num_fences; i++) {
-		pvr_fence = to_pvr_fence(fences[i]);
-		if (!pvr_fence)
+		if (is_pvr_fence(fences[i])) {
+			pvr_fence = to_pvr_fence(fences[i]);
+			if (pvr_fence) {
+				checkpoints[num_used_fences] = pvr_fence_get_checkpoint(pvr_fence);
+				++num_used_fences;
+			}
+		} else if (pvr_is_exp_fence(fences[i])) {
+			struct pvr_exp_fence *pvr_exp_fence = to_pvr_exp_fence(fences[i]);
+
+			checkpoints[num_used_fences] = pvr_exp_fence_get_checkpoint(pvr_exp_fence);
+			if (checkpoints[num_used_fences])
+				++num_used_fences;
+		} else
 			continue;
-		checkpoints[num_used_fences] = pvr_fence_get_checkpoint(pvr_fence);
-		++num_used_fences;
 	}
 
 	*checkpoint_handles = checkpoints;
@@ -664,9 +799,9 @@ int pvr_sync_api_rename(void *api_priv, void *user_data)
 	struct pvr_sync_rename_ioctl_data *data = user_data;
 
 	data->szName[sizeof(data->szName) - 1] = '\0';
-	strlcpy(timeline->name, data->szName, sizeof(timeline->name));
+	OSStringSafeCopy(timeline->name, data->szName, sizeof(timeline->name));
 	if (timeline->hw_fence_context)
-		strlcpy(timeline->hw_fence_context->name, data->szName,
+		OSStringSafeCopy(timeline->hw_fence_context->name, data->szName,
 			sizeof(timeline->hw_fence_context->name));
 
 	return 0;
@@ -688,7 +823,83 @@ int pvr_sync_api_force_sw_only(void *api_priv, void **api_priv_new)
 
 	timeline->is_sw = true;
 
+	*api_priv_new = (void *)timeline;
+
 	return 0;
+}
+
+/* We simply treat an export-fence as a SW fence and tweak
+ * the timeline structure to flag it as an 'is_export' type.
+ */
+int pvr_sync_api_force_exp_only(void *api_priv, void *api_data)
+{
+	struct pvr_sync_timeline *timeline = api_priv;
+
+	if (timeline->is_export) {
+		pr_err(FILE_NAME ": %s: Already marked export timeline\n", __func__);
+		return 0;
+	}
+
+	timeline->exp_fence_context = pvr_exp_fence_context_create("pvr_exp_fence_ctx", "pvr_sync");
+	if (!timeline->exp_fence_context)
+		return -ENOMEM;
+
+	timeline->is_export = true;
+
+	return 0;
+}
+
+int pvr_sync_api_create_export_fence(void *api_priv, void *user_data)
+{
+	struct pvr_sync_timeline *timeline = api_priv;
+	struct pvr_exp_fence_context *exp_fence_context = timeline->exp_fence_context;
+	pvr_exp_sync_create_fence_data_t *data = user_data;
+	struct sync_file *sync_file;
+	int fd;
+	struct dma_fence *fence;
+	int err;
+
+	if (data == NULL) {
+		pr_err(FILE_NAME ": %s: Unexpected NULL user_data\n", __func__);
+		err = -EINVAL;
+		goto err_out;
+	}
+
+	fd = get_unused_fd_flags(O_CLOEXEC);
+	if (fd < 0) {
+		pr_err(FILE_NAME ": %s: Failed to find unused fd (%d)\n",
+		       __func__, fd);
+		err = -EMFILE;
+		goto err_out;
+	}
+
+	fence = pvr_exp_fence_create(exp_fence_context, fd, &data->sync_pt_idx);
+	if (!fence) {
+		pr_err(FILE_NAME ": %s: Failed to create a dma fence (%d)\n",
+		       __func__, fd);
+		err = -ENOMEM;
+		goto err_put_fd;
+	}
+
+	sync_file = sync_file_create(fence);
+	dma_fence_put(fence);
+	if (!sync_file) {
+		pr_err(FILE_NAME ": %s: Failed to create a sync_file (%d)\n",
+			__func__, fd);
+		err = -ENOMEM;
+		goto err_put_fd;
+	}
+
+	data->fence = fd;
+
+	fd_install(fd, sync_file->file);
+
+	return 0;
+
+err_put_fd:
+	put_unused_fd(fd);
+err_out:
+	return err;
 }
 
 int pvr_sync_api_sw_create_fence(void *api_priv, void *user_data)
@@ -779,19 +990,23 @@ enum PVRSRV_ERROR_TAG pvr_sync_register_functions(void)
 	pvr_sync_data.sync_checkpoint_ops.pfnFenceFinalise = pvr_sync_finalise_fence;
 #if defined(NO_HARDWARE)
 	pvr_sync_data.sync_checkpoint_ops.pfnNoHWUpdateTimelines = pvr_sync_nohw_signal_fence;
+	pvr_sync_data.sync_checkpoint_ops.pfnNoHWSignalExpFence = pvr_sync_nohw_signal_exp_fence;
 #else
 	pvr_sync_data.sync_checkpoint_ops.pfnNoHWUpdateTimelines = NULL;
+	pvr_sync_data.sync_checkpoint_ops.pfnNoHWSignalExpFence = NULL;
 #endif
 	pvr_sync_data.sync_checkpoint_ops.pfnFreeCheckpointListMem =
 		pvr_sync_free_checkpoint_list_mem;
 	pvr_sync_data.sync_checkpoint_ops.pfnDumpInfoOnStalledUFOs =
 		pvr_sync_dump_info_on_stalled_ufos;
-	strlcpy(pvr_sync_data.sync_checkpoint_ops.pszImplName, "pvr_sync_file",
+	OSStringSafeCopy(pvr_sync_data.sync_checkpoint_ops.pszImplName, "pvr_sync_file",
 		SYNC_CHECKPOINT_IMPL_MAX_STRLEN);
 #if defined(PDUMP)
 	pvr_sync_data.sync_checkpoint_ops.pfnSyncFenceGetCheckpoints =
 		pvr_sync_fence_get_checkpoints;
 #endif
+	pvr_sync_data.sync_checkpoint_ops.pfnExportFenceResolve = pvr_sync_resolve_export_fence;
+	pvr_sync_data.sync_checkpoint_ops.pfnExportFenceRollback = pvr_sync_rollback_export_fence;
 
 	return SyncCheckpointRegisterFunctions(&pvr_sync_data.sync_checkpoint_ops);
 }
@@ -826,7 +1041,7 @@ int pvr_sync_init(void)
 
 err_ioctl_init:
 	pvr_fence_context_destroy(pvr_sync_data.foreign_fence_context);
-	pvr_fence_cleanup(pvr_sync_data.foreign_fence_context);
+	pvr_fence_cleanup();
 err_out:
 	return err;
 }
@@ -835,7 +1050,7 @@ void pvr_sync_deinit(void)
 {
 	pvr_sync_ioctl_deinit();
 	pvr_fence_context_destroy(pvr_sync_data.foreign_fence_context);
-	pvr_fence_cleanup(pvr_sync_data.foreign_fence_context);
+	pvr_fence_cleanup();
 }
 
 enum PVRSRV_ERROR_TAG pvr_sync_device_init(struct device *dev)

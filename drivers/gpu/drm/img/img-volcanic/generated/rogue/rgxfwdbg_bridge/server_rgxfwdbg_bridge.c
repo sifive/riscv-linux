@@ -109,6 +109,71 @@ PVRSRVBridgeRGXFWDebugDumpFreelistPageList(IMG_UINT32 ui32DispatchTableEntry,
 }
 
 static IMG_INT
+PVRSRVBridgeRGXFWDebugPowerOff(IMG_UINT32 ui32DispatchTableEntry,
+			       IMG_UINT8 * psRGXFWDebugPowerOffIN_UI8,
+			       IMG_UINT8 * psRGXFWDebugPowerOffOUT_UI8,
+			       CONNECTION_DATA * psConnection)
+{
+	PVRSRV_BRIDGE_IN_RGXFWDEBUGPOWEROFF *psRGXFWDebugPowerOffIN =
+	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGPOWEROFF *) IMG_OFFSET_ADDR(psRGXFWDebugPowerOffIN_UI8, 0);
+	PVRSRV_BRIDGE_OUT_RGXFWDEBUGPOWEROFF *psRGXFWDebugPowerOffOUT =
+	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGPOWEROFF *) IMG_OFFSET_ADDR(psRGXFWDebugPowerOffOUT_UI8,
+								     0);
+
+	PVR_UNREFERENCED_PARAMETER(psRGXFWDebugPowerOffIN);
+
+	psRGXFWDebugPowerOffOUT->eError =
+	    PVRSRVRGXFWDebugPowerOffKM(psConnection, OSGetDevNode(psConnection));
+
+	return 0;
+}
+
+static IMG_INT
+PVRSRVBridgeRGXFWDebugPowerOn(IMG_UINT32 ui32DispatchTableEntry,
+			      IMG_UINT8 * psRGXFWDebugPowerOnIN_UI8,
+			      IMG_UINT8 * psRGXFWDebugPowerOnOUT_UI8,
+			      CONNECTION_DATA * psConnection)
+{
+	PVRSRV_BRIDGE_IN_RGXFWDEBUGPOWERON *psRGXFWDebugPowerOnIN =
+	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGPOWERON *) IMG_OFFSET_ADDR(psRGXFWDebugPowerOnIN_UI8, 0);
+	PVRSRV_BRIDGE_OUT_RGXFWDEBUGPOWERON *psRGXFWDebugPowerOnOUT =
+	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGPOWERON *) IMG_OFFSET_ADDR(psRGXFWDebugPowerOnOUT_UI8, 0);
+
+	PVR_UNREFERENCED_PARAMETER(psRGXFWDebugPowerOnIN);
+
+	psRGXFWDebugPowerOnOUT->eError =
+	    PVRSRVRGXFWDebugPowerOnKM(psConnection, OSGetDevNode(psConnection));
+
+	return 0;
+}
+
+static IMG_INT
+PVRSRVBridgeRGXFWDebugSetVzConnectionCooldownPeriodInSec(IMG_UINT32 ui32DispatchTableEntry,
+							 IMG_UINT8 *
+							 psRGXFWDebugSetVzConnectionCooldownPeriodInSecIN_UI8,
+							 IMG_UINT8 *
+							 psRGXFWDebugSetVzConnectionCooldownPeriodInSecOUT_UI8,
+							 CONNECTION_DATA * psConnection)
+{
+	PVRSRV_BRIDGE_IN_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC
+	    *psRGXFWDebugSetVzConnectionCooldownPeriodInSecIN =
+	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetVzConnectionCooldownPeriodInSecIN_UI8, 0);
+	PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC
+	    *psRGXFWDebugSetVzConnectionCooldownPeriodInSecOUT =
+	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetVzConnectionCooldownPeriodInSecOUT_UI8, 0);
+
+	psRGXFWDebugSetVzConnectionCooldownPeriodInSecOUT->eError =
+	    PVRSRVRGXFWDebugSetVzConnectionCooldownPeriodInSecKM(psConnection,
+								 OSGetDevNode(psConnection),
+								 psRGXFWDebugSetVzConnectionCooldownPeriodInSecIN->
+								 ui32VzConne);
+
+	return 0;
+}
+
+static IMG_INT
 PVRSRVBridgeRGXFWDebugSetHCSDeadline(IMG_UINT32 ui32DispatchTableEntry,
 				     IMG_UINT8 * psRGXFWDebugSetHCSDeadlineIN_UI8,
 				     IMG_UINT8 * psRGXFWDebugSetHCSDeadlineOUT_UI8,
@@ -129,22 +194,94 @@ PVRSRVBridgeRGXFWDebugSetHCSDeadline(IMG_UINT32 ui32DispatchTableEntry,
 }
 
 static IMG_INT
-PVRSRVBridgeRGXFWDebugSetOSidPriority(IMG_UINT32 ui32DispatchTableEntry,
-				      IMG_UINT8 * psRGXFWDebugSetOSidPriorityIN_UI8,
-				      IMG_UINT8 * psRGXFWDebugSetOSidPriorityOUT_UI8,
-				      CONNECTION_DATA * psConnection)
+PVRSRVBridgeRGXFWDebugSetDriverPriority(IMG_UINT32 ui32DispatchTableEntry,
+					IMG_UINT8 * psRGXFWDebugSetDriverPriorityIN_UI8,
+					IMG_UINT8 * psRGXFWDebugSetDriverPriorityOUT_UI8,
+					CONNECTION_DATA * psConnection)
 {
-	PVRSRV_BRIDGE_IN_RGXFWDEBUGSETOSIDPRIORITY *psRGXFWDebugSetOSidPriorityIN =
-	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGSETOSIDPRIORITY *)
-	    IMG_OFFSET_ADDR(psRGXFWDebugSetOSidPriorityIN_UI8, 0);
-	PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETOSIDPRIORITY *psRGXFWDebugSetOSidPriorityOUT =
-	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETOSIDPRIORITY *)
-	    IMG_OFFSET_ADDR(psRGXFWDebugSetOSidPriorityOUT_UI8, 0);
+	PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERPRIORITY *psRGXFWDebugSetDriverPriorityIN =
+	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERPRIORITY *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverPriorityIN_UI8, 0);
+	PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERPRIORITY *psRGXFWDebugSetDriverPriorityOUT =
+	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERPRIORITY *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverPriorityOUT_UI8, 0);
 
-	psRGXFWDebugSetOSidPriorityOUT->eError =
-	    PVRSRVRGXFWDebugSetOSidPriorityKM(psConnection, OSGetDevNode(psConnection),
-					      psRGXFWDebugSetOSidPriorityIN->ui32OSid,
-					      psRGXFWDebugSetOSidPriorityIN->ui32Priority);
+	psRGXFWDebugSetDriverPriorityOUT->eError =
+	    PVRSRVRGXFWDebugSetDriverPriorityKM(psConnection, OSGetDevNode(psConnection),
+						psRGXFWDebugSetDriverPriorityIN->ui32DriverID,
+						psRGXFWDebugSetDriverPriorityIN->ui32Priority);
+
+	return 0;
+}
+
+static IMG_INT
+PVRSRVBridgeRGXFWDebugSetDriverTimeSlice(IMG_UINT32 ui32DispatchTableEntry,
+					 IMG_UINT8 * psRGXFWDebugSetDriverTimeSliceIN_UI8,
+					 IMG_UINT8 * psRGXFWDebugSetDriverTimeSliceOUT_UI8,
+					 CONNECTION_DATA * psConnection)
+{
+	PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERTIMESLICE *psRGXFWDebugSetDriverTimeSliceIN =
+	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERTIMESLICE *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverTimeSliceIN_UI8, 0);
+	PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERTIMESLICE *psRGXFWDebugSetDriverTimeSliceOUT =
+	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERTIMESLICE *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverTimeSliceOUT_UI8, 0);
+
+	psRGXFWDebugSetDriverTimeSliceOUT->eError =
+	    PVRSRVRGXFWDebugSetDriverTimeSliceKM(psConnection, OSGetDevNode(psConnection),
+						 psRGXFWDebugSetDriverTimeSliceIN->ui32DriverID,
+						 psRGXFWDebugSetDriverTimeSliceIN->
+						 ui32TSPercentage);
+
+	return 0;
+}
+
+static IMG_INT
+PVRSRVBridgeRGXFWDebugSetDriverTimeSliceInterval(IMG_UINT32 ui32DispatchTableEntry,
+						 IMG_UINT8 *
+						 psRGXFWDebugSetDriverTimeSliceIntervalIN_UI8,
+						 IMG_UINT8 *
+						 psRGXFWDebugSetDriverTimeSliceIntervalOUT_UI8,
+						 CONNECTION_DATA * psConnection)
+{
+	PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL
+	    *psRGXFWDebugSetDriverTimeSliceIntervalIN =
+	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverTimeSliceIntervalIN_UI8, 0);
+	PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL
+	    *psRGXFWDebugSetDriverTimeSliceIntervalOUT =
+	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverTimeSliceIntervalOUT_UI8, 0);
+
+	psRGXFWDebugSetDriverTimeSliceIntervalOUT->eError =
+	    PVRSRVRGXFWDebugSetDriverTimeSliceIntervalKM(psConnection, OSGetDevNode(psConnection),
+							 psRGXFWDebugSetDriverTimeSliceIntervalIN->
+							 ui32TSIntervalMs);
+
+	return 0;
+}
+
+static IMG_INT
+PVRSRVBridgeRGXFWDebugSetDriverIsolationGroup(IMG_UINT32 ui32DispatchTableEntry,
+					      IMG_UINT8 * psRGXFWDebugSetDriverIsolationGroupIN_UI8,
+					      IMG_UINT8 *
+					      psRGXFWDebugSetDriverIsolationGroupOUT_UI8,
+					      CONNECTION_DATA * psConnection)
+{
+	PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERISOLATIONGROUP *psRGXFWDebugSetDriverIsolationGroupIN =
+	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERISOLATIONGROUP *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverIsolationGroupIN_UI8, 0);
+	PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERISOLATIONGROUP *psRGXFWDebugSetDriverIsolationGroupOUT
+	    =
+	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERISOLATIONGROUP *)
+	    IMG_OFFSET_ADDR(psRGXFWDebugSetDriverIsolationGroupOUT_UI8, 0);
+
+	psRGXFWDebugSetDriverIsolationGroupOUT->eError =
+	    PVRSRVRGXFWDebugSetDriverIsolationGroupKM(psConnection, OSGetDevNode(psConnection),
+						      psRGXFWDebugSetDriverIsolationGroupIN->
+						      ui32DriverID,
+						      psRGXFWDebugSetDriverIsolationGroupIN->
+						      ui32IsolationGroup);
 
 	return 0;
 }
@@ -164,7 +301,7 @@ PVRSRVBridgeRGXFWDebugSetOSNewOnlineState(IMG_UINT32 ui32DispatchTableEntry,
 
 	psRGXFWDebugSetOSNewOnlineStateOUT->eError =
 	    PVRSRVRGXFWDebugSetOSNewOnlineStateKM(psConnection, OSGetDevNode(psConnection),
-						  psRGXFWDebugSetOSNewOnlineStateIN->ui32OSid,
+						  psRGXFWDebugSetOSNewOnlineStateIN->ui32DriverID,
 						  psRGXFWDebugSetOSNewOnlineStateIN->
 						  ui32OSNewState);
 
@@ -186,7 +323,7 @@ PVRSRVBridgeRGXFWDebugMapGuestHeap(IMG_UINT32 ui32DispatchTableEntry,
 
 	psRGXFWDebugMapGuestHeapOUT->eError =
 	    PVRSRVRGXFWDebugMapGuestHeapKM(psConnection, OSGetDevNode(psConnection),
-					   psRGXFWDebugMapGuestHeapIN->ui32OSid,
+					   psRGXFWDebugMapGuestHeapIN->ui32DriverID,
 					   psRGXFWDebugMapGuestHeapIN->ui64ui64GuestHeapBase);
 
 	return 0;
@@ -242,41 +379,14 @@ PVRSRVBridgeRGXCurrentTime(IMG_UINT32 ui32DispatchTableEntry,
 	PVRSRV_BRIDGE_OUT_RGXCURRENTTIME *psRGXCurrentTimeOUT =
 	    (PVRSRV_BRIDGE_OUT_RGXCURRENTTIME *) IMG_OFFSET_ADDR(psRGXCurrentTimeOUT_UI8, 0);
 
-	PVR_UNREFERENCED_PARAMETER(psRGXCurrentTimeIN);
-
 	psRGXCurrentTimeOUT->eError =
 	    PVRSRVRGXCurrentTime(psConnection, OSGetDevNode(psConnection),
-				 &psRGXCurrentTimeOUT->ui64Time);
+				 psRGXCurrentTimeIN->ui8TimerType, &psRGXCurrentTimeOUT->ui64Time);
 
 	return 0;
 }
 
-#if defined(SUPPORT_VALIDATION)
-
-static IMG_INT
-PVRSRVBridgeRGXFWDebugInjectFault(IMG_UINT32 ui32DispatchTableEntry,
-				  IMG_UINT8 * psRGXFWDebugInjectFaultIN_UI8,
-				  IMG_UINT8 * psRGXFWDebugInjectFaultOUT_UI8,
-				  CONNECTION_DATA * psConnection)
-{
-	PVRSRV_BRIDGE_IN_RGXFWDEBUGINJECTFAULT *psRGXFWDebugInjectFaultIN =
-	    (PVRSRV_BRIDGE_IN_RGXFWDEBUGINJECTFAULT *)
-	    IMG_OFFSET_ADDR(psRGXFWDebugInjectFaultIN_UI8, 0);
-	PVRSRV_BRIDGE_OUT_RGXFWDEBUGINJECTFAULT *psRGXFWDebugInjectFaultOUT =
-	    (PVRSRV_BRIDGE_OUT_RGXFWDEBUGINJECTFAULT *)
-	    IMG_OFFSET_ADDR(psRGXFWDebugInjectFaultOUT_UI8, 0);
-
-	PVR_UNREFERENCED_PARAMETER(psRGXFWDebugInjectFaultIN);
-
-	psRGXFWDebugInjectFaultOUT->eError =
-	    PVRSRVRGXFWDebugInjectFaultKM(psConnection, OSGetDevNode(psConnection));
-
-	return 0;
-}
-
-#else
 #define PVRSRVBridgeRGXFWDebugInjectFault NULL
-#endif
 
 /* ***************************************************************************
  * Server bridge dispatch related glue
@@ -292,38 +402,89 @@ PVRSRV_ERROR InitRGXFWDBGBridge(void)
 {
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETFWLOG,
-			      PVRSRVBridgeRGXFWDebugSetFWLog, NULL);
+			      PVRSRVBridgeRGXFWDebugSetFWLog, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETFWLOG),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETFWLOG));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
 			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGDUMPFREELISTPAGELIST,
-			      PVRSRVBridgeRGXFWDebugDumpFreelistPageList, NULL);
+			      PVRSRVBridgeRGXFWDebugDumpFreelistPageList, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGDUMPFREELISTPAGELIST));
+
+	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGPOWEROFF,
+			      PVRSRVBridgeRGXFWDebugPowerOff, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGPOWEROFF));
+
+	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGPOWERON,
+			      PVRSRVBridgeRGXFWDebugPowerOn, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGPOWERON));
+
+	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC,
+			      PVRSRVBridgeRGXFWDebugSetVzConnectionCooldownPeriodInSec, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC),
+			      sizeof
+			      (PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
 			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETHCSDEADLINE,
-			      PVRSRVBridgeRGXFWDebugSetHCSDeadline, NULL);
+			      PVRSRVBridgeRGXFWDebugSetHCSDeadline, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETHCSDEADLINE),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETHCSDEADLINE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
-			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETOSIDPRIORITY,
-			      PVRSRVBridgeRGXFWDebugSetOSidPriority, NULL);
+			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERPRIORITY,
+			      PVRSRVBridgeRGXFWDebugSetDriverPriority, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERPRIORITY),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERPRIORITY));
+
+	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERTIMESLICE,
+			      PVRSRVBridgeRGXFWDebugSetDriverTimeSlice, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERTIMESLICE),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERTIMESLICE));
+
+	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL,
+			      PVRSRVBridgeRGXFWDebugSetDriverTimeSliceInterval, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL));
+
+	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERISOLATIONGROUP,
+			      PVRSRVBridgeRGXFWDebugSetDriverIsolationGroup, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETDRIVERISOLATIONGROUP),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETDRIVERISOLATIONGROUP));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
 			      PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETOSNEWONLINESTATE,
-			      PVRSRVBridgeRGXFWDebugSetOSNewOnlineState, NULL);
+			      PVRSRVBridgeRGXFWDebugSetOSNewOnlineState, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGSETOSNEWONLINESTATE),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGSETOSNEWONLINESTATE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGMAPGUESTHEAP,
-			      PVRSRVBridgeRGXFWDebugMapGuestHeap, NULL);
+			      PVRSRVBridgeRGXFWDebugMapGuestHeap, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGMAPGUESTHEAP),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGMAPGUESTHEAP));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGPHRCONFIGURE,
-			      PVRSRVBridgeRGXFWDebugPHRConfigure, NULL);
+			      PVRSRVBridgeRGXFWDebugPHRConfigure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGPHRCONFIGURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGPHRCONFIGURE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGWDGCONFIGURE,
-			      PVRSRVBridgeRGXFWDebugWdgConfigure, NULL);
+			      PVRSRVBridgeRGXFWDebugWdgConfigure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXFWDEBUGWDGCONFIGURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGWDGCONFIGURE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXCURRENTTIME,
-			      PVRSRVBridgeRGXCurrentTime, NULL);
+			      PVRSRVBridgeRGXCurrentTime, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXCURRENTTIME),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXCURRENTTIME));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGINJECTFAULT,
-			      PVRSRVBridgeRGXFWDebugInjectFault, NULL);
+			      PVRSRVBridgeRGXFWDebugInjectFault, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXFWDEBUGINJECTFAULT));
 
 	return PVRSRV_OK;
 }
@@ -339,11 +500,27 @@ void DeinitRGXFWDBGBridge(void)
 	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
 				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGDUMPFREELISTPAGELIST);
 
+	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGPOWEROFF);
+
+	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG, PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGPOWERON);
+
+	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETVZCONNECTIONCOOLDOWNPERIODINSEC);
+
 	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
 				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETHCSDEADLINE);
 
 	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
-				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETOSIDPRIORITY);
+				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERPRIORITY);
+
+	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERTIMESLICE);
+
+	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERTIMESLICEINTERVAL);
+
+	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
+				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETDRIVERISOLATIONGROUP);
 
 	UnsetDispatchTableEntry(PVRSRV_BRIDGE_RGXFWDBG,
 				PVRSRV_BRIDGE_RGXFWDBG_RGXFWDEBUGSETOSNEWONLINESTATE);

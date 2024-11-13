@@ -100,7 +100,7 @@ PVRSRVBridgeRGXSetBreakpoint(IMG_UINT32 ui32DispatchTableEntry,
 	    PVRSRVRGXSetBreakpointKM(psConnection, OSGetDevNode(psConnection),
 				     hPrivDataInt,
 				     psRGXSetBreakpointIN->eFWDataMaster,
-				     psRGXSetBreakpointIN->ui32TempSpillingAddr,
+				     psRGXSetBreakpointIN->ui64TempSpillingAddr,
 				     psRGXSetBreakpointIN->ui32BreakpointAddr,
 				     psRGXSetBreakpointIN->ui32HandlerAddr,
 				     psRGXSetBreakpointIN->ui32DM);
@@ -316,23 +316,33 @@ PVRSRV_ERROR InitRGXBREAKPOINTBridge(void)
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXBREAKPOINT,
 			      PVRSRV_BRIDGE_RGXBREAKPOINT_RGXSETBREAKPOINT,
-			      PVRSRVBridgeRGXSetBreakpoint, NULL);
+			      PVRSRVBridgeRGXSetBreakpoint, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXSETBREAKPOINT),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXSETBREAKPOINT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXBREAKPOINT,
 			      PVRSRV_BRIDGE_RGXBREAKPOINT_RGXCLEARBREAKPOINT,
-			      PVRSRVBridgeRGXClearBreakpoint, NULL);
+			      PVRSRVBridgeRGXClearBreakpoint, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXCLEARBREAKPOINT),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXCLEARBREAKPOINT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXBREAKPOINT,
 			      PVRSRV_BRIDGE_RGXBREAKPOINT_RGXENABLEBREAKPOINT,
-			      PVRSRVBridgeRGXEnableBreakpoint, NULL);
+			      PVRSRVBridgeRGXEnableBreakpoint, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXENABLEBREAKPOINT),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXENABLEBREAKPOINT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXBREAKPOINT,
 			      PVRSRV_BRIDGE_RGXBREAKPOINT_RGXDISABLEBREAKPOINT,
-			      PVRSRVBridgeRGXDisableBreakpoint, NULL);
+			      PVRSRVBridgeRGXDisableBreakpoint, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXDISABLEBREAKPOINT),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXDISABLEBREAKPOINT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RGXBREAKPOINT,
 			      PVRSRV_BRIDGE_RGXBREAKPOINT_RGXOVERALLOCATEBPREGISTERS,
-			      PVRSRVBridgeRGXOverallocateBPRegisters, NULL);
+			      PVRSRVBridgeRGXOverallocateBPRegisters, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RGXOVERALLOCATEBPREGISTERS),
+			      sizeof(PVRSRV_BRIDGE_OUT_RGXOVERALLOCATEBPREGISTERS));
 
 	return PVRSRV_OK;
 }

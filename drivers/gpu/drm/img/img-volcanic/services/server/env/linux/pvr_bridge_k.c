@@ -79,6 +79,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "srvcore.h"
 #include "common_srvcore_bridge.h"
+#include "kernel_compatibility.h"
 
 PVRSRV_ERROR InitDMABUFBridge(void);
 void DeinitDMABUFBridge(void);
@@ -105,6 +106,7 @@ static ATOMIC_T g_iDriverSuspendCount;
 static ATOMIC_T g_iNumActiveDriverThreads;
 static ATOMIC_T g_iNumActiveKernelThreads;
 static IMG_HANDLE g_hDriverThreadEventObject;
+
 
 #if defined(DEBUG_BRIDGE_KM)
 static DI_ENTRY *gpsDIBridgeStatsEntry;
@@ -235,6 +237,17 @@ static IMG_INT64 BridgeStatsWrite(const IMG_CHAR *pcBuffer,
 
 #endif /* defined(DEBUG_BRIDGE_KM) */
 
+PVRSRV_ERROR LinuxGetThreadActivityStats(LINUX_THREAD_ACTIVITY_STATS *psThreadStats)
+{
+	PVR_RETURN_IF_FALSE(psThreadStats != NULL, PVRSRV_ERROR_INVALID_PARAMS);
+
+	psThreadStats->i32KernelThreadCount = OSAtomicRead(&g_iNumActiveKernelThreads);
+	psThreadStats->i32DriverThreadCount = OSAtomicRead(&g_iNumActiveDriverThreads);
+	psThreadStats->i32SuspendedThreadCount = OSAtomicRead(&g_iDriverSuspendCount);
+
+	return PVRSRV_OK;
+}
+
 PVRSRV_ERROR OSPlatformBridgeInit(void)
 {
 	PVRSRV_ERROR eError;
@@ -248,7 +261,7 @@ PVRSRV_ERROR OSPlatformBridgeInit(void)
 
 	eError = OSEventObjectCreate("Global driver thread event object",
 	                             &g_hDriverThreadEventObject);
-	PVR_LOG_GOTO_IF_ERROR(eError, "OSEventObjectCreate", error_);
+	PVR_LOG_GOTO_IF_ERROR(eError, "OSEventObjectCreate", EventCreateError);
 
 #if defined(DEBUG_BRIDGE_KM)
 	{
@@ -267,17 +280,18 @@ PVRSRV_ERROR OSPlatformBridgeInit(void)
 		                       &g_BridgeDispatchTable[0],
 		                       DI_ENTRY_TYPE_GENERIC,
 		                       &gpsDIBridgeStatsEntry);
-		PVR_LOG_GOTO_IF_ERROR(eError, "DICreateEntry", error_);
+		PVR_LOG_GOTO_IF_ERROR(eError, "DICreateEntry", DIEntryCreateError);
 	}
 #endif
 
 	return PVRSRV_OK;
 
-error_:
-	if (g_hDriverThreadEventObject) {
-		OSEventObjectDestroy(g_hDriverThreadEventObject);
-		g_hDriverThreadEventObject = NULL;
-	}
+#if defined(DEBUG_BRIDGE_KM)
+DIEntryCreateError:
+#endif
+EventCreateError:
+	OSEventObjectDestroy(g_hDriverThreadEventObject);
+	g_hDriverThreadEventObject = NULL;
 
 	return eError;
 }
@@ -285,18 +299,13 @@ error_:
 void OSPlatformBridgeDeInit(void)
 {
 #if defined(DEBUG_BRIDGE_KM)
-	if (gpsDIBridgeStatsEntry != NULL)
-	{
-		DIDestroyEntry(gpsDIBridgeStatsEntry);
-	}
+	DIDestroyEntry(gpsDIBridgeStatsEntry);
 #endif
 
-	DeinitDMABUFBridge();
+	OSEventObjectDestroy(g_hDriverThreadEventObject);
+	g_hDriverThreadEventObject = NULL;
 
-	if (g_hDriverThreadEventObject != NULL) {
-		OSEventObjectDestroy(g_hDriverThreadEventObject);
-		g_hDriverThreadEventObject = NULL;
-	}
+	DeinitDMABUFBridge();
 }
 
 PVRSRV_ERROR LinuxBridgeBlockClientsAccess(struct pvr_drm_private *psDevPriv,
@@ -304,7 +313,7 @@ PVRSRV_ERROR LinuxBridgeBlockClientsAccess(struct pvr_drm_private *psDevPriv,
 {
 	PVRSRV_ERROR eError;
 	IMG_HANDLE hEvent;
-	IMG_INT iSuspendCount;
+	__maybe_unused IMG_INT iSuspendCount;
 
 	eError = OSEventObjectOpen(g_hDriverThreadEventObject, &hEvent);
 	if (eError != PVRSRV_OK)
@@ -358,7 +367,7 @@ CloseEventObject:
 PVRSRV_ERROR LinuxBridgeUnblockClientsAccess(struct pvr_drm_private *psDevPriv)
 {
 	PVRSRV_ERROR eError;
-	IMG_INT iSuspendCount;
+	__maybe_unused IMG_INT iSuspendCount;
 
 	/* resume the driver and then signal so any waiting threads wake up */
 	if (OSAtomicCompareExchange(&psDevPriv->suspended, _SUSPENDED,
@@ -441,9 +450,21 @@ static PVRSRV_ERROR _WaitForDriverUnsuspend(void)
 	return PVRSRV_OK;
 }
 
-PVRSRV_ERROR PVRSRVDriverThreadEnter(void)
+PVRSRV_ERROR PVRSRVDriverThreadEnter(void *pvData)
 {
 	PVRSRV_ERROR eError;
+	CONNECTION_DATA *psConnection = (CONNECTION_DATA *)pvData;
+
+	/* Block if the associated device has been placed into a FROZEN state.
+	 * In this case we must await a PVRSRVDeviceThaw() completion request.
+	 * Device is obtained from the incoming psConnection if pvData is non-NULL.
+	 */
+	if (likely(pvData != NULL))
+	{
+		PVRSRV_DEVICE_NODE *psDevNode = OSGetDevNode(psConnection);
+		PVRSRVBlockIfFrozen(psDevNode);
+		OSAtomicIncrement(&psDevNode->iThreadsActive);
+	}
 
 	/* increment first so there is no race between this value and
 	 * g_iDriverSuspendCount in LinuxBridgeBlockClientsAccess() */
@@ -484,9 +505,19 @@ PVRSRV_ERROR PVRSRVDriverThreadEnter(void)
 	return PVRSRV_OK;
 }
 
-void PVRSRVDriverThreadExit(void)
+void PVRSRVDriverThreadExit(void *pvData)
 {
+	CONNECTION_DATA *psConnection = (CONNECTION_DATA *)pvData;
 	OSAtomicDecrement(&g_iNumActiveDriverThreads);
+
+	/* Decrement the number of threads active on this device if the
+	 * connection is known.
+	 */
+	if (psConnection != NULL)
+	{
+		PVRSRV_DEVICE_NODE *psDevNode = OSGetDevNode(psConnection);
+		OSAtomicDecrement(&psDevNode->iThreadsActive);
+	}
 	/* if the driver is being suspended then we need to signal the
 	 * event object as the thread suspending the driver is waiting
 	 * for active threads to exit
@@ -517,7 +548,7 @@ PVRSRV_BridgeDispatchKM(struct drm_device __maybe_unused *dev, void *arg, struct
 			  psSrvkmCmd->bridge_id,
 			  psSrvkmCmd->bridge_func_id);
 
-	error = PVRSRVDriverThreadEnter();
+	error = PVRSRVDriverThreadEnter(psConnection);
 	PVR_LOG_GOTO_IF_ERROR(error, "PVRSRVDriverThreadEnter", e0);
 
 	sBridgePackageKM.ui32BridgeID = psSrvkmCmd->bridge_id;
@@ -531,7 +562,7 @@ PVRSRV_BridgeDispatchKM(struct drm_device __maybe_unused *dev, void *arg, struct
 	error = BridgedDispatchKM(psConnection, &sBridgePackageKM);
 
 e0:
-	PVRSRVDriverThreadExit();
+	PVRSRVDriverThreadExit(psConnection);
 
 	return OSPVRSRVToNativeError(error);
 }
@@ -553,7 +584,7 @@ PVRSRV_MMap(struct file *pFile, struct vm_area_struct *ps_vma)
 		return -ENOENT;
 	}
 
-	eError = PVRSRVDriverThreadEnter();
+	eError = PVRSRVDriverThreadEnter(psConnection);
 	PVR_LOG_GOTO_IF_ERROR(eError, "PVRSRVDriverThreadEnter", e0);
 
 	/*
@@ -574,6 +605,16 @@ PVRSRV_MMap(struct file *pFile, struct vm_area_struct *ps_vma)
 	}
 
 	mutex_lock(&g_sMMapMutex);
+
+	/* Forcibly clear the VM_MAYWRITE flag as this is inherited from the
+	 * kernel mmap code and we do not want to produce a potentially writable
+	 * mapping from a read-only mapping.
+	 */
+	if (!BITMASK_HAS(ps_vma->vm_flags, VM_WRITE))
+	{
+		pvr_vm_flags_clear(ps_vma, VM_MAYWRITE);
+	}
+
 	/* Note: PMRMMapPMR will take a reference on the PMR.
 	 * Unref the handle immediately, because we have now done
 	 * the required operation on the PMR (whether it succeeded or not)
@@ -588,12 +629,12 @@ PVRSRV_MMap(struct file *pFile, struct vm_area_struct *ps_vma)
 		goto e0;
 	}
 
-	PVRSRVDriverThreadExit();
+	PVRSRVDriverThreadExit(psConnection);
 
 	return 0;
 
 e0:
-	PVRSRVDriverThreadExit();
+	PVRSRVDriverThreadExit(psConnection);
 
 	PVR_DPF((PVR_DBG_ERROR, "Failed with error: %s", PVRSRVGetErrorString(eError)));
 	PVR_ASSERT(eError != PVRSRV_OK);

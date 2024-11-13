@@ -63,6 +63,21 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "physheap.h"
 
 /*************************************************************************/ /*!
+@Function       PhysmemCreateHeapOSMEM
+@Description    Create and register new OSMEM heap with OSMEM specific details.
+@Input          psDevNode    Pointer to device node struct.
+@Input          uiPolicy     Heap allocation policy flags
+@Input          psConfig     Heap configuration.
+@Output         ppsPhysHeap  Pointer to the created heap.
+@Return         PVRSRV_ERROR PVRSRV_OK or error code
+*/ /**************************************************************************/
+PVRSRV_ERROR
+PhysmemCreateHeapOSMEM(PVRSRV_DEVICE_NODE *psDevNode,
+                       PHYS_HEAP_POLICY uiPolicy,
+                       PHYS_HEAP_CONFIG *psConfig,
+                       PHYS_HEAP **ppsPhysHeap);
+
+/*************************************************************************/ /*!
 @Function       PhysmemNewOSRamBackedPMR
 @Description    Rogue Services will call this function to allocate GPU device
                 memory from the PMR factory supported by the OS DDK port. This
@@ -78,33 +93,33 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                 system memory is not to be used in the OS port then the
                 implementation must return PVRSRV_ERROR_NOT_SUPPORTED.
 
-@Input          psPhysHeap       the phys heap
-@Input          psConnection     the connection to the originator process
-@Input          uiSize           the size of the allocation
+@Input          psPhysHeap       The phys heap
+@Input          psConnection     The connection to the originator process
+@Input          uiSize           The size of the allocation
                                  (must be a multiple of page size)
-@Input          ui32NumPhysChunks  when sparse allocations are requested,
-                                   this is the number of physical chunks
-                                   to be allocated.
-                                   For regular allocations, this will be 1.
-@Input          ui32NumVirtChunks  when sparse allocations are requested,
-                                   this is the number of virtual chunks
-                                   covering the sparse allocation.
-                                   For regular allocations, this will be 1.
-@Input          pui32MappingTable  when sparse allocations are requested,
+@Input          ui32NumPhysChunks     When sparse allocations are requested,
+                                      this is the number of physical chunks
+                                      to be allocated.
+                                      For regular allocations, this will be 1.
+@Input          ui32NumLogicalChunks  When sparse allocations are requested,
+                                      this is the number of logical chunks
+                                      covering the sparse allocation.
+                                      For regular allocations, this will be 1.
+@Input          pui32MappingTable  When sparse allocations are requested,
                                    this is the list of the indices of
                                    each physically-backed virtual chunk
                                    For regular allocations, this will
                                    be NULL.
-@Input          uiLog2PageSize   the physical pagesize in log2(bytes).
-@Input          uiFlags          the allocation flags.
-@Input          pszAnnotation    string describing the PMR (for debug).
-                                 This should be passed into the function
-                                 PMRCreatePMR().
-@Input          uiPid            The process ID that this allocation should
-                                 be associated with.
-@Output         ppsPMROut        pointer to the PMR created for the
-                                 new allocation
-@Input          ui32PDumpFlags   the pdump flags.
+@Input          uiLog2DevPageSize  The physical dev pagesize in log2(bytes).
+@Input          uiFlags            The allocation flags.
+@Input          pszAnnotation      String describing the PMR (for debug).
+                                   This should be passed into the function
+                                   PMRCreatePMR().
+@Input          uiPid              The process ID that this allocation should
+                                   be associated with.
+@Output         ppsPMROut          Pointer to the PMR created for the
+                                   new allocation
+@Input          ui32PDumpFlags     The pdump flags.
 @Return         PVRSRV_OK on success, a failure code otherwise.
 */ /**************************************************************************/
 PVRSRV_ERROR
@@ -112,9 +127,9 @@ PhysmemNewOSRamBackedPMR(PHYS_HEAP *psPhysHeap,
                          CONNECTION_DATA *psConnection,
                          IMG_DEVMEM_SIZE_T uiSize,
                          IMG_UINT32 ui32NumPhysChunks,
-                         IMG_UINT32 ui32NumVirtChunks,
+                         IMG_UINT32 ui32NumLogicalChunks,
                          IMG_UINT32 *pui32MappingTable,
-                         IMG_UINT32 uiLog2PageSize,
+                         IMG_UINT32 uiLog2DevPageSize,
                          PVRSRV_MEMALLOCFLAGS_T uiFlags,
                          const IMG_CHAR *pszAnnotation,
                          IMG_PID uiPid,

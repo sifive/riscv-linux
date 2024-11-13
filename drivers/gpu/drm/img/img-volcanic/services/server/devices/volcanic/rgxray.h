@@ -47,7 +47,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "devicemem.h"
 #include "device.h"
 #include "rgxfwutils.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "pvr_notifier.h"
 
 #include "sync_server.h"

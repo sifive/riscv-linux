@@ -127,6 +127,16 @@ DevmemXUnmapVirtualRange(IMG_UINT32 ui32PageCount,
                         DEVMEMX_VIRTDESC *psVirtDesc,
                         IMG_UINT32 ui32VirtPgOffset);
 
+/* DevmemXMapVirtualRangeToBackingPage()
+ *
+ * Map a virtual range to kernel backing page.
+ */
+PVRSRV_ERROR
+DevmemXMapVirtualRangeToBackingPage(DEVMEMX_VIRTDESC *psVirtDesc,
+                                    PVRSRV_MEMALLOCFLAGS_T uiMemAllocFlags,
+                                    IMG_UINT32 ui32VirtPgOffset,
+                                    IMG_UINT32 ui32PageCount);
+
 /* DevmemXMapPhysicalToCPU()
  *
  * Map a full physical descriptor to CPU space.
@@ -156,18 +166,6 @@ DevmemXReacquireCpuVirtAddr(DEVMEMX_PHYSDESC *psPhysDesc,
  */
 void
 DevmemXReleaseCpuVirtAddr(DEVMEMX_PHYSDESC *psPhysDesc);
-
-/* DevmemXCreateDevmemMemDescVA()
- *
- * (Deprecated)
- *
- * Create a devmem memdesc from a virtual address.
- * Always destroy with DevmemXFreeDevmemMemDesc().
- */
-
-PVRSRV_ERROR
-DevmemXCreateDevmemMemDescVA(const IMG_DEV_VIRTADDR sVirtualAddress,
-                             DEVMEM_MEMDESC **ppsMemDesc);
 
 /* DevmemXCreateDevmemMemDesc()
  *

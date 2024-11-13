@@ -88,18 +88,18 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvr_notifier.h"
 #include "pvrsrv_error.h"
 #include "servicesext.h"
-
+#include "sync_prim_internal.h"
 
 /*!
 	The level of the MMU
 */
 typedef enum
 {
-	MMU_LEVEL_0 = 0,	/* Level 0 = Page */
+	MMU_LEVEL_0 = 0,    /* Level 0 = Page */
 
-	MMU_LEVEL_1,
-	MMU_LEVEL_2,
-	MMU_LEVEL_3,
+	MMU_LEVEL_1,        /* Level 1 = PT */
+	MMU_LEVEL_2,        /* Level 2 = PD */
+	MMU_LEVEL_3,        /* Level 3 = PC */
 	MMU_LEVEL_LAST
 } MMU_LEVEL;
 
@@ -108,30 +108,79 @@ typedef enum
 
 #define MMU_MAX_LEVEL 3
 
-typedef struct _MMU_LEVEL_DATA_
-{
-	IMG_UINT32	ui32Index;
-	IMG_UINT32	ui32NumOfEntries;
-	IMG_CHAR const	*psDebugStr;
-	IMG_UINT8	uiBytesPerEntry;
-	IMG_UINT64	ui64Address;
-} MMU_LEVEL_DATA;
 
-typedef enum _MMU_FAULT_TYPE_
-{
-	MMU_FAULT_TYPE_UNKNOWN = 0, /* If fault is not analysed by Host */
-	MMU_FAULT_TYPE_PM,
-	MMU_FAULT_TYPE_NON_PM,
-} MMU_FAULT_TYPE;
+typedef struct _MMU_CONTEXT_ MMU_CONTEXT;
 
-typedef struct _MMU_FAULT_DATA_
-{
-	MMU_LEVEL	eTopLevel;
-	MMU_FAULT_TYPE	eType;
-	MMU_LEVEL_DATA	sLevelData[MMU_LEVEL_LAST];
-} MMU_FAULT_DATA;
 
-struct _MMU_DEVVADDR_CONFIG_;
+/*
+	P(C/D/T) Entry Config:
+
+	MSB-----------------------------------------------LSB
+	| PT Addr:   | variable PT ctrl | protection flags: |
+	| bits c+v   | b bits           | a bits            |
+	-----------------------------------------------------
+	where v is the variable page table modifier and is optional
+*/
+/*!
+	Generic MMU entry description. This is used to describe PC, PD and PT entries.
+*/
+typedef struct _MMU_PxE_CONFIG_
+{
+	MMU_LEVEL		ePxLevel;        /*! MMU Level this config describes */
+	const IMG_CHAR	*pszPxLevelStr;  /*! Px string for this level */
+	IMG_UINT8		uiBytesPerEntry; /*! Size of an entry in bytes */
+
+	IMG_UINT64	uiAddrMask;      /*! Physical address mask */
+	IMG_UINT8	uiAddrShift;     /*! Physical address shift */
+	IMG_UINT8	uiAddrLog2Align; /*! Physical address Log 2 alignment */
+
+	IMG_UINT64	uiVarCtrlMask;   /*! Variable control mask */
+	IMG_UINT8	uiVarCtrlShift;  /*! Variable control shift */
+
+	IMG_UINT64	uiProtMask;      /*! Protection flags mask */
+	IMG_UINT8	uiProtShift;     /*! Protection flags shift */
+	IMG_UINT64	uiPendingEnMask; /*! Entry pending bit mask */
+	IMG_UINT64	uiValidEnMask;   /*! Entry valid bit mask */
+	IMG_UINT8	uiValidEnShift;  /*! Entry valid bit shift */
+	IMG_UINT64	uiParityBitMask;   /*! Entry parity bit mask */
+	IMG_UINT8	uiParityBitShift;  /*! Entry parity bit shift */
+} MMU_PxE_CONFIG;
+
+/*!
+	MMU virtual address split
+*/
+typedef struct _MMU_DEVVADDR_CONFIG_
+{
+	/*! Page catalogue index mask */
+	IMG_UINT64	uiPCIndexMask;
+	/*! Page catalogue index shift */
+	IMG_UINT8	uiPCIndexShift;
+	/*! Total number of PC entries */
+	IMG_UINT32	uiNumEntriesPC;
+
+	/*! Page directory mask */
+	IMG_UINT64	uiPDIndexMask;
+	/*! Page directory shift */
+	IMG_UINT8	uiPDIndexShift;
+	/*! Total number of PD entries */
+	IMG_UINT32	uiNumEntriesPD;
+
+	/*! Page table mask */
+	IMG_UINT64	uiPTIndexMask;
+	/*! Page index shift */
+	IMG_UINT8	uiPTIndexShift;
+	/*! Total number of PT entries */
+	IMG_UINT32	uiNumEntriesPT;
+
+	/*! Page offset mask */
+	IMG_UINT64	uiPageOffsetMask;
+	/*! Page offset shift */
+	IMG_UINT8	uiPageOffsetShift;
+
+	/*! First virtual address mappable for this config */
+	IMG_UINT64	uiOffsetInBytes;
+
+} MMU_DEVVADDR_CONFIG;
 
 /*!
 	MMU device attributes. This structure is the interface between the generic
@@ -139,21 +188,27 @@ struct _MMU_DEVVADDR_CONFIG_;
 */
 typedef struct _MMU_DEVICEATTRIBS_
 {
+	/*! Page and address type */
 	PDUMP_MMU_TYPE eMMUType;
 
+	/*! Name string of the PDUMP memory space to use */
 	IMG_CHAR *pszMMUPxPDumpMemSpaceName;
 
-	/*! The type of the top level object */
-	MMU_LEVEL eTopLevel;
-
-	/*! Alignment requirement of the base object */
+	/*! Alignment requirement of the top/base object */
 	IMG_UINT32 ui32BaseAlign;
 
-	/*! HW config of the base object */
+	/*! HW config of the top/base object */
 	struct _MMU_PxE_CONFIG_ *psBaseConfig;
 
 	/*! Address split for the base object */
 	const struct _MMU_DEVVADDR_CONFIG_ *psTopLevelDevVAddrConfig;
+
+	/*! Supported page sizes validation mask */
+	IMG_UINT32 ui32ValidPageSizeMask;
+
+#if defined(PVRSRV_MMU_PARITY_ON_PTALLOC_AND_PTEUNMAP)
+	IMG_UINT64* pui64PrecomputedAllocParity[2];
+#endif
 
 	/*! Callback for creating protection bits for the page catalogue entry with 8 byte entry */
 	IMG_UINT64 (*pfnDerivePCEProt8)(IMG_UINT32 uiProtFlags, IMG_UINT32 uiLog2DataPageSize);
@@ -188,70 +243,8 @@ typedef struct _MMU_DEVICEATTRIBS_
 	IMG_HANDLE hGetPageSizeFnPriv;
 } MMU_DEVICEATTRIBS;
 
-/*!
-	MMU virtual address split
-*/
-typedef struct _MMU_DEVVADDR_CONFIG_
-{
-	/*! Page catalogue index mask */
-	IMG_UINT64	uiPCIndexMask;
-	/*! Page catalogue index shift */
-	IMG_UINT8	uiPCIndexShift;
-	/*! Total number of PC entries */
-	IMG_UINT32	uiNumEntriesPC;
-	/*! Page directory mask */
-	IMG_UINT64	uiPDIndexMask;
-	/*! Page directory shift */
-	IMG_UINT8	uiPDIndexShift;
-	/*! Total number of PD entries */
-	IMG_UINT32	uiNumEntriesPD;
-	/*! Page table mask */
-	IMG_UINT64	uiPTIndexMask;
-	/*! Page index shift */
-	IMG_UINT8	uiPTIndexShift;
-	/*! Total number of PT entries */
-	IMG_UINT32	uiNumEntriesPT;
-	/*! Page offset mask */
-	IMG_UINT64	uiPageOffsetMask;
-	/*! Page offset shift */
-	IMG_UINT8	uiPageOffsetShift;
-	/*! First virtual address mappable for this config */
-	IMG_UINT64	uiOffsetInBytes;
-
-} MMU_DEVVADDR_CONFIG;
-
-/*
-	P(C/D/T) Entry Config:
-
-	MSB-----------------------------------------------LSB
-	| PT Addr:   | variable PT ctrl | protection flags: |
-	| bits c+v   | b bits           | a bits            |
-	-----------------------------------------------------
-	where v is the variable page table modifier and is optional
-*/
-/*!
-	Generic MMU entry description. This is used to describe PC, PD and PT entries.
-*/
-typedef struct _MMU_PxE_CONFIG_
-{
-	IMG_UINT8	uiBytesPerEntry; /*! Size of an entry in bytes */
-
-	IMG_UINT64	uiAddrMask;      /*! Physical address mask */
-	IMG_UINT8	uiAddrShift;     /*! Physical address shift */
-	IMG_UINT8	uiAddrLog2Align; /*! Physical address Log 2 alignment */
-
-	IMG_UINT64	uiVarCtrlMask;   /*! Variable control mask */
-	IMG_UINT8	uiVarCtrlShift;  /*! Variable control shift */
-
-	IMG_UINT64	uiProtMask;      /*! Protection flags mask */
-	IMG_UINT8	uiProtShift;     /*! Protection flags shift */
-
-	IMG_UINT64	uiValidEnMask;   /*! Entry valid bit mask */
-	IMG_UINT8	uiValidEnShift;  /*! Entry valid bit shift */
-} MMU_PxE_CONFIG;
 
 /* MMU Protection flags */
-
 
 /* These are specified generically and in a h/w independent way, and
    are interpreted at each level (PC/PD/PT) separately. */
@@ -276,8 +269,6 @@ typedef IMG_UINT32 MMU_PROTFLAGS_T;
 			MMU_PROTFLAGS_DEVICE_MASK)
 
 
-typedef struct _MMU_CONTEXT_ MMU_CONTEXT;
-
 struct _PVRSRV_DEVICE_NODE_;
 
 struct _CONNECTION_DATA_;
@@ -290,6 +281,31 @@ typedef struct _MMU_PAGESIZECONFIG_
 	IMG_UINT32 uiRefCount;
 	IMG_UINT32 uiMaxRefCount;
 } MMU_PAGESIZECONFIG;
+
+/*************************************************************************/ /*!
+@Function       MMU_InitDevice
+
+@Description    Creates MMU device specific resources.
+
+@Input          psDevNode               Device node of the device to create the
+                                        MMU context for
+
+@Return         PVRSRV_OK if the initialisation process was successful
+*/
+/*****************************************************************************/
+PVRSRV_ERROR MMU_InitDevice(struct _PVRSRV_DEVICE_NODE_ *psDevNode);
+
+/*************************************************************************/ /*!
+@Function       MMU_DeInitDevice
+
+@Description    Clean-up MMU device specific resources.
+
+@Input          psDevNode               Device node of the device
+
+@Return         None
+*/
+/*****************************************************************************/
+void MMU_DeInitDevice(struct _PVRSRV_DEVICE_NODE_ *psDevNode);
 
 /*************************************************************************/ /*!
 @Function       MMU_ContextCreate
@@ -335,8 +351,6 @@ MMU_ContextDestroy(MMU_CONTEXT *psMMUContext);
 
 @Input          uSize                   The size of the allocation
 
-@Output         puActualSize            Actual size of allocation
-
 @Input          uiProtFlags             Generic MMU protection flags
 
 @Input          uDevVAddrAlignment      Alignment requirement of the virtual
@@ -351,7 +365,6 @@ MMU_ContextDestroy(MMU_CONTEXT *psMMUContext);
 PVRSRV_ERROR
 MMU_Alloc(MMU_CONTEXT *psMMUContext,
           IMG_DEVMEM_SIZE_T uSize,
-          IMG_DEVMEM_SIZE_T *puActualSize,
           IMG_UINT32 uiProtFlags,
           IMG_DEVMEM_SIZE_T uDevVAddrAlignment,
           IMG_DEV_VIRTADDR *psDevVAddr,
@@ -406,6 +419,13 @@ MMU_Free(MMU_CONTEXT *psMMUContext,
 @Input          uiLog2PageSize          Log2 page size of the pages to map
 
 @Return         PVRSRV_OK if the mapping was successful
+                PVRSRV_ERROR_RETRY if SUPPORT_LINUX_OSPAGE_MIGRATION is
+                enabled and migrate is in progress. Requests to MMU_MapPages
+                may return retry if the target PMR to map is
+                in migrate state. This is because in order for migrate
+                to complete higher locking primitives are required to give
+                way to the migrate path. Expect PVRSRV_ERROR_RETRY return
+                from this function if this give way is required.
 */
 /*****************************************************************************/
 PVRSRV_ERROR
@@ -439,10 +459,10 @@ MMU_MapPages(MMU_CONTEXT *psMMUContext,
 @Input          uiMemAllocFlags         Indicates if the unmapped regions need
                                         to be backed by dummy or zero page
 
-@Return         None
+@Return         PVRSRV_OK if the unmap operation was successful
 */
 /*****************************************************************************/
-void
+PVRSRV_ERROR
 MMU_UnmapPages(MMU_CONTEXT *psMMUContext,
                PVRSRV_MEMALLOCFLAGS_T uiMappingFlags,
                IMG_DEV_VIRTADDR sDevVAddr,
@@ -450,6 +470,29 @@ MMU_UnmapPages(MMU_CONTEXT *psMMUContext,
                IMG_UINT32 *pai32UnmapIndicies,
                IMG_UINT32 uiLog2PageSize,
                PVRSRV_MEMALLOCFLAGS_T uiMemAllocFlags);
+
+/*************************************************************************/ /*!
+@Function       MMUX_MapVRangeToBackingPage
+
+@Description    Map virtual range to a backing page in the MMU.
+                Used in DevmemX calls which don't tie a PMR to a virtual
+                range implicitly.
+
+@Input          psMMUContext            MMU context to operate on
+@Input          uiMappingFlags          Memalloc flags for the mapping
+@Input          sDevVAddrBase           Device virtual address of the 1st page
+@Input          ui32MapPageCount        Number of pages to map
+@Input          uiLog2PageSize          Log2 page size of the pages to map
+
+@Return         PVRSRV_OK if the mapping was successful
+*/
+/*****************************************************************************/
+PVRSRV_ERROR
+MMUX_MapVRangeToBackingPage(MMU_CONTEXT *psMMUContext,
+                            PVRSRV_MEMALLOCFLAGS_T uiMappingFlags,
+                            IMG_DEV_VIRTADDR sDevVAddrBase,
+                            IMG_UINT32 ui32MapPageCount,
+                            IMG_UINT32 uiLog2HeapPageSize);
 
 /*************************************************************************/ /*!
 @Function       MMU_MapPMRFast
@@ -469,13 +512,20 @@ MMU_UnmapPages(MMU_CONTEXT *psMMUContext,
 
 @Input          uiMappingFlags          Memalloc flags for the mapping
 
-@Return         PVRSRV_OK if the PMR was successfully mapped
+@Return         PVRSRV_OK if the PMR was successfully mapped.
+                PVRSRV_ERROR_RETRY if SUPPORT_LINUX_OSPAGE_MIGRATION is
+                enabled and migrate is in progress. Requests to MMU_MapPages
+                may return retry if the target PMR to map is
+                in migrate state. This is because in order for migrate
+                to complete higher locking primitives are required to give
+                way to the migrate path. Expect PVRSRV_ERROR_RETRY return
+                from this function if this give way is required.
 */
 /*****************************************************************************/
 PVRSRV_ERROR
 MMU_MapPMRFast(MMU_CONTEXT *psMMUContext,
                IMG_DEV_VIRTADDR sDevVAddr,
-               const PMR *psPMR,
+               PMR *psPMR,
                IMG_DEVMEM_SIZE_T uiSizeBytes,
                PVRSRV_MEMALLOCFLAGS_T uiMappingFlags,
                IMG_UINT32 uiLog2PageSize);
@@ -494,14 +544,45 @@ MMU_MapPMRFast(MMU_CONTEXT *psMMUContext,
 
 @Input          uiLog2PageSize          log2 size of the page
 
-@Return         None
+@Return         PVRSRV_OK if the PMR was successfully unmapped
 */
 /*****************************************************************************/
-void
+PVRSRV_ERROR
 MMU_UnmapPMRFast(MMU_CONTEXT *psMMUContext,
                  IMG_DEV_VIRTADDR sDevVAddrBase,
                  IMG_UINT32 ui32PageCount,
                  IMG_UINT32 uiLog2PageSize);
+
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+/*************************************************************************/ /*!
+@Function       MMU_RemapPage
+
+@Description    Remap a single page from a PMR in place.
+
+@Input          psMMUContext            MMU context to operate on
+
+@Input          uiMappingFlags          Memalloc flags for the mapping
+
+@Input          sDevVAddr               Device virtual address of the page
+
+@Input          uiLog2HeapPageSize      log2 size of the page
+
+@Input          psOriginPMR             PMR to remap
+
+@Input          ui32LogicalPgOffset     Page offset into the PMR of the page
+                                        to remap.
+
+@Return         PVRSRV_OK if the PMR was successfully re-mapped
+*/
+/*****************************************************************************/
+PVRSRV_ERROR
+MMU_RemapPage(MMU_CONTEXT *psMMUContext,
+              PVRSRV_MEMALLOCFLAGS_T uiMappingFlags,
+              IMG_DEV_VIRTADDR sDevVAddr,
+              IMG_UINT32 uiLog2HeapPageSize,
+              PMR *psOriginPMR,
+              IMG_UINT32 ui32LogicalPgOffset);
+#endif
 
 /*************************************************************************/ /*!
 @Function       MMU_AcquireBaseAddr
@@ -548,7 +629,7 @@ MMU_AcquireCPUBaseAddr(MMU_CONTEXT *psMMUContext, void **ppvCPUVAddr);
 void
 MMU_ReleaseBaseAddr(MMU_CONTEXT *psMMUContext);
 
-#if defined(SUPPORT_GPUVIRT_VALIDATION)
+#if defined(SUPPORT_CUSTOM_OSID_EMISSION)
 /***********************************************************************************/ /*!
 @Function       MMU_SetOSid
 
@@ -609,18 +690,39 @@ void MMU_GetOSids(MMU_CONTEXT *psMMUContext, IMG_UINT32 * pui32OSid,
 void MMU_AppendCacheFlags(MMU_CONTEXT *psMMUContext, IMG_UINT32 ui32NewCacheFlags);
 
 /*************************************************************************/ /*!
-@Function       MMU_ExchangeCacheFlags
+@Function       MMU_GetAndResetCacheFlags
 
-@Description    Exchange MMU context flags with specified value, atomically.
+@Description    Clears MMU context flags, atomically.
 
 @Input          psMMUContext            MMU context
-
-@Input          ui32CacheFlags          Cache flags to set.
 
 @Return         Previous MMU context cache flags.
 */
 /*****************************************************************************/
-IMG_UINT32 MMU_ExchangeCacheFlags(MMU_CONTEXT *psMMUContext, IMG_UINT32 ui32NewCacheFlags);
+IMG_UINT32 MMU_GetAndResetCacheFlags(MMU_CONTEXT *psMMUContext);
+
+typedef struct _MMU_LEVEL_DATA_
+{
+	IMG_UINT32	ui32Index;
+	IMG_UINT32	ui32NumOfEntries;
+	const IMG_CHAR *psDebugStr;
+	IMG_UINT8	uiBytesPerEntry;
+	IMG_UINT64	ui64Address;
+} MMU_LEVEL_DATA;
+
+typedef enum _MMU_FAULT_TYPE_
+{
+	MMU_FAULT_TYPE_UNKNOWN = 0, /* If fault is not analysed by Host */
+	MMU_FAULT_TYPE_PM,
+	MMU_FAULT_TYPE_NON_PM,
+} MMU_FAULT_TYPE;
+
+typedef struct _MMU_FAULT_DATA_
+{
+	MMU_LEVEL	eTopLevel;
+	MMU_FAULT_TYPE	eType;
+	MMU_LEVEL_DATA	sLevelData[MMU_LEVEL_LAST];
+} MMU_FAULT_DATA;
 
 /*************************************************************************/ /*!
 @Function       MMU_CheckFaultAddress
@@ -752,6 +854,22 @@ MMU_PDumpWritePageCatBase(MMU_CONTEXT *psMMUContext,
 }
 #endif /* PDUMP */
 
-void RGXMapBRN71422TargetPhysicalAddress(MMU_CONTEXT *psMMUContext);
+#if defined(SUPPORT_PMR_DEFERRED_FREE)
+/*************************************************************************/ /*!
+@Function       MMU_CacheInvalidateKick
+
+@Description    Kicks the Firmware to invalidate caches
+
+@Input          psDeviceNode            Pointer to the device node
+@Output         puiRequiredSyncValue    Value the associated sync prim will be
+                                        updated to after the kick is finished
+                                        (parameter ignored if NULL)
+
+@Return         PVRSRV_OK if successful
+*/
+/*****************************************************************************/
+PVRSRV_ERROR MMU_CacheInvalidateKick(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                     IMG_UINT32 *puiRequiredSyncValue);
+#endif /* defined(SUPPORT_PMR_DEFERRED_FREE) */
 
 #endif /* #ifdef MMU_COMMON_H */

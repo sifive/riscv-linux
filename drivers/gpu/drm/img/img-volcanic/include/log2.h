@@ -270,7 +270,7 @@ static INLINE uint32_t __const_function FloorLog2(uint32_t n)
 {
 	uint32_t ui32log2 = 0;
 
-	while ((n >>= 1) != 0U)
+	for (n >>= 1; n != 0U; n >>= 1)
 	{
 		ui32log2++;
 	}
@@ -287,7 +287,7 @@ static INLINE uint32_t __const_function FloorLog2_64(uint64_t n)
 {
 	uint32_t ui32log2 = 0;
 
-	while ((n >>= 1) != 0U)
+	for (n >>= 1; n != 0U; n >>= 1)
 	{
 		ui32log2++;
 	}

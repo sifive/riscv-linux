@@ -56,7 +56,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 static INLINE void _CheckBlueprintHeapAlignment(DEVMEM_HEAP_BLUEPRINT *psHeapBlueprint)
 {
-	IMG_UINT32 ui32OSPageSize = OSGetPageShift();
+	IMG_UINT32 ui32OSPageSize = OSGetPageSize();
 
 	/* Any heap length should at least match OS page size at the minimum or
 	 * a multiple of OS page size */
@@ -72,7 +72,7 @@ static INLINE void _CheckBlueprintHeapAlignment(DEVMEM_HEAP_BLUEPRINT *psHeapBlu
 		         psHeapBlueprint->uiHeapLength,
 		         psHeapBlueprint->uiHeapLength));
 		PVR_DPF((PVR_DBG_ERROR,
-		         "Heap Size should always be a non-zero value and a "
+		         "Heap Size should always be at least the DevMem minimum size and a "
 		         "multiple of OS Page Size:%u(0x%x)",
 		         ui32OSPageSize, ui32OSPageSize));
 		PVR_ASSERT(psHeapBlueprint->uiHeapLength >= ui32OSPageSize);
@@ -123,6 +123,8 @@ HeapCfgHeapCount(CONNECTION_DATA * psConnection,
 				 IMG_UINT32 uiHeapConfigIndex,
 				 IMG_UINT32 *puiNumHeapsOut)
 {
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
 	if (uiHeapConfigIndex >= psDeviceNode->sDevMemoryInfo.uiNumHeapConfigs)
 	{
 		return PVRSRV_ERROR_DEVICEMEM_INVALID_HEAP_CONFIG_INDEX;
@@ -140,6 +142,8 @@ HeapCfgHeapConfigName(CONNECTION_DATA * psConnection,
 					  IMG_UINT32 uiHeapConfigNameBufSz,
 					  IMG_CHAR *pszHeapConfigNameOut)
 {
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
 	if (uiHeapConfigIndex >= psDeviceNode->sDevMemoryInfo.uiNumHeapConfigs)
 	{
 		return PVRSRV_ERROR_DEVICEMEM_INVALID_HEAP_CONFIG_INDEX;
@@ -195,6 +199,8 @@ HeapCfgHeapDetails(CONNECTION_DATA * psConnection,
 				   IMG_UINT32 *puiLog2ImportAlignmentOut)
 {
 	DEVMEM_HEAP_BLUEPRINT *psHeapBlueprint;
+
+	PVR_UNREFERENCED_PARAMETER(psConnection);
 
 	if (uiHeapConfigIndex >= psDeviceNode->sDevMemoryInfo.uiNumHeapConfigs)
 	{

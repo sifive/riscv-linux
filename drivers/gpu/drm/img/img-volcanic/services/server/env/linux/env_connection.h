@@ -58,9 +58,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "allocmem.h"
 #endif
 
+struct drm_file;
+
 typedef struct _ENV_CONNECTION_PRIVATE_DATA_
 {
 	PVRSRV_DEVICE_NODE *psDevNode;
+	struct drm_file *psDRMFile;
 } ENV_CONNECTION_PRIVATE_DATA;
 
 #if defined(SUPPORT_ION) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
@@ -79,6 +82,7 @@ typedef struct _ENV_CONNECTION_DATA_
 	pid_t owner;
 
 	PVRSRV_DEVICE_NODE *psDevNode;
+	struct drm_file *psDRMFile;
 
 #if defined(SUPPORT_NATIVE_FENCE_SYNC)
 	void *pvPvrSyncPrivateData;

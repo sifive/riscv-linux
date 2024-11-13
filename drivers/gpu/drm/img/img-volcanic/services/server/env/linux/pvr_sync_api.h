@@ -44,7 +44,7 @@
 #ifndef _PVR_SYNC_API_H
 #define _PVR_SYNC_API_H
 
-//#include <stdbool.h>
+#include "img_types.h"
 
 int pvr_sync_api_init(void *file_handle, void **api_priv);
 int pvr_sync_api_deinit(void *api_priv, bool is_sw);
@@ -52,6 +52,8 @@ int pvr_sync_api_rename(void *api_priv, void *user_data);
 int pvr_sync_api_force_sw_only(void *api_priv, void **api_priv_new);
 int pvr_sync_api_sw_create_fence(void *api_priv, void *user_data);
 int pvr_sync_api_sw_inc(void *api_priv, void *user_data);
+int pvr_sync_api_force_exp_only(void *api_priv, void *api_data);
+int pvr_sync_api_create_export_fence(void *api_priv, void *user_data);
 
 struct file;
 

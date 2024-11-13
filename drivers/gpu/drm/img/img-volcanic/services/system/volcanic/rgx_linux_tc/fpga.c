@@ -47,7 +47,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "img_types.h"
 #include "img_defs.h"
 #include "pci_support.h"
-#include "oskm_apphint.h"
+#include "os_apphint.h"
 #include "pdump_km.h"
 #include "rgxtbdefs_km.h"
 

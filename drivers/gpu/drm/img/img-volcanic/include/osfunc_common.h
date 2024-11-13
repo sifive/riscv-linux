@@ -110,19 +110,28 @@ void DeviceMemSetBytes(void *pvDest, IMG_UINT8 ui8Value, size_t ui32Size);
 void DeviceMemCopyBytes(void *pvDst, const void *pvSrc, size_t ui32Size);
 
 /**************************************************************************/ /*!
-@Function       StringLCopy
-@Description    Copy at most uDataSize-1 bytes from pszSrc to pszDest.
-                If no null byte ('\0') is contained within the first uDataSize-1
-                characters of the source string, the destination string will be
-                truncated. If the length of the source string is less than uDataSize
-                an additional NUL byte will be copied to the destination string
-                to ensure that the string is NUL-terminated.
-@Input          pszDest       char pointer to the destination string
-@Input          pszSrc        const char pointer to the source string
-@Input          uDataSize     the maximum number of bytes to be copied
-@Return         Size of the source string
+@Function       OSStringSafeCopy
+@Description    Copy at most uDataSize-1 bytes from pszSrc to pszDest. pszDest
+                is always null-terminated. If no null byte ('\0') is contained
+                within the first uDataSize-1 characters of the source string,
+                the destination will contain the truncated source string,
+                otherwise pszDest will contain the entire source string.
+@Input          pszDest    char pointer to the destination string
+@Input          pszSrc     const char pointer to the source string
+@Input          uDataSize  the maximum number of bytes to be copied; this
+                           should normally be the size of the destination
+                           buffer
+@Return         Number of bytes copied if uDataSize > strlen(pszSrc), negative
+                value otherwise
  */ /**************************************************************************/
-size_t StringLCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize);
+#if defined(__linux__) && defined(__KERNEL__) && !defined(DEBUG)
+static inline ssize_t OSStringSafeCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize)
+{
+	return strscpy(pszDest, pszSrc, uDataSize);
+}
+#else
+ssize_t OSStringSafeCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize);
+#endif
 
 #if defined(__arm64__) || defined(__aarch64__) || defined(PVRSRV_DEVMEM_TEST_SAFE_MEMSETCPY)
 #if defined(__GNUC__)
@@ -156,7 +165,7 @@ size_t StringLCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize);
  */ /**************************************************************************/
 #define OSDeviceMemSet(a,b,c) \
 	do { \
-		if ((c) != 0) \
+		if ((c) != 0U) \
 		{ \
 			(void) memset((a), (b), (c)); \
 			(void) *(volatile IMG_UINT32*)((void*)(a)); \
@@ -176,7 +185,7 @@ size_t StringLCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize);
  */ /**************************************************************************/
 #define OSDeviceMemCopy(a,b,c) \
 	do { \
-		if ((c) != 0) \
+		if ((c) != 0U) \
 		{ \
 			memcpy((a), (b), (c)); \
 			(void) *(volatile IMG_UINT32*)((void*)(a)); \
@@ -226,7 +235,7 @@ size_t StringLCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize);
  */ /**************************************************************************/
 #define OSCachedMemSetWMB(a,b,c) \
 	do { \
-		if ((c) != 0) \
+		if ((c) != 0U) \
 		{ \
 			(void) memset((a), (b), (c)); \
 			OSWriteMemoryBarrier(a); \
@@ -246,32 +255,13 @@ size_t StringLCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize);
  */ /**************************************************************************/
 #define OSCachedMemCopyWMB(a,b,c) \
 	do { \
-		if ((c) != 0) \
+		if ((c) != 0U) \
 		{ \
 			(void) memcpy((a), (b), (c)); \
 			OSWriteMemoryBarrier(a); \
 		} \
 	} while (false)
 #endif /* defined(__KERNEL__) */
-
-/**************************************************************************/ /*!
-@Function       OSStringLCopy
-@Description    Copy at most uDataSize-1 bytes from pszSrc to pszDest.
-                If no null byte ('\0') is contained within the first uDataSize-1
-                characters of the source string, the destination string will be
-                truncated. If the length of the source string is less than uDataSize
-                an additional NUL byte will be copied to the destination string
-                to ensure that the string is NUL-terminated.
-@Input          a     char pointer to the destination string
-@Input          b     const char pointer to the source string
-@Input          c     the maximum number of bytes to be copied
-@Return         Size of the source string
- */ /**************************************************************************/
-#if defined(__QNXNTO__) || (defined(__linux__) && defined(__KERNEL__) && !defined(DEBUG))
-#define OSStringLCopy(a,b,c) strlcpy((a), (b), (c))
-#else /* defined(__QNXNTO__) ... */
-#define OSStringLCopy(a,b,c) StringLCopy((a), (b), (c))
-#endif /* defined(__QNXNTO__) ... */
 
 #ifdef __cplusplus
 }

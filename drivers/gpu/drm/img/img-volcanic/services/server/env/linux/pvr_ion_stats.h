@@ -56,6 +56,11 @@ void PVRSRVIonStatsDestroy(void);
 void PVRSRVIonAddMemAllocRecord(struct dma_buf *psDmaBuf);
 
 void PVRSRVIonRemoveMemAllocRecord(struct dma_buf *psDmaBuf);
+
+#if defined(SUPPORT_PMR_DEFERRED_FREE)
+void PVRSRVIonZombifyMemAllocRecord(const struct dma_buf *psDmaBuf);
+void PVRSRVIonReviveMemAllocRecord(const struct dma_buf *psDmaBuf);
+#endif
 #else
 static INLINE PVRSRV_ERROR PVRSRVIonStatsInitialise(void)
 {
@@ -75,6 +80,17 @@ static INLINE void PVRSRVIonRemoveMemAllocRecord(struct dma_buf *psDmaBuf)
 {
 	PVR_UNREFERENCED_PARAMETER(psDmaBuf);
 }
+
+#if defined(SUPPORT_PMR_DEFERRED_FREE)
+static INLINE void PVRSRVIonZombifyMemAllocRecord(const struct dma_buf *psDmaBuf)
+{
+	PVR_UNREFERENCED_PARAMETER(psDmaBuf);
+}
+static INLINE void PVRSRVIonReviveMemAllocRecord(const struct dma_buf *psDmaBuf)
+{
+	PVR_UNREFERENCED_PARAMETER(psDmaBuf);
+}
+#endif
 #endif /* defined(PVRSRV_ENABLE_PVR_ION_STATS) */
 
 #endif /* PVR_ION_STATS_H */

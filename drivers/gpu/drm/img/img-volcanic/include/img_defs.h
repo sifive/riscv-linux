@@ -51,7 +51,14 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <stddef.h>
 #endif
 #if !(defined(__linux__) && defined(__KERNEL__))
+#if defined(__riscv)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wundef"
+#endif
 #include <assert.h>
+#if defined(__riscv)
+#pragma GCC diagnostic pop
+#endif
 #endif
 
 #include "img_types.h"
@@ -86,6 +93,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 	(__GNUC__ == (major) && __GNUC_MINOR__ >= (minor)))
 #else
 #define GCC_VERSION_AT_LEAST(major, minor) 0
+#endif
+
+#if defined(__clang__)
+#define CLANG_VERSION_AT_LEAST(major) \
+	(__clang_major__ >= (major))
+#else
+#define CLANG_VERSION_AT_LEAST(major) 0
 #endif
 
 /* Use Clang's __has_extension and __has_builtin macros if available. */
@@ -196,11 +210,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /*! Macro to calculate the n-byte aligned value from that supplied rounding up.
  * n must be a power of two.
- *
- * Both arguments should be of a type with the same size otherwise the macro may
- * cut off digits, e.g. imagine a 64 bit address in _x and a 32 bit value in _n.
  */
-#define PVR_ALIGN(_x, _n)	(((_x)+((_n)-1U)) & ~((_n)-1U))
+#define PVR_ALIGN(_x, _n)	((((_x)+((_n)-1U))|((_n)-1U))^((_n)-1U))
 
 #if defined(_WIN32)
 
@@ -268,7 +279,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 		#define IMG_INTERNAL
 		#define IMG_EXPORT
 		#define IMG_CALLCONV
-	#elif defined(__linux__) || defined(__METAG) || defined(__mips) || defined(__QNXNTO__) || defined(__riscv)
+	#elif defined(__linux__) || defined(__METAG) || defined(__mips) || defined(__QNXNTO__) || defined(__riscv) || defined(__APPLE__) || defined(TEE_DDK)
 		#define IMG_CALLCONV
 		#define C_CALLCONV
 
@@ -320,7 +331,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 	#include <linux/compiler.h>
 
 	#if !defined(__fallthrough)
-		#if GCC_VERSION_AT_LEAST(7, 0)
+		#if (GCC_VERSION_AT_LEAST(7, 0) || CLANG_VERSION_AT_LEAST(10)) && !defined(__CHECKER__)
 			#define __fallthrough __attribute__((__fallthrough__))
 		#else
 			#define __fallthrough
@@ -346,14 +357,18 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 	/* That one compiler that supports attributes but doesn't support
 	 * the printf attribute... */
 	#if defined(__GNUC__)
-		#define __printf(fmt, va)  __attribute__((format(printf, (fmt), (va))))
+		#if defined(__MINGW32__)
+		    #define __printf(fmt, va)  __attribute__((format(gnu_printf, (fmt), (va))))
+		#else
+			#define __printf(fmt, va)  __attribute__((format(printf, (fmt), (va))))
+		#endif
 	#else
 		#define __printf(fmt, va)
 	#endif /* defined(__GNUC__) */
 
 	#if defined(__cplusplus) && (__cplusplus >= 201703L)
 		#define __fallthrough [[fallthrough]]
-	#elif GCC_VERSION_AT_LEAST(7, 0)
+	#elif GCC_VERSION_AT_LEAST(7, 0) || CLANG_VERSION_AT_LEAST(10)
 		#define __fallthrough __attribute__((__fallthrough__))
 	#else
 		#define __fallthrough
@@ -422,6 +437,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 	#define unlikely(x) (x)
 #endif
 
+#if !defined(BITS_PER_BYTE)
+#define BITS_PER_BYTE (8)
+#endif /* BITS_PER_BYTE */
+
 /* These two macros are also provided by the kernel */
 #ifndef BIT
 #define BIT(b) (1UL << (b))
@@ -455,7 +474,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #endif
 
 #define SWAP(X, Y) (X) ^= (Y); (Y) ^= (X); (X) ^= (Y);
-
 
 #if defined(__linux__) && defined(__KERNEL__)
 	#include <linux/kernel.h>
@@ -529,6 +547,32 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define IMG_STRINGIFY_IMPL(x) # x
 #define IMG_STRINGIFY(x) IMG_STRINGIFY_IMPL(x)
 
+#define IMG_CONCATENATE_IMPL(x,y) x ## y
+#define IMG_CONCATENATE(x,y) IMG_CONCATENATE_IMPL(x,y)
+
+#if defined(DEBUG) && !defined(INTEGRITY_OS)
+#define IMG_PAGESLOG2BYTES(_tcast, _npages, _log2) \
+	({ \
+		PVR_ASSERT( ((IMG_UINT64)(1ULL) << (sizeof(_tcast)*8UL)) >= ((IMG_UINT64)(_npages) << (_log2)) ); \
+		(_tcast)(_npages) << (_log2); \
+	})
+#else
+#define IMG_PAGESLOG2BYTES(_tcast, _npages, _log2) ((_npages) << (_log2))
+#endif
+
+#define IMG_PAGE2BYTES32(logsize) IMG_PAGESLOG2BYTES(IMG_UINT32,IMG_UINT32_C(1),logsize)
+#define IMG_PAGE2BYTES64(logsize) ((IMG_UINT64)IMG_UINT64_C(1) << (logsize))
+
+#define IMG_PAGES2BYTES32(pages,logsize) IMG_PAGESLOG2BYTES(IMG_UINT32,pages,logsize)
+#define IMG_PAGES2BYTES64(pages,logsize) ((IMG_UINT64)(pages) << (logsize))
+
+#define IMG_PAGE_SHIFT_4KB   12U
+#define IMG_PAGE_SHIFT_16KB  14U
+#define IMG_PAGE_SHIFT_64KB  16U
+#define IMG_PAGE_SHIFT_256KB 18U
+#define IMG_PAGE_SHIFT_1MB   20U
+#define IMG_PAGE_SHIFT_2MB   21U
+
 #if defined(INTEGRITY_OS)
 	/* Definitions not present in INTEGRITY. */
 	#define PATH_MAX	200
@@ -565,6 +609,18 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #else
 #define NOLDSTOPT
 #define NOLDSTOPT_VOID
+#endif
+
+#define PVR_PRE_DPF (void) printf
+
+/* C STD >= C99 */
+#if !defined(INTEGRITY_OS) && !defined(__CHECKER__) && defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
+#define IMG_FLEX_ARRAY_MEMBER
+#define IMG_FLEX_ARRAY_SIZE(size, count) ((size) * (count))
+#else
+/* In C STD prior to C99 flexible array members are an extension feature and syntax requires alternative approach */
+#define IMG_FLEX_ARRAY_MEMBER (1)
+#define IMG_FLEX_ARRAY_SIZE(size, count) ((size) * ((count) - 1))
 #endif
 
 #endif /* IMG_DEFS_H */

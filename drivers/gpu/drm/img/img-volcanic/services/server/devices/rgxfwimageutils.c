@@ -48,8 +48,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * Any new code should be built on top of the existing abstraction layer,
  * which should be extended when necessary. */
 #include "rgxfwimageutils.h"
-#include "pvrsrv.h"
+#include "pvrversion.h"
 
+#if defined(CONFIG_ARM64) && defined(__linux__) && defined(SUPPORT_CPUCACHED_FWMEMCTX)
+#include "rgxfwutils.h"
+#endif
 
 /************************************************************************
 * FW layout information
@@ -85,6 +88,7 @@ static RGX_FW_LAYOUT_ENTRY* GetTableEntry(const void *hPrivate, RGX_FW_SECTION_I
  @Description   Given a 32 bit FW address attempt to find the corresponding
                 pointer to FW allocation
 
+ @Input         hPrivate                 : Implementation specific data
  @Input         ui32OffsetIn             : 32 bit FW address
  @Input         pvHostFWCodeAddr         : Pointer to FW code
  @Input         pvHostFWDataAddr         : Pointer to FW data
@@ -95,7 +99,8 @@ static RGX_FW_LAYOUT_ENTRY* GetTableEntry(const void *hPrivate, RGX_FW_SECTION_I
  @Return        PVRSRV_ERROR
 
 ******************************************************************************/
-static PVRSRV_ERROR FindMMUSegment(IMG_UINT32 ui32OffsetIn,
+static PVRSRV_ERROR FindMMUSegment(const void *hPrivate,
+                                   IMG_UINT32 ui32OffsetIn,
                                    void *pvHostFWCodeAddr,
                                    void *pvHostFWDataAddr,
                                    void *pvHostFWCorememCodeAddr,
@@ -116,7 +121,14 @@ static PVRSRV_ERROR FindMMUSegment(IMG_UINT32 ui32OffsetIn,
 					break;
 
 				case FW_DATA:
-					*uiHostAddrOut = pvHostFWDataAddr;
+					if (RGX_DEVICE_HAS_FEATURE(hPrivate, RISCV_FW_PROCESSOR))
+					{
+						*uiHostAddrOut = RGXCalculateHostFWDataAddress(hPrivate, pvHostFWDataAddr);
+					}
+					else
+					{
+						*uiHostAddrOut = pvHostFWDataAddr;
+					}
 					break;
 
 				case FW_COREMEM_CODE:
@@ -173,7 +185,6 @@ found:
  @Return        void
 
 ******************************************************************************/
-#if defined(RGX_FEATURE_META_MAX_VALUE_IDX)
 static void RGXFWConfigureSegID(const void *hPrivate,
                                 IMG_UINT64 ui64SegOutAddr,
                                 IMG_UINT32 ui32SegBase,
@@ -214,7 +225,6 @@ static void RGXFWConfigureSegID(const void *hPrivate,
 
 	*ppui32BootConf = pui32BootConf;
 }
-#endif
 
 /*!
 *******************************************************************************
@@ -231,7 +241,6 @@ static void RGXFWConfigureSegID(const void *hPrivate,
  @Return        void
 
 ******************************************************************************/
-#if defined(RGX_FEATURE_META_MAX_VALUE_IDX)
 static void RGXFWConfigureSegMMU(const void       *hPrivate,
                                  IMG_DEV_VIRTADDR *psFWCodeDevVAddrBase,
                                  IMG_DEV_VIRTADDR *psFWDataDevVAddrBase,
@@ -245,11 +254,13 @@ static void RGXFWConfigureSegMMU(const void       *hPrivate,
 	/* Configure Segment MMU */
 	RGXCommentLog(hPrivate, "********** FW configure Segment MMU **********");
 
+#if defined(RGX_FEATURE_SLC_VIVT_BIT_MASK)
 	if (RGX_DEVICE_HAS_FEATURE(hPrivate, SLC_VIVT))
 	{
 		ui64SegOutAddrTop = RGXFW_SEGMMU_OUTADDR_TOP_VIVT_SLC_CACHED(MMU_CONTEXT_MAPPING_FWPRIV);
 	}
 	else
+#endif
 	{
 		ui64SegOutAddrTop = RGXFW_SEGMMU_OUTADDR_TOP_SLC(MMU_CONTEXT_MAPPING_FWPRIV, RGXFW_SEGMMU_META_BIFDM_ID);
 	}
@@ -281,7 +292,6 @@ static void RGXFWConfigureSegMMU(const void       *hPrivate,
 		}
 	}
 }
-#endif
 
 /*!
 *******************************************************************************
@@ -297,7 +307,6 @@ static void RGXFWConfigureSegMMU(const void       *hPrivate,
  @Return        void
 
 ******************************************************************************/
-#if defined(RGX_FEATURE_META_MAX_VALUE_IDX)
 static void RGXFWConfigureMetaCaches(const void *hPrivate,
                                      IMG_UINT32 ui32NumThreads,
                                      IMG_UINT32 **ppui32BootConf)
@@ -414,7 +423,6 @@ static void RGXFWConfigureMetaCaches(const void *hPrivate,
 
 	*ppui32BootConf = pui32BootConf;
 }
-#endif
 
 /*!
 *******************************************************************************
@@ -481,7 +489,8 @@ PVRSRV_ERROR ProcessLDRCommandStream(const void *hPrivate,
 					ui32Offset &= ~META_MEM_GLOBAL_RANGE_BIT;
 				}
 
-				eError = FindMMUSegment(ui32Offset,
+				eError = FindMMUSegment(hPrivate,
+				                        ui32Offset,
 				                        pvHostFWCodeAddr,
 				                        pvHostFWDataAddr,
 				                        pvHostFWCorememCodeAddr,
@@ -503,6 +512,9 @@ PVRSRV_ERROR ProcessLDRCommandStream(const void *hPrivate,
 					           pvWriteAddr,
 					           psL2Block->aui32BlockData,
 					           ui32DataSize);
+#if defined(CONFIG_ARM64) && defined(__linux__) && defined(SUPPORT_CPUCACHED_FWMEMCTX)
+					RGXFwSharedMemCacheOpExec(pvWriteAddr, ui32DataSize, PVRSRV_CACHE_OP_FLUSH);
+#endif
 				}
 
 				break;
@@ -533,7 +545,8 @@ PVRSRV_ERROR ProcessLDRCommandStream(const void *hPrivate,
 				/* Global range is aliased to local range */
 				ui32Offset &= ~META_MEM_GLOBAL_RANGE_BIT;
 
-				eError = FindMMUSegment(ui32Offset,
+				eError = FindMMUSegment(hPrivate,
+				                        ui32Offset,
 				                        pvHostFWCodeAddr,
 				                        pvHostFWDataAddr,
 				                        pvHostFWCorememCodeAddr,
@@ -552,6 +565,9 @@ PVRSRV_ERROR ProcessLDRCommandStream(const void *hPrivate,
 				if (pvWriteAddr)
 				{
 					RGXMemSet(hPrivate, pvWriteAddr, 0, ui32ByteCount);
+#if defined(CONFIG_ARM64) && defined(__linux__) && defined(SUPPORT_CPUCACHED_FWMEMCTX)
+					RGXFwSharedMemCacheOpExec(pvWriteAddr, ui32ByteCount, PVRSRV_CACHE_OP_FLUSH);
+#endif
 				}
 
 				break;
@@ -680,7 +696,8 @@ PVRSRV_ERROR ProcessELFCommandStream(const void *hPrivate,
 		/* Only consider loadable entries in the ELF segment table */
 		if (psProgramHeader->ui32Ptype != ELF_PT_LOAD) continue;
 
-		eError = FindMMUSegment(psProgramHeader->ui32Pvaddr,
+		eError = FindMMUSegment(hPrivate,
+		                        psProgramHeader->ui32Pvaddr,
 		                        pvHostFWCodeAddr,
 		                        pvHostFWDataAddr,
 		                        pvHostFWCorememCodeAddr,
@@ -708,6 +725,10 @@ PVRSRV_ERROR ProcessELFCommandStream(const void *hPrivate,
 			          (IMG_PBYTE)pvWriteAddr + psProgramHeader->ui32Pfilesz,
 			          0,
 			          psProgramHeader->ui32Pmemsz - psProgramHeader->ui32Pfilesz);
+
+#if defined(CONFIG_ARM64) && defined(__linux__) && defined(SUPPORT_CPUCACHED_FWMEMCTX)
+			RGXFwSharedMemCacheOpExec(pvWriteAddr, psProgramHeader->ui32Pmemsz, PVRSRV_CACHE_OP_FLUSH);
+#endif
 		}
 	}
 
@@ -742,56 +763,11 @@ IMG_UINT32 RGXGetFWImageSectionAddress(const void *hPrivate, RGX_FW_SECTION_ID e
 	return psEntry->ui32BaseAddr;
 }
 
-PVRSRV_ERROR RGXGetFWImageAllocSize(const void *hPrivate,
-                                    const IMG_BYTE    *pbRGXFirmware,
-                                    const IMG_UINT32  ui32RGXFirmwareSize,
-                                    IMG_DEVMEM_SIZE_T *puiFWCodeAllocSize,
-                                    IMG_DEVMEM_SIZE_T *puiFWDataAllocSize,
-                                    IMG_DEVMEM_SIZE_T *puiFWCorememCodeAllocSize,
-                                    IMG_DEVMEM_SIZE_T *puiFWCorememDataAllocSize)
+static inline
+PVRSRV_ERROR RGXValidateFWHeaderVersion1(const void *hPrivate,
+                                         const RGX_FW_INFO_HEADER *psInfoHeader)
 {
-	RGX_FW_INFO_HEADER *psInfoHeader;
-	const IMG_BYTE *pbRGXFirmwareInfo;
-	const IMG_BYTE *pbRGXFirmwareLayout;
-	IMG_UINT32 i;
-
-	if (pbRGXFirmware == NULL || ui32RGXFirmwareSize == 0 || ui32RGXFirmwareSize <= FW_BLOCK_SIZE)
-	{
-		RGXErrorLog(hPrivate, "%s: Invalid FW binary at %p, size %u",
-		            __func__, pbRGXFirmware, ui32RGXFirmwareSize);
-		return PVRSRV_ERROR_INVALID_PARAMS;
-	}
-
-
-	/*
-	 * Acquire pointer to the FW info header within the FW image.
-	 * The format of the header in the FW image might not be the one expected
-	 * by the driver, but the driver should still be able to correctly read
-	 * the information below, as long as new/incompatible elements are added
-	 * at the end of the header (they will be ignored by the driver).
-	 */
-
-	pbRGXFirmwareInfo = pbRGXFirmware + ui32RGXFirmwareSize - FW_BLOCK_SIZE;
-	psInfoHeader = (RGX_FW_INFO_HEADER*)pbRGXFirmwareInfo;
-
-	/* If any of the following checks fails, the FW will likely not work properly */
-
-	if (psInfoHeader->ui32InfoVersion != FW_INFO_VERSION)
-	{
-		RGXErrorLog(hPrivate, "%s: FW info version mismatch (expected: %u, found: %u)",
-		            __func__,
-		            (IMG_UINT32) FW_INFO_VERSION,
-		            psInfoHeader->ui32InfoVersion);
-	}
-
-	if (psInfoHeader->ui32HeaderLen != sizeof(RGX_FW_INFO_HEADER))
-	{
-		RGXErrorLog(hPrivate, "%s: FW info header sizes mismatch (expected: %u, found: %u)",
-		            __func__,
-		            (IMG_UINT32) sizeof(RGX_FW_INFO_HEADER),
-		            psInfoHeader->ui32HeaderLen);
-	}
-
+	/* Applicable to any FW_INFO_VERSION */
 	if (psInfoHeader->ui32LayoutEntrySize != sizeof(RGX_FW_LAYOUT_ENTRY))
 	{
 		RGXErrorLog(hPrivate, "%s: FW layout entry sizes mismatch (expected: %u, found: %u)",
@@ -800,6 +776,7 @@ PVRSRV_ERROR RGXGetFWImageAllocSize(const void *hPrivate,
 		            psInfoHeader->ui32LayoutEntrySize);
 	}
 
+	/* Applicable to any FW_INFO_VERSION */
 	if (psInfoHeader->ui32LayoutEntryNum > MAX_NUM_ENTRIES)
 	{
 		RGXErrorLog(hPrivate, "%s: Not enough storage for the FW layout table (max: %u entries, found: %u)",
@@ -809,6 +786,7 @@ PVRSRV_ERROR RGXGetFWImageAllocSize(const void *hPrivate,
 	}
 
 #if defined(RGX_FEATURE_MIPS_BIT_MASK)
+	/* Applicable to any FW_INFO_VERSION */
 	if (RGX_DEVICE_HAS_FEATURE(hPrivate, MIPS))
 	{
 		if (psInfoHeader->ui32FwPageSize != RGXGetOSPageSize(hPrivate))
@@ -821,6 +799,122 @@ PVRSRV_ERROR RGXGetFWImageAllocSize(const void *hPrivate,
 		}
 	}
 #endif
+
+	if (psInfoHeader->ui32InfoVersion != FW_INFO_VERSION)
+	{
+		/* Not an error because RGX_FW_INFO_HEADER is now versioned. It can grow
+		 * incrementally and it must be backwards compatible.
+		 */
+		RGXCommentLog(hPrivate, "%s: FW info version mismatch (expected: %u, found: %u)",
+		              __func__,
+		              (IMG_UINT32) FW_INFO_VERSION,
+		              psInfoHeader->ui32InfoVersion);
+		goto exit_version1_validation;
+	}
+
+	if (psInfoHeader->ui32HeaderLen != sizeof(RGX_FW_INFO_HEADER))
+	{
+		RGXErrorLog(hPrivate, "%s: FW info header sizes mismatch (expected: %u, found: %u)",
+		            __func__,
+		            (IMG_UINT32) sizeof(RGX_FW_INFO_HEADER),
+		            psInfoHeader->ui32HeaderLen);
+	}
+
+exit_version1_validation:
+	return PVRSRV_OK;
+}
+
+static inline
+PVRSRV_ERROR RGXValidateFWHeaderVersion2(const void *hPrivate,
+                                         const RGX_FW_INFO_HEADER *psInfoHeader)
+{
+	if (psInfoHeader->ui16PVRVersionMajor != PVRVERSION_MAJ ||
+	    psInfoHeader->ui16PVRVersionMinor != PVRVERSION_MIN)
+	{
+		RGXErrorLog(hPrivate, "%s: KM and FW version mismatch (expected: %u.%u, found: %u.%u)",
+		            __func__,
+		            PVRVERSION_MAJ,
+		            PVRVERSION_MIN,
+		            psInfoHeader->ui16PVRVersionMajor,
+		            psInfoHeader->ui16PVRVersionMinor);
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	return PVRSRV_OK;
+}
+
+static inline
+PVRSRV_ERROR RGXValidateFWHeaderVersion(const void *hPrivate,
+                                        const RGX_FW_INFO_HEADER *psInfoHeader)
+{
+	PVRSRV_ERROR eError;
+
+	switch (psInfoHeader->ui32InfoVersion)
+	{
+		default:
+			__fallthrough;
+		case 2:
+			eError = RGXValidateFWHeaderVersion2(hPrivate, psInfoHeader);
+			if (eError != PVRSRV_OK)
+			{
+				return eError;
+			}
+
+			__fallthrough;
+		case 1:
+			eError = RGXValidateFWHeaderVersion1(hPrivate, psInfoHeader);
+			if (eError != PVRSRV_OK)
+			{
+				return eError;
+			}
+
+			break;
+		case 0:
+			RGXErrorLog(hPrivate, "%s: invalid FW_INFO_VERSION", __func__);
+			return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	return PVRSRV_OK;
+}
+
+PVRSRV_ERROR RGXGetFWImageAllocSize(const void *hPrivate,
+                                    const IMG_BYTE    *pbRGXFirmware,
+                                    const IMG_UINT32  ui32RGXFirmwareSize,
+                                    IMG_DEVMEM_SIZE_T *puiFWCodeAllocSize,
+                                    IMG_DEVMEM_SIZE_T *puiFWDataAllocSize,
+                                    IMG_DEVMEM_SIZE_T *puiFWCorememCodeAllocSize,
+                                    IMG_DEVMEM_SIZE_T *puiFWCorememDataAllocSize,
+                                    RGX_FW_INFO_HEADER *psFWInfoHeader)
+{
+	RGX_FW_INFO_HEADER *psInfoHeader;
+	const IMG_BYTE *pbRGXFirmwareInfo;
+	const IMG_BYTE *pbRGXFirmwareLayout;
+	PVRSRV_ERROR eError;
+	IMG_UINT32 i;
+
+	if (pbRGXFirmware == NULL || ui32RGXFirmwareSize == 0 || ui32RGXFirmwareSize <= FW_BLOCK_SIZE)
+	{
+		RGXErrorLog(hPrivate, "%s: Invalid FW binary at %p, size %u",
+		            __func__, pbRGXFirmware, ui32RGXFirmwareSize);
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	/*
+	 * Acquire pointer to the FW info header within the FW image.
+	 * The format of the header in the FW image might not be the one expected
+	 * by the driver, but the driver should still be able to correctly read
+	 * the information below, as long as new/incompatible elements are added
+	 * at the end of the header (they will be ignored by the driver).
+	 */
+
+	pbRGXFirmwareInfo = pbRGXFirmware + ui32RGXFirmwareSize - FW_BLOCK_SIZE;
+	psInfoHeader = (RGX_FW_INFO_HEADER*)pbRGXFirmwareInfo;
+
+	eError = RGXValidateFWHeaderVersion(hPrivate, psInfoHeader);
+	if (eError != PVRSRV_OK)
+	{
+		return eError;
+	}
 
 	ui32LayoutEntryNum = psInfoHeader->ui32LayoutEntryNum;
 
@@ -883,6 +977,7 @@ PVRSRV_ERROR RGXGetFWImageAllocSize(const void *hPrivate,
 		}
 	}
 
+	*psFWInfoHeader = *psInfoHeader;
 	return PVRSRV_OK;
 }
 
@@ -897,23 +992,16 @@ PVRSRV_ERROR RGXProcessFWImage(const void *hPrivate,
 {
 	PVRSRV_ERROR eError = PVRSRV_OK;
 	IMG_BOOL bMIPS = IMG_FALSE;
-#if defined(RGX_FEATURE_RISCV_FW_PROCESSOR_BIT_MASK)
 	IMG_BOOL bRISCV = RGX_DEVICE_HAS_FEATURE(hPrivate, RISCV_FW_PROCESSOR);
-#endif
 	IMG_BOOL bMETA;
 
 #if defined(RGX_FEATURE_MIPS_BIT_MASK)
 	bMIPS = (IMG_BOOL)RGX_DEVICE_HAS_FEATURE(hPrivate, MIPS);
 #endif
-#if defined(RGX_FEATURE_RISCV_FW_PROCESSOR_BIT_MASK)
 	bMETA = (IMG_BOOL)(!bMIPS && !bRISCV);
-#else
-	bMETA = !bMIPS;
-#endif
 
 	if (bMETA)
 	{
-#if defined(RGX_FEATURE_META_MAX_VALUE_IDX)
 		IMG_UINT32 *pui32BootConf = NULL;
 		/* Skip bootloader configuration if a pointer to the FW code
 		 * allocation is not available
@@ -996,7 +1084,6 @@ PVRSRV_ERROR RGXProcessFWImage(const void *hPrivate,
 				*pui32BootConf++ = 0;
 			}
 		}
-#endif /* defined(RGX_FEATURE_META_MAX_VALUE_IDX) */
 	}
 #if defined(RGXMIPSFW_MAX_NUM_PAGETABLE_PAGES)
 	else if (bMIPS)

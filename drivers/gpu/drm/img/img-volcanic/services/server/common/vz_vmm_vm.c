@@ -48,34 +48,47 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvrsrv_error.h"
 #include "vz_vm.h"
 #include "rgxfwutils.h"
+#include "rgxfwdbg.h"
 
-bool IsVmOnline(IMG_UINT32 ui32OSID, IMG_UINT32 ui32DevID)
+bool IsVmOnline(IMG_UINT32 ui32DriverID, IMG_UINT32 ui32DevID)
 {
-	PVRSRV_DEVICE_NODE *psDevNode = PVRSRVGetDeviceInstanceByOSId(ui32DevID);
+	PVRSRV_DEVICE_NODE *psDevNode = PVRSRVGetDeviceInstance(ui32DevID);
 
-	return BIT_ISSET(psDevNode->ui32VmState, ui32OSID);
+	if (psDevNode == NULL)
+	{
+		return false;
+	}
+	else
+	{
+		return BIT_ISSET(psDevNode->ui32VmState, ui32DriverID);
+	}
 }
 
-PVRSRV_ERROR PvzOnVmOnline(IMG_UINT32 ui32OSID, IMG_UINT32 ui32DevID)
+PVRSRV_ERROR PvzOnVmOnline(IMG_UINT32 ui32DriverID, IMG_UINT32 ui32DevID)
 {
-#if defined(RGX_NUM_OS_SUPPORTED) && (RGX_NUM_OS_SUPPORTED == 1)
+#if !defined(RGX_NUM_DRIVERS_SUPPORTED) || (RGX_NUM_DRIVERS_SUPPORTED == 1)
 	PVRSRV_ERROR       eError          = PVRSRV_ERROR_INVALID_PARAMS;
 #else
 	PVRSRV_ERROR       eError          = PVRSRV_OK;
 	PVRSRV_DEVICE_NODE *psDevNode;
 
-	psDevNode = PVRSRVGetDeviceInstanceByOSId(ui32DevID);
+	psDevNode = PVRSRVGetDeviceInstance(ui32DevID);
 
-	if (BIT_ISSET(psDevNode->ui32VmState, ui32OSID))
+	if (psDevNode == NULL)
+	{
+		eError = PVRSRV_ERROR_NO_DEVICENODE_FOUND;
+		goto e0;
+	}
+	else if (BIT_ISSET(psDevNode->ui32VmState, ui32DriverID))
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-				 "%s: OSID %u on Device %u is already enabled.",
-				 __func__, ui32OSID, ui32DevID));
+				 "%s: DriverID %u on Device %u is already enabled.",
+				 __func__, ui32DriverID, ui32DevID));
 		eError = PVRSRV_ERROR_INVALID_PARAMS;
 		goto e0;
 	}
 
-	if (psDevNode->eDevState == PVRSRV_DEVICE_STATE_INIT)
+	if (psDevNode->eDevState == PVRSRV_DEVICE_STATE_CREATED)
 	{
 		/* Firmware not initialized yet, do it here */
 		eError = PVRSRVCommonDeviceInitialise(psDevNode);
@@ -94,11 +107,11 @@ PVRSRV_ERROR PvzOnVmOnline(IMG_UINT32 ui32OSID, IMG_UINT32 ui32DevID)
 		goto e0;
 	}
 
-	BIT_SET(psDevNode->ui32VmState, ui32OSID);
+	BIT_SET(psDevNode->ui32VmState, ui32DriverID);
 
 #if defined(RGX_VZ_STATIC_CARVEOUT_FW_HEAPS)
 	/* Everything is ready for the firmware to start interacting with this OS */
-	eError = RGXFWSetFwOsState(psDevNode->pvDevice, ui32OSID, RGXFWIF_OS_ONLINE);
+	eError = RGXFWSetFwOsState(psDevNode->pvDevice, ui32DriverID, RGXFWIF_OS_ONLINE);
 #endif
 
 e0:
@@ -106,32 +119,42 @@ e0:
 	return eError;
 }
 
-PVRSRV_ERROR PvzOnVmOffline(IMG_UINT32 ui32OSID, IMG_UINT32 ui32DevID)
+PVRSRV_ERROR PvzOnVmOffline(IMG_UINT32 ui32DriverID, IMG_UINT32 ui32DevID)
 {
-#if defined(RGX_NUM_OS_SUPPORTED) && (RGX_NUM_OS_SUPPORTED == 1)
+#if !defined(RGX_NUM_DRIVERS_SUPPORTED) || (RGX_NUM_DRIVERS_SUPPORTED == 1)
 	PVRSRV_ERROR       eError          = PVRSRV_ERROR_INVALID_PARAMS;
 #else
 	PVRSRV_ERROR      eError          = PVRSRV_OK;
 	PVRSRV_DEVICE_NODE *psDevNode;
 	PVRSRV_RGXDEV_INFO *psDevInfo;
 
-	psDevNode = PVRSRVGetDeviceInstanceByOSId(ui32DevID);
+	psDevNode = PVRSRVGetDeviceInstance(ui32DevID);
 
-	if (!BIT_ISSET(psDevNode->ui32VmState, ui32OSID))
+	if (psDevNode == NULL)
+	{
+		eError = PVRSRV_ERROR_NO_DEVICENODE_FOUND;
+		goto e0;
+	}
+	else if (!BIT_ISSET(psDevNode->ui32VmState, ui32DriverID))
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-				 "%s: OSID %u on Device %u is already disabled.",
-				 __func__, ui32OSID, ui32DevID));
+				 "%s: DriverID %u on Device %u is already disabled.",
+				 __func__, ui32DriverID, ui32DevID));
 		eError = PVRSRV_ERROR_INVALID_PARAMS;
 		goto e0;
 	}
 
 	psDevInfo = psDevNode->pvDevice;
+	if (psDevInfo == NULL)
+	{
+		eError = PVRSRV_ERROR_INVALID_DEVINFO;
+		goto e0;
+	}
 
-	eError = RGXFWSetFwOsState(psDevInfo, ui32OSID, RGXFWIF_OS_OFFLINE);
+	eError = RGXFWSetFwOsState(psDevInfo, ui32DriverID, RGXFWIF_OS_OFFLINE);
 	if (eError == PVRSRV_OK)
 	{
-		BIT_UNSET(psDevNode->ui32VmState, ui32OSID);
+		BIT_UNSET(psDevNode->ui32VmState, ui32DriverID);
 	}
 
 e0:
@@ -144,27 +167,41 @@ PVRSRV_ERROR PvzVMMConfigure(VMM_CONF_PARAM eVMMParamType,
 							 IMG_UINT32 ui32DevID)
 {
 #if defined(SUPPORT_RGX)
-	PVRSRV_DEVICE_NODE *psDevNode = PVRSRVGetDeviceInstanceByOSId(ui32DevID);
-	PVRSRV_RGXDEV_INFO *psDevInfo = psDevNode->pvDevice;
+	PVRSRV_DEVICE_NODE *psDevNode;
+	PVRSRV_RGXDEV_INFO *psDevInfo;
 	PVRSRV_ERROR eError;
+
+	psDevNode = PVRSRVGetDeviceInstance(ui32DevID);
+	if (psDevNode == NULL)
+	{
+		eError = PVRSRV_ERROR_NO_DEVICENODE_FOUND;
+		goto e0;
+	}
+
+	psDevInfo = psDevNode->pvDevice;
+	if (psDevInfo == NULL)
+	{
+		eError = PVRSRV_ERROR_INVALID_DEVINFO;
+		goto e0;
+	}
 
 	switch (eVMMParamType)
 	{
-		case VMM_CONF_PRIO_OSID0:
-		case VMM_CONF_PRIO_OSID1:
-		case VMM_CONF_PRIO_OSID2:
-		case VMM_CONF_PRIO_OSID3:
-		case VMM_CONF_PRIO_OSID4:
-		case VMM_CONF_PRIO_OSID5:
-		case VMM_CONF_PRIO_OSID6:
-		case VMM_CONF_PRIO_OSID7:
+		case VMM_CONF_PRIO_DRV0:
+		case VMM_CONF_PRIO_DRV1:
+		case VMM_CONF_PRIO_DRV2:
+		case VMM_CONF_PRIO_DRV3:
+		case VMM_CONF_PRIO_DRV4:
+		case VMM_CONF_PRIO_DRV5:
+		case VMM_CONF_PRIO_DRV6:
+		case VMM_CONF_PRIO_DRV7:
 		{
-			IMG_UINT32 ui32OSID = eVMMParamType;
+			IMG_UINT32 ui32DriverID = eVMMParamType;
 			IMG_UINT32 ui32Prio = ui32ParamValue;
 
-			if (ui32OSID < RGX_NUM_OS_SUPPORTED)
+			if (ui32DriverID < RGX_NUM_DRIVERS_SUPPORTED)
 			{
-				eError = RGXFWChangeOSidPriority(psDevInfo, ui32OSID, ui32Prio);
+				eError = PVRSRVRGXFWDebugSetDriverPriorityKM(NULL, psDevNode, ui32DriverID, ui32Prio);
 			}
 			else
 			{
@@ -178,12 +215,70 @@ PVRSRV_ERROR PvzVMMConfigure(VMM_CONF_PARAM eVMMParamType,
 			eError = RGXFWSetHCSDeadline(psDevInfo, ui32HCSDeadline);
 			break;
 		}
+		case VMM_CONF_ISOLATION_GROUP_DRV0:
+		case VMM_CONF_ISOLATION_GROUP_DRV1:
+		case VMM_CONF_ISOLATION_GROUP_DRV2:
+		case VMM_CONF_ISOLATION_GROUP_DRV3:
+		case VMM_CONF_ISOLATION_GROUP_DRV4:
+		case VMM_CONF_ISOLATION_GROUP_DRV5:
+		case VMM_CONF_ISOLATION_GROUP_DRV6:
+		case VMM_CONF_ISOLATION_GROUP_DRV7:
+		{
+			IMG_UINT32 ui32DriverID = eVMMParamType - VMM_CONF_ISOLATION_GROUP_DRV0;
+			IMG_UINT32 ui32IsolationGroup = ui32ParamValue;
+
+			if (ui32DriverID < RGX_NUM_DRIVERS_SUPPORTED)
+			{
+				eError = PVRSRVRGXFWDebugSetDriverIsolationGroupKM(NULL, psDevNode, ui32DriverID, ui32IsolationGroup);
+			}
+			else
+			{
+				eError = PVRSRV_ERROR_INVALID_PARAMS;
+			}
+			break;
+		}
+		case VMM_CONF_TIME_SLICE_DRV0:
+		case VMM_CONF_TIME_SLICE_DRV1:
+		case VMM_CONF_TIME_SLICE_DRV2:
+		case VMM_CONF_TIME_SLICE_DRV3:
+		case VMM_CONF_TIME_SLICE_DRV4:
+		case VMM_CONF_TIME_SLICE_DRV5:
+		case VMM_CONF_TIME_SLICE_DRV6:
+		case VMM_CONF_TIME_SLICE_DRV7:
+		{
+			IMG_UINT32 ui32DriverID = eVMMParamType - VMM_CONF_TIME_SLICE_DRV0;
+			IMG_UINT32 ui32TSPercentage = ui32ParamValue;
+
+			if (ui32DriverID < RGX_NUM_DRIVERS_SUPPORTED)
+			{
+				eError = PVRSRVRGXFWDebugSetDriverTimeSliceKM(NULL, psDevNode, ui32DriverID, ui32TSPercentage);
+			}
+			else
+			{
+				eError = PVRSRV_ERROR_INVALID_PARAMS;
+			}
+			break;
+		}
+		case VMM_CONF_TIME_SLICE_INTERVAL:
+		{
+			IMG_UINT32 ui32TSIntervalMs = ui32ParamValue;
+
+			eError = PVRSRVRGXFWDebugSetDriverTimeSliceIntervalKM(NULL, psDevNode, ui32TSIntervalMs);
+			break;
+		}
+		case VMM_CONF_VZ_CONNECTION_COOLDOWN_PERIOD:
+		{
+			IMG_UINT32 ui32VzConnectionCooldownPeriodInSec = ui32ParamValue;
+			eError = RGXFWSetVzConnectionCooldownPeriod(psDevInfo, ui32VzConnectionCooldownPeriodInSec);
+			break;
+		}
 		default:
 		{
 			eError = PVRSRV_ERROR_INVALID_PARAMS;
 		}
 	}
 
+e0:
 	return eError;
 #else
 	PVR_UNREFERENCED_PARAMETER(eVMMParamType);

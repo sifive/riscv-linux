@@ -49,23 +49,17 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "img_types.h"
 #include "pvrsrv_error.h"
 #include "pvrsrv_memallocflags.h"
+#include "device.h"
 
 /* services/server/include/ */
 #include "pmr.h"
 #include "pmr_impl.h"
 
-typedef IMG_UINT32 PHYSMEM_LMA_POLICY;
-
-#define PHYSMEM_LMA_POLICY_DEFAULT (0U)
-
-#define PHYSMEM_LMA_POLICY_ALLOC_ALLOW_NONCONTIG      (1U)
-#define PHYSMEM_LMA_POLOCY_ALLOC_ALLOW_NONCONTIG_MASK (1U)
-
 /*************************************************************************/ /*!
 @Function       PhysmemCreateHeapLMA
 @Description    Create and register new LMA heap with LMA specific details.
 @Input          psDevNode    Pointer to device node struct.
-@Input          uiLMAPolicy  LMA allocation policy flags
+@Input          uiPolicy     Heap allocation policy flags
 @Input          psConfig     Heap configuration.
 @Input          pszLabel     Debug identifier label
 @Output         ppsPhysHeap  Pointer to the created heap.
@@ -73,29 +67,9 @@ typedef IMG_UINT32 PHYSMEM_LMA_POLICY;
 */ /**************************************************************************/
 PVRSRV_ERROR
 PhysmemCreateHeapLMA(PVRSRV_DEVICE_NODE *psDevNode,
-                     PHYSMEM_LMA_POLICY uiLMAPolicy,
+                     PHYS_HEAP_POLICY uiPolicy,
                      PHYS_HEAP_CONFIG *psConfig,
                      IMG_CHAR *pszLabel,
                      PHYS_HEAP **ppsPhysHeap);
-
-/*
- * PhysmemNewLocalRamBackedPMR
- *
- * This function will create a PMR using the local card memory and is OS
- * agnostic.
- */
-PVRSRV_ERROR
-PhysmemNewLocalRamBackedPMR(PHYS_HEAP *psPhysHeap,
-							CONNECTION_DATA *psConnection,
-                            IMG_DEVMEM_SIZE_T uiSize,
-                            IMG_UINT32 ui32NumPhysChunks,
-                            IMG_UINT32 ui32NumVirtChunks,
-                            IMG_UINT32 *pui32MappingTable,
-                            IMG_UINT32 uiLog2PageSize,
-                            PVRSRV_MEMALLOCFLAGS_T uiFlags,
-                            const IMG_CHAR *pszAnnotation,
-                            IMG_PID uiPid,
-                            PMR **ppsPMRPtr,
-                            IMG_UINT32 ui32PDumpFlags);
 
 #endif /* #ifndef SRVSRV_PHYSMEM_LMA_H */

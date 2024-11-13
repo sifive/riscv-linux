@@ -72,10 +72,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(__KERNEL__) && defined(__clang__)
 
 #define DEVICE_MEMSETCPY_NON_VECTOR_KM
-#if !defined(BITS_PER_BYTE)
-#define BITS_PER_BYTE (8)
-#endif /* BITS_PER_BYTE */
-
 /* Loading or storing 16 or 32 bytes is only supported on 64-bit machines. */
 #if DEVICE_MEMSETCPY_ALIGN_IN_BYTES > 8
 typedef __uint128_t uint128_t;
@@ -115,7 +111,7 @@ uint256_t;
 #error No support for architectures where void* and long are sized differently
 #endif
 
-#if   __SIZEOF_LONG__ > DEVICE_MEMSETCPY_ALIGN_IN_BYTES
+#if __SIZEOF_LONG__ > DEVICE_MEMSETCPY_ALIGN_IN_BYTES
 /* Meaningless, and harder to do correctly */
 # error Cannot handle DEVICE_MEMSETCPY_ALIGN_IN_BYTES < sizeof(long)
 typedef unsigned long block_t;
@@ -385,65 +381,65 @@ void DeviceMemSetBytes(void *pvDst, unsigned char ui8Value, size_t uSize)
 	}
 }
 
-#if !defined(__QNXNTO__) /* Ignore Neutrino as it uses strlcpy */
-
-#if defined(__KERNEL__) && defined(__linux__)
-/*
- * In case of Linux kernel-mode in a debug build, choose the variant
- * of StringLCopy that uses strlcpy and logs truncation via a stack dump.
- * For Linux kernel-mode in a release build, strlcpy alone is used.
- */
+#if defined(__linux__) && defined(__KERNEL__)
 #if defined(DEBUG)
+/*
+ * In case of Linux kernel-mode in a debug build, choose the variant of
+ * OSStringSafeCopy that uses strscpy and logs truncation via a stack dump. For
+ * Linux kernel-mode in a release build, strscpy alone is used.
+ */
 IMG_INTERNAL
-size_t StringLCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize)
+ssize_t OSStringSafeCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize)
 {
 	/*
-	 * Let strlcpy handle any truncation cases correctly.
+	 * Let strscpy handle any truncation cases correctly.
 	 * We will definitely get a NUL-terminated string set in pszDest
 	 */
-	size_t  uSrcSize = strlcpy(pszDest, pszSrc, uDataSize);
+	ssize_t sCopiedCnt = strscpy(pszDest, pszSrc, uDataSize);
 
 #if defined(PVR_DEBUG_STRLCPY)
 	/* Handle truncation by dumping calling stack if debug allows */
-	if (uSrcSize >= uDataSize)
+	if (sCopiedCnt < 0)
 	{
 		PVR_DPF((PVR_DBG_WARNING,
-			"%s: String truncated Src = '<%s>' %ld bytes, Dest = '%s'",
-			__func__, pszSrc, (long)uDataSize, pszDest));
+			"%s: String truncated Src = '<%s>' %zu bytes, Dest = '%s'",
+			__func__, pszSrc, uDataSize, pszDest));
 		OSDumpStack();
 	}
 #endif /* defined(PVR_DEBUG_STRLCPY) && defined(DEBUG) */
 
-	return uSrcSize;
+	return sCopiedCnt;
 }
 #endif /* defined(DEBUG) */
-
-#else /* defined(__KERNEL__) && defined(__linux__) */
+#else /* defined(__linux__) && defined(__KERNEL__) */
 /*
- * For every other platform, make use of the strnlen and strncpy
- * implementation of StringLCopy.
+ * For every other platform, make use of the strnlen and strncpy implementation
+ * of OSStringSafeCopy.
+ *
  * NOTE: It is crucial to avoid memcpy as this has a hidden side-effect of
  * dragging in whatever the build-environment flavour of GLIBC is which can
  * cause unexpected failures for host-side command execution.
  */
 IMG_INTERNAL
-size_t StringLCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize)
+ssize_t OSStringSafeCopy(IMG_CHAR *pszDest, const IMG_CHAR *pszSrc, size_t uDataSize)
 {
-	size_t uSrcSize = strnlen(pszSrc, uDataSize);
-
-	(void)strncpy(pszDest, pszSrc, uSrcSize);
-	if (uSrcSize == uDataSize)
+	/* Match the specification of Linux strscpy - if destination size is 0,
+	 * return negative value (-E2BIG to be precise, but it's probably best
+	 * not to use Linux-specific return values, so -1 will do). */
+	if (uDataSize && (uDataSize <= SSIZE_MAX))
 	{
-		pszDest[uSrcSize-1] = '\0';
-	}
-	else
-	{
-		pszDest[uSrcSize] = '\0';
+		size_t uSrcSize = strnlen(pszSrc, uDataSize);
+
+		(void)strncpy(pszDest, pszSrc, MIN(uSrcSize + 1, uDataSize));
+		if (uSrcSize == uDataSize)
+		{
+			pszDest[uSrcSize-1] = '\0';
+			return -1;
+		}
+
+		return (ssize_t)uSrcSize;
 	}
 
-	return uSrcSize;
+	return -1;
 }
-
-#endif /* defined(__KERNEL__) && defined(__linux__) */
-
-#endif /* !defined(__QNXNTO__) */
+#endif /* defined(__linux__) && defined(__KERNEL__) */

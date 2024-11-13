@@ -54,9 +54,7 @@ typedef	struct _PVR_PCI_DEV_TAG
 	struct pci_dev		*psPCIDev;
 	HOST_PCI_INIT_FLAGS	ePCIFlags;
 	IMG_BOOL		abPCIResourceInUse[DEVICE_COUNT_RESOURCE];
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
 	int			iMTRR[DEVICE_COUNT_RESOURCE];
-#endif
 } PVR_PCI_DEV;
 
 /*************************************************************************/ /*!
@@ -113,9 +111,7 @@ PVRSRV_PCI_DEV_HANDLE OSPCISetDev(void *pvPCICookie, HOST_PCI_INIT_FLAGS eFlags)
 	for (i = 0; i < DEVICE_COUNT_RESOURCE; i++)
 	{
 		psPVRPCI->abPCIResourceInUse[i] = IMG_FALSE;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
 		psPVRPCI->iMTRR[i] = -1;
-#endif
 	}
 
 	return (PVRSRV_PCI_DEV_HANDLE)psPVRPCI;
@@ -602,91 +598,19 @@ PVRSRV_ERROR OSPCIClearResourceMTRRs(PVRSRV_PCI_DEV_HANDLE hPVRPCI, IMG_UINT32 u
 	start = pci_resource_start(psPVRPCI->psPCIDev, ui32Index);
 	end = pci_resource_end(psPVRPCI->psPCIDev, ui32Index) + 1;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 	res = arch_io_reserve_memtype_wc(start, end - start);
 	if (res)
 	{
 		return PVRSRV_ERROR_PCI_CALL_FAILED;
 	}
-#endif
 	res = arch_phys_wc_add(start, end - start);
 	if (res < 0)
 	{
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 		arch_io_free_memtype_wc(start, end - start);
-#endif
 
 		return PVRSRV_ERROR_PCI_CALL_FAILED;
 	}
 	psPVRPCI->iMTRR[ui32Index] = res;
-#else
-
-	res = mtrr_add(start, end - start, MTRR_TYPE_UNCACHABLE, 0);
-	if (res < 0)
-	{
-		printk(KERN_ERR "OSPCIClearResourceMTRRs: mtrr_add failed (%d)", res);
-		return PVRSRV_ERROR_PCI_CALL_FAILED;
-	}
-
-	res = mtrr_del(res, start, end - start);
-	if (res < 0)
-	{
-		printk(KERN_ERR "OSPCIClearResourceMTRRs: mtrr_del failed (%d)", res);
-		return PVRSRV_ERROR_PCI_CALL_FAILED;
-	}
-
-	/* Workaround for overlapping MTRRs. */
-	{
-		IMG_BOOL bGotMTRR0 = IMG_FALSE;
-
-		/* Current mobo BIOSes will normally set up a WRBACK MTRR spanning
-		 * 0->4GB, and then another 4GB->6GB. If the PCI card's automatic &
-		 * overlapping UNCACHABLE MTRR is deleted, we see WRBACK behaviour.
-		 *
-		 * WRBACK is incompatible with some PCI devices, so try to split
-		 * the UNCACHABLE regions up and insert a WRCOMB region instead.
-		 */
-		res = mtrr_add(start, end - start, MTRR_TYPE_WRBACK, 0);
-		if (res < 0)
-		{
-			/* If this fails, services has probably run before and created
-			 * a write-combined MTRR for the test chip. Assume it has, and
-			 * don't return an error here.
-			 */
-			return PVRSRV_OK;
-		}
-
-		if (res == 0)
-			bGotMTRR0 = IMG_TRUE;
-
-		res = mtrr_del(res, start, end - start);
-		if (res < 0)
-		{
-			printk(KERN_ERR "OSPCIClearResourceMTRRs: mtrr_del failed (%d)", res);
-			return PVRSRV_ERROR_PCI_CALL_FAILED;
-		}
-
-		if (bGotMTRR0)
-		{
-			/* Replace 0 with a non-overlapping WRBACK MTRR */
-			res = mtrr_add(0, start, MTRR_TYPE_WRBACK, 0);
-			if (res < 0)
-			{
-				printk(KERN_ERR "OSPCIClearResourceMTRRs: mtrr_add failed (%d)", res);
-				return PVRSRV_ERROR_PCI_CALL_FAILED;
-			}
-
-			/* Add a WRCOMB MTRR for the PCI device memory bar */
-			res = mtrr_add(start, end - start, MTRR_TYPE_WRCOMB, 0);
-			if (res < 0)
-			{
-				printk(KERN_ERR "OSPCIClearResourceMTRRs: mtrr_add failed (%d)", res);
-				return PVRSRV_ERROR_PCI_CALL_FAILED;
-			}
-		}
-	}
-#endif
 
 	return PVRSRV_OK;
 }
@@ -699,7 +623,6 @@ PVRSRV_ERROR OSPCIClearResourceMTRRs(PVRSRV_PCI_DEV_HANDLE hPVRPCI, IMG_UINT32 u
 */ /**************************************************************************/
 void OSPCIReleaseResourceMTRRs(PVRSRV_PCI_DEV_HANDLE hPVRPCI, IMG_UINT32 ui32Index)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
 	PVR_PCI_DEV *psPVRPCI = (PVR_PCI_DEV *)hPVRPCI;
 
 	if (psPVRPCI->iMTRR[ui32Index] >= 0)
@@ -707,7 +630,6 @@ void OSPCIReleaseResourceMTRRs(PVRSRV_PCI_DEV_HANDLE hPVRPCI, IMG_UINT32 ui32Ind
 		arch_phys_wc_del(psPVRPCI->iMTRR[ui32Index]);
 		psPVRPCI->iMTRR[ui32Index] = -1;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 		{
 			resource_size_t start, end;
 
@@ -716,11 +638,6 @@ void OSPCIReleaseResourceMTRRs(PVRSRV_PCI_DEV_HANDLE hPVRPCI, IMG_UINT32 ui32Ind
 
 			arch_io_free_memtype_wc(start, end - start);
 		}
-#endif
 	}
-#else
-	PVR_UNREFERENCED_PARAMETER(hPVRPCI);
-	PVR_UNREFERENCED_PARAMETER(ui32Index);
-#endif
 }
 #endif /* defined(CONFIG_MTRR) */

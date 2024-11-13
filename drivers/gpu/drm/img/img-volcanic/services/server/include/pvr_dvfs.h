@@ -43,8 +43,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef PVR_DVFS_H
 #define PVR_DVFS_H
 
-#include <linux/version.h>
-
 #if defined(SUPPORT_LINUX_DVFS)
  #include <linux/devfreq.h>
  #include <linux/thermal.h>
@@ -53,17 +51,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
   #include <linux/devfreq_cooling.h>
  #endif
 
- #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
-  #include <linux/opp.h>
- #else
-  #include <linux/pm_opp.h>
- #endif
+ #include <linux/pm_opp.h>
 #endif
 
 #include "img_types.h"
 
-typedef void (*PFN_SYS_DEV_DVFS_SET_FREQUENCY)(IMG_UINT32 ui32Freq);
-typedef void (*PFN_SYS_DEV_DVFS_SET_VOLTAGE)(IMG_UINT32 ui32Volt);
+typedef void (*PFN_SYS_DEV_DVFS_SET_FREQUENCY)(IMG_HANDLE hSysData, IMG_UINT32 ui32Freq);
+typedef void (*PFN_SYS_DEV_DVFS_SET_VOLTAGE)(IMG_HANDLE hSysData, IMG_UINT32 ui32Volt);
 
 typedef struct _IMG_OPP_
 {
@@ -82,6 +76,7 @@ typedef struct _IMG_DVFS_DEVICE_CFG_
 	IMG_UINT32      ui32PollMs;
 #endif
 	IMG_BOOL        bIdleReq;
+	IMG_BOOL        bDTConfig;
 	PFN_SYS_DEV_DVFS_SET_FREQUENCY  pfnSetFrequency;
 	PFN_SYS_DEV_DVFS_SET_VOLTAGE    pfnSetVoltage;
 
@@ -100,26 +95,41 @@ typedef struct _IMG_DVFS_GOVERNOR_CFG_
 {
 	IMG_UINT32			ui32UpThreshold;
 	IMG_UINT32			ui32DownDifferential;
+#if defined(SUPPORT_PVR_DVFS_GOVERNOR)
+	/* custom thresholds */
+	IMG_UINT32			uiNumMembus;
+#endif
 } IMG_DVFS_GOVERNOR_CFG;
 #endif
 
 #if defined(__linux__)
 #if defined(SUPPORT_LINUX_DVFS)
+typedef enum
+{
+	PVR_DVFS_STATE_NONE	= 0,
+	PVR_DVFS_STATE_INIT_PENDING,
+	PVR_DVFS_STATE_READY,
+	PVR_DVFS_STATE_OFF,
+	PVR_DVFS_STATE_DEINIT
+} PVR_DVFS_STATE;
+
 typedef struct _IMG_DVFS_DEVICE_
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
-	struct opp				*psOPP;
-#else
 	struct dev_pm_opp		*psOPP;
-#endif
 	struct devfreq			*psDevFreq;
-	IMG_BOOL			bInitPending;
-	IMG_BOOL			bReady;
-	IMG_BOOL			bEnabled;
+	PVR_DVFS_STATE		eState;
 	IMG_HANDLE			hGpuUtilUserDVFS;
+#if defined(SUPPORT_PVR_DVFS_GOVERNOR)
+	IMG_DVFS_GOVERNOR_CFG data;
+	IMG_BOOL			bGovernorReady;
+#else
 	struct devfreq_simple_ondemand_data data;
+#endif
 #if defined(CONFIG_DEVFREQ_THERMAL)
 	struct thermal_cooling_device	*psDevfreqCoolingDevice;
+#endif
+#if defined(CONFIG_PM_DEVFREQ_EVENT) && defined(SUPPORT_PVR_DVFS_GOVERNOR)
+	struct pvr_profiling_device *psProfilingDevice;
 #endif
 } IMG_DVFS_DEVICE;
 #endif

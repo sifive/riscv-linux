@@ -44,13 +44,6 @@
 #if !defined(__PVR_FENCE_H__)
 #define __PVR_FENCE_H__
 
-#include <linux/version.h>
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0))
-static inline void pvr_fence_cleanup(struct pvr_fence_context *ctx)
-{
-}
-#else
 #include "services_kernel_client.h"
 #include "pvr_linux_fence.h"
 #include <linux/list.h>
@@ -97,9 +90,8 @@ struct pvr_fence_context {
 	struct list_head deferred_free_list;
 
 	struct kref kref;
-
-	struct workqueue_struct *destroy_wq;
 	struct work_struct destroy_work;
+	void *dev_cookie;
 };
 
 /**
@@ -190,11 +182,16 @@ u32 pvr_fence_dump_info_on_stalled_ufos(struct pvr_fence_context *fctx,
 					u32 nr_ufos,
 					u32 *vaddrs);
 
-static inline void pvr_fence_cleanup(struct pvr_fence_context *ctx)
+#if defined(SUPPORT_NATIVE_FENCE_SYNC) || defined(SUPPORT_BUFFER_SYNC)
+static inline void pvr_fence_cleanup(void)
 {
-	flush_workqueue(ctx->destroy_wq);
-	destroy_workqueue(ctx->destroy_wq);
+	/*
+	 * Ensure all PVR fence contexts have been destroyed, by flushing
+	 * the context destruction workqueue.
+	 */
+	flush_workqueue(NativeSyncGetFenceCtxDestroyWq());
 }
+#endif
 
 #if defined(PVR_FENCE_DEBUG)
 #define PVR_FENCE_CTX_TRACE(c, fmt, ...)                                   \
@@ -234,5 +231,4 @@ static inline void pvr_fence_cleanup(struct pvr_fence_context *ctx)
 #define PVR_FENCE_ERR(f, fmt, ...)                                         \
 	DMA_FENCE_ERR(f, "(PVR) " fmt, ## __VA_ARGS__)
 
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)) */
 #endif /* !defined(__PVR_FENCE_H__) */

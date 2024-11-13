@@ -139,7 +139,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 		offsetof(RGXFWIF_SYSINIT, sFaultPhysAddr),          \
 		offsetof(RGXFWIF_SYSINIT, sPDSExecBase),            \
 		offsetof(RGXFWIF_SYSINIT, sUSCExecBase),            \
-		offsetof(RGXFWIF_SYSINIT, asSigBufCtl),             \
+		offsetof(RGXFWIF_SYSINIT, aui32TPUTrilinearFracMask),\
 		offsetof(RGXFWIF_SYSINIT, sTraceBufCtl),            \
 		offsetof(RGXFWIF_SYSINIT, sFwSysData),              \
 		                                                    \
@@ -178,7 +178,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(SUPPORT_TRP)
 #define RGXFW_ALIGN_CHECKS_INIT_KM                          \
 		RGXFW_ALIGN_CHECKS_INIT_KM0,                        \
-		offsetof(RGXFWIF_FWTDMCONTEXT, ui32TRPState),       \
 		offsetof(RGXFWIF_FWTDMCONTEXT, aui64TRPChecksums2D)
 #else
 #define RGXFW_ALIGN_CHECKS_INIT_KM RGXFW_ALIGN_CHECKS_INIT_KM0

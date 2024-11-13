@@ -57,7 +57,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  @Return        PVRSRV_OK on success. Otherwise, a PVRSRV error code
 ******************************************************************************/
 PVRSRV_ERROR
-PvzServerMapDevPhysHeap(IMG_UINT32 ui32OSID,
+PvzServerMapDevPhysHeap(IMG_UINT32 ui32DriverID,
 						IMG_UINT32 ui32DevID,
 						IMG_UINT64 ui64Size,
 						IMG_UINT64 ui64PAddr);
@@ -70,7 +70,7 @@ PvzServerMapDevPhysHeap(IMG_UINT32 ui32OSID,
  @Return        PVRSRV_OK on success. Otherwise, a PVRSRV error code
 ******************************************************************************/
 PVRSRV_ERROR
-PvzServerUnmapDevPhysHeap(IMG_UINT32 ui32OSID,
+PvzServerUnmapDevPhysHeap(IMG_UINT32 ui32DriverID,
 						  IMG_UINT32 ui32DevID);
 
 /*!
@@ -82,7 +82,7 @@ PvzServerUnmapDevPhysHeap(IMG_UINT32 ui32OSID,
  @Return        PVRSRV_OK on success. Otherwise, a PVRSRV error code
 ******************************************************************************/
 PVRSRV_ERROR
-PvzServerOnVmOnline(IMG_UINT32 ui32OSID,
+PvzServerOnVmOnline(IMG_UINT32 ui32DriverID,
 					IMG_UINT32 ui32DevID);
 
 /*!
@@ -96,10 +96,10 @@ PvzServerOnVmOnline(IMG_UINT32 ui32OSID,
                 the GPU and it is safe to remove the memory for such VM.
  @Return        PVRSRV_OK on success. PVRSRV_ERROR_TIMEOUT if for some reason
                 the FW is taking too long to clean-up the resources of the
-                OSID. Otherwise, a PVRSRV_ERROR code.
+                DriverID. Otherwise, a PVRSRV_ERROR code.
 ******************************************************************************/
 PVRSRV_ERROR
-PvzServerOnVmOffline(IMG_UINT32 ui32OSID,
+PvzServerOnVmOffline(IMG_UINT32 ui32DriverID,
 					 IMG_UINT32 ui32DevID);
 
 /*!

@@ -55,7 +55,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "sync.h"
 #include "sync_internal.h"
 #include "connection_server.h"
-#include "htbuffer.h"
+#include "htbserver.h"
 #include "rgxhwperf.h"
 #include "info_page.h"
 
@@ -571,7 +571,7 @@ PVRSRVSyncRecordAddKM(CONNECTION_DATA *psConnection,
 		if (ui32ClassNameSize >= PVRSRV_SYNC_NAME_LENGTH)
 			ui32ClassNameSize = PVRSRV_SYNC_NAME_LENGTH;
 		/* Copy over the class name annotation */
-		OSStringLCopy(psSyncRec->szClassName, pszClassName, ui32ClassNameSize);
+		OSStringSafeCopy(psSyncRec->szClassName, pszClassName, ui32ClassNameSize);
 	}
 	else
 	{
@@ -781,6 +781,7 @@ PVRSRVAllocSyncPrimitiveBlockKM(CONNECTION_DATA *psConnection,
 	PDUMPCOMMENTWITHFLAGS(psDevNode, PDUMP_FLAGS_CONTINUOUS, "Allocate UFO block");
 
 	eError = psDevNode->pfnAllocUFOBlock(psDevNode,
+										 sizeof(IMG_UINT32),
 										 &psNewSyncBlk->psMemDesc,
 										 &psNewSyncBlk->uiFWAddr.ui32Addr,
 										 &psNewSyncBlk->ui32BlockSize);
@@ -833,15 +834,23 @@ PVRSRVFreeSyncPrimitiveBlockKM(SYNC_PRIMITIVE_BLOCK *psSyncBlk)
 }
 
 static INLINE IMG_BOOL _CheckSyncIndex(SYNC_PRIMITIVE_BLOCK *psSyncBlk,
-							IMG_UINT32 ui32Index)
+                                       IMG_UINT32 ui32Index)
 {
-	return ((ui32Index * sizeof(IMG_UINT32)) < psSyncBlk->ui32BlockSize);
+	if (psSyncBlk->ui32BlockSize == 0)
+	{
+		return IMG_FALSE;
+	}
+
+	return (ui32Index < psSyncBlk->ui32BlockSize / sizeof(IMG_UINT32));
 }
 
 PVRSRV_ERROR
-PVRSRVSyncPrimSetKM(SYNC_PRIMITIVE_BLOCK *psSyncBlk, IMG_UINT32 ui32Index,
-					IMG_UINT32 ui32Value)
+PVRSRVSyncPrimSetKM(SYNC_PRIMITIVE_BLOCK *psSyncBlk,
+                    IMG_UINT32 ui32Index,
+                    IMG_UINT32 ui32Value)
 {
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psSyncBlk != NULL, "psSyncBlk");
+
 	if (_CheckSyncIndex(psSyncBlk, ui32Index))
 	{
 		psSyncBlk->pui32LinAddr[ui32Index] = ui32Value;
@@ -849,11 +858,12 @@ PVRSRVSyncPrimSetKM(SYNC_PRIMITIVE_BLOCK *psSyncBlk, IMG_UINT32 ui32Index,
 	}
 	else
 	{
-		PVR_DPF((PVR_DBG_ERROR, "PVRSRVSyncPrimSetKM: Index %u out of range for "
-							"0x%08X byte sync block (value 0x%08X)",
-							ui32Index,
-							psSyncBlk->ui32BlockSize,
-							ui32Value));
+		PVR_DPF((PVR_DBG_ERROR,
+		         "PVRSRVSyncPrimSetKM: Index %u out of range for "
+		         "0x%08X byte sync block (value 0x%08X)",
+		         ui32Index,
+		         psSyncBlk->ui32BlockSize,
+		         ui32Value));
 		return PVRSRV_ERROR_INVALID_PARAMS;
 	}
 }

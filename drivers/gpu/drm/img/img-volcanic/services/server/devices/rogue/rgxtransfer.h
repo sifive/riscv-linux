@@ -49,7 +49,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgxdevice.h"
 #include "rgxfwutils.h"
 #include "rgx_fwif_resetframework.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "pvr_notifier.h"
 
 #include "sync_server.h"
@@ -79,9 +79,7 @@ PVRSRV_ERROR PVRSRVRGXCreateTransferContextKM(CONNECTION_DATA		*psConnection,
 										   IMG_UINT32				ui32PackedCCBSizeU8888,
 										   IMG_UINT32				ui32ContextFlags,
 										   IMG_UINT64				ui64RobustnessAddress,
-										   RGX_SERVER_TQ_CONTEXT	**ppsTransferContext,
-										   PMR						**ppsCLIPMRMem,
-										   PMR						**ppsUSCPMRMem);
+										   RGX_SERVER_TQ_CONTEXT	**ppsTransferContext);
 
 
 /*!
@@ -131,6 +129,27 @@ PVRSRV_ERROR PVRSRVRGXSubmitTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContext,
 									IMG_UINT32				*paui32SyncPMRFlags,
 									PMR						**ppsSyncPMRs);
 
+PVRSRV_ERROR PVRSRVRGXSubmitTransfer3KM(RGX_SERVER_TQ_CONTEXT	*psTransferContext,
+									IMG_UINT32				ui32PrepareCount,
+									IMG_UINT32				*paui32ClientUpdateCount,
+									SYNC_PRIMITIVE_BLOCK		***papauiClientUpdateUFODevVarBlock,
+									IMG_UINT32				**papaui32ClientUpdateSyncOffset,
+									IMG_UINT32				**papaui32ClientUpdateValue,
+									PVRSRV_FENCE			iCheckFence,
+									PVRSRV_TIMELINE			i2DUpdateTimeline,
+									PVRSRV_FENCE			*pi2DUpdateFence,
+									PVRSRV_TIMELINE			i3DUpdateTimeline,
+									PVRSRV_FENCE			*pi3DUpdateFence,
+									IMG_CHAR				szFenceName[32],
+									PVRSRV_FENCE			iExportFenceToSignal,
+									IMG_UINT32				*paui32FWCommandSize,
+									IMG_UINT8				**papaui8FWCommand,
+									IMG_UINT32				*pui32TQPrepareFlags,
+									IMG_UINT32				ui32ExtJobRef,
+									IMG_UINT32				ui32SyncPMRCount,
+									IMG_UINT32				*paui32SyncPMRFlags,
+									PMR						**ppsSyncPMRs);
+
 PVRSRV_ERROR PVRSRVRGXSetTransferContextPriorityKM(CONNECTION_DATA *psConnection,
                                                    PVRSRV_DEVICE_NODE * psDevNode,
 												   RGX_SERVER_TQ_CONTEXT *psTransferContext,
@@ -149,5 +168,12 @@ void DumpTransferCtxtsInfo(PVRSRV_RGXDEV_INFO *psDevInfo,
 
 /* Debug/Watchdog - check if client transfer contexts are stalled */
 IMG_UINT32 CheckForStalledClientTransferCtxt(PVRSRV_RGXDEV_INFO *psDevInfo);
+
+PVRSRV_ERROR PVRSRVRGXTQGetSharedMemoryKM(
+	CONNECTION_DATA           * psConnection,
+	PVRSRV_DEVICE_NODE        * psDeviceNode,
+	PMR                      ** ppsCLIPMRMem);
+
+PVRSRV_ERROR PVRSRVRGXTQReleaseSharedMemoryKM(PMR * psUSCPMRMem);
 
 #endif /* RGXTRANSFER_H */

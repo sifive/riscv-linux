@@ -112,23 +112,6 @@ typedef IMG_UINT32 SPARSE_MEM_RESIZE_FLAGS;
 
 #define SPARSE_RESIZE_BOTH (SPARSE_RESIZE_ALLOC | SPARSE_RESIZE_FREE)
 
-	/* This should be set to silently swap underlying physical memory
-	 * without disturbing its device or cpu virtual maps.
-	 * This flag is not supported in the case of PDUMP and could lead to
-	 * PDUMP panic when used.
-	 */
-#define SPARSE_REMAP_MEM 4U
-
-	/* Should be set to get the sparse changes appear in cpu virtual map */
-#define SPARSE_MAP_CPU_ADDR 8U
-
-
-/* To be used with all the sparse allocations that gets mapped to CPU Virtual
- * space. The sparse allocation CPU mapping is torn down and re-mapped every
- * time the sparse allocation layout changes.
- */
-#define PVRSRV_UNMAP_ON_SPARSE_CHANGE 1
-
 /* To use with DevmemSubAllocate() as the default factor if no over-allocation
  * is desired.
  */

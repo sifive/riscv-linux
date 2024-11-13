@@ -41,7 +41,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef DMA_FLAGS_H
 #define DMA_FLAGS_H
 
-/* these should match flags in  pvrsrv_dma.h */
+/* These should match flags in pvrsrv_dma.h */
 #define DMA_FLAG_MEM_TO_DEV  (1U<<0)
 #define DMA_FLAG_DEV_TO_MEM  (0U<<0)
 

@@ -60,6 +60,10 @@ PVRSRV_ERROR OSConnectionSetHandleOptions(PVRSRV_HANDLE_BASE *psHandleBase);
 
 PVRSRV_DEVICE_NODE* OSGetDevNode(CONNECTION_DATA *psConnection);
 
+struct drm_file;
+
+struct drm_file* OSGetDRMFile(CONNECTION_DATA *psConnection);
+
 #else	/* defined(__linux__) || defined(__QNXNTO__) || defined(INTEGRITY_OS) */
 #ifdef INLINE_IS_PRAGMA
 #pragma inline(OSConnectionPrivateDataInit)

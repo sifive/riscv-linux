@@ -103,9 +103,7 @@ PVRSRVBridgeSyncFbTimelineCreatePVR(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -128,7 +126,6 @@ PVRSRVBridgeSyncFbTimelineCreatePVR(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psSyncFbTimelineCreatePVRIN), sizeof(unsigned long));
@@ -144,7 +141,6 @@ PVRSRVBridgeSyncFbTimelineCreatePVR(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -226,11 +222,7 @@ SyncFbTimelineCreatePVR_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -391,9 +383,7 @@ PVRSRVBridgeSyncFbFenceMerge(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -415,7 +405,6 @@ PVRSRVBridgeSyncFbFenceMerge(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psSyncFbFenceMergeIN), sizeof(unsigned long));
@@ -431,7 +420,6 @@ PVRSRVBridgeSyncFbFenceMerge(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -556,11 +544,7 @@ SyncFbFenceMerge_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -678,9 +662,7 @@ PVRSRVBridgeSyncFbFenceDump(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -717,7 +699,6 @@ PVRSRVBridgeSyncFbFenceDump(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psSyncFbFenceDumpIN), sizeof(unsigned long));
@@ -733,7 +714,6 @@ PVRSRVBridgeSyncFbFenceDump(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -853,11 +833,7 @@ SyncFbFenceDump_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -891,9 +867,7 @@ PVRSRVBridgeSyncFbTimelineCreateSW(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -915,7 +889,6 @@ PVRSRVBridgeSyncFbTimelineCreateSW(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psSyncFbTimelineCreateSWIN), sizeof(unsigned long));
@@ -931,7 +904,6 @@ PVRSRVBridgeSyncFbTimelineCreateSW(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -1013,11 +985,7 @@ SyncFbTimelineCreateSW_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -1053,9 +1021,7 @@ PVRSRVBridgeSyncFbFenceCreateSW(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -1077,7 +1043,6 @@ PVRSRVBridgeSyncFbFenceCreateSW(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psSyncFbFenceCreateSWIN), sizeof(unsigned long));
@@ -1093,7 +1058,6 @@ PVRSRVBridgeSyncFbFenceCreateSW(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -1204,11 +1168,7 @@ SyncFbFenceCreateSW_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -1429,16 +1389,15 @@ SyncFbFenceExportInsecure_exit:
 			 * This should never fail... */
 			PVR_ASSERT((eError == PVRSRV_OK) || (eError == PVRSRV_ERROR_RETRY));
 
-			/* Avoid freeing/destroying/releasing the resource a second time below */
-			psExportInt = NULL;
 			/* Release now we have cleaned up creation handles. */
 			UnlockHandle(psConnection->psProcessHandleBase->psHandleBase);
 		}
 
-		if (psExportInt)
+		else if (psExportInt)
 		{
 			SyncFbFenceExportDestroyInsecure(psExportInt);
 		}
+
 	}
 
 	return 0;
@@ -1846,66 +1805,98 @@ PVRSRV_ERROR InitSYNCFALLBACKBridge(void)
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBTIMELINECREATEPVR,
-			      PVRSRVBridgeSyncFbTimelineCreatePVR, NULL);
+			      PVRSRVBridgeSyncFbTimelineCreatePVR, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBTIMELINECREATEPVR),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBTIMELINECREATEPVR));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBTIMELINERELEASE,
-			      PVRSRVBridgeSyncFbTimelineRelease, NULL);
+			      PVRSRVBridgeSyncFbTimelineRelease, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBTIMELINERELEASE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBTIMELINERELEASE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK, PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEDUP,
-			      PVRSRVBridgeSyncFbFenceDup, NULL);
+			      PVRSRVBridgeSyncFbFenceDup, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEDUP),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEDUP));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEMERGE,
-			      PVRSRVBridgeSyncFbFenceMerge, NULL);
+			      PVRSRVBridgeSyncFbFenceMerge, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEMERGE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEMERGE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCERELEASE,
-			      PVRSRVBridgeSyncFbFenceRelease, NULL);
+			      PVRSRVBridgeSyncFbFenceRelease, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCERELEASE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCERELEASE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEWAIT,
-			      PVRSRVBridgeSyncFbFenceWait, NULL);
+			      PVRSRVBridgeSyncFbFenceWait, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEWAIT),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEWAIT));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEDUMP,
-			      PVRSRVBridgeSyncFbFenceDump, NULL);
+			      PVRSRVBridgeSyncFbFenceDump, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEDUMP),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEDUMP));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBTIMELINECREATESW,
-			      PVRSRVBridgeSyncFbTimelineCreateSW, NULL);
+			      PVRSRVBridgeSyncFbTimelineCreateSW, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBTIMELINECREATESW),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBTIMELINECREATESW));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCECREATESW,
-			      PVRSRVBridgeSyncFbFenceCreateSW, NULL);
+			      PVRSRVBridgeSyncFbFenceCreateSW, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCECREATESW),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCECREATESW));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBTIMELINEADVANCESW,
-			      PVRSRVBridgeSyncFbTimelineAdvanceSW, NULL);
+			      PVRSRVBridgeSyncFbTimelineAdvanceSW, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBTIMELINEADVANCESW),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBTIMELINEADVANCESW));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEEXPORTINSECURE,
-			      PVRSRVBridgeSyncFbFenceExportInsecure, NULL);
+			      PVRSRVBridgeSyncFbFenceExportInsecure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEEXPORTINSECURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEEXPORTINSECURE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEEXPORTDESTROYINSECURE,
-			      PVRSRVBridgeSyncFbFenceExportDestroyInsecure, NULL);
+			      PVRSRVBridgeSyncFbFenceExportDestroyInsecure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEEXPORTDESTROYINSECURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEEXPORTDESTROYINSECURE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEIMPORTINSECURE,
-			      PVRSRVBridgeSyncFbFenceImportInsecure, NULL);
+			      PVRSRVBridgeSyncFbFenceImportInsecure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEIMPORTINSECURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEIMPORTINSECURE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEEXPORTSECURE,
-			      PVRSRVBridgeSyncFbFenceExportSecure, NULL);
+			      PVRSRVBridgeSyncFbFenceExportSecure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEEXPORTSECURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEEXPORTSECURE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEEXPORTDESTROYSECURE,
-			      PVRSRVBridgeSyncFbFenceExportDestroySecure, NULL);
+			      PVRSRVBridgeSyncFbFenceExportDestroySecure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEEXPORTDESTROYSECURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEEXPORTDESTROYSECURE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_SYNCFALLBACK,
 			      PVRSRV_BRIDGE_SYNCFALLBACK_SYNCFBFENCEIMPORTSECURE,
-			      PVRSRVBridgeSyncFbFenceImportSecure, NULL);
+			      PVRSRVBridgeSyncFbFenceImportSecure, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_SYNCFBFENCEIMPORTSECURE),
+			      sizeof(PVRSRV_BRIDGE_OUT_SYNCFBFENCEIMPORTSECURE));
 
 	return PVRSRV_OK;
 }

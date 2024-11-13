@@ -60,7 +60,7 @@ PVRSRV_ERROR InfoPageCreate(PVRSRV_DATA *psData)
 
     /* Allocate single page of memory for driver information page */
     eError = DevmemAllocateExportable(psData->psHostMemDeviceNode,
-                                      OSGetPageSize(),
+                                      PVR_ALIGN(INFO_PAGE_TOTAL_SIZE, OSGetPageSize()),
                                       OSGetPageSize(),
                                       OSGetPageShift(),
                                       uiMemFlags,

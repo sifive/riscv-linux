@@ -45,7 +45,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "osfunc.h"
 #include "pdump_km.h"
 #include "rgxfwutils.h"
+#include "rgxinit.h"
+#include "rgxfwimageutils.h"
 #include "cache_km.h"
+#include "km/rgxdefs_km.h"
+#include "rgx_heaps_server.h"
 
 #if defined(PDUMP)
 #if defined(__linux__)
@@ -61,420 +65,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #endif /* __linux__ */
 #endif
 
-void RGXMemCopy(const void *hPrivate,
-                void *pvDst,
-                void *pvSrc,
-                size_t uiSize)
-{
-	PVR_UNREFERENCED_PARAMETER(hPrivate);
-	OSDeviceMemCopy(pvDst, pvSrc, uiSize);
-}
-
-void RGXMemSet(const void *hPrivate,
-               void *pvDst,
-               IMG_UINT8 ui8Value,
-               size_t uiSize)
-{
-	PVR_UNREFERENCED_PARAMETER(hPrivate);
-	OSDeviceMemSet(pvDst, ui8Value, uiSize);
-}
-
-void RGXCommentLog(const void *hPrivate,
-                   const IMG_CHAR *pszString,
-                   ...)
-{
-#if defined(PDUMP)
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	va_list argList;
-	va_start(argList, pszString);
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-
-	PDumpCommentWithFlagsVA(psDevInfo->psDeviceNode, PDUMP_FLAGS_CONTINUOUS, pszString, argList);
-	va_end(argList);
-#else
-	PVR_UNREFERENCED_PARAMETER(hPrivate);
-	PVR_UNREFERENCED_PARAMETER(pszString);
-#endif
-}
-
-void RGXErrorLog(const void *hPrivate,
-                 const IMG_CHAR *pszString,
-                 ...)
-{
-	IMG_CHAR szBuffer[PVR_MAX_DEBUG_MESSAGE_LEN];
-	va_list argList;
-
-	PVR_UNREFERENCED_PARAMETER(hPrivate);
-
-	va_start(argList, pszString);
-	vsnprintf(szBuffer, sizeof(szBuffer), pszString, argList);
-	va_end(argList);
-
-	PVR_DPF((PVR_DBG_ERROR, "%s", szBuffer));
-}
-
-IMG_INT32 RGXDeviceGetFeatureValue(const void *hPrivate, IMG_UINT64 ui64Feature)
-{
-	IMG_INT32 i32Ret = -1;
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	PVRSRV_DEVICE_NODE *psDeviceNode;
-
-	PVR_ASSERT(hPrivate != NULL);
-
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	psDeviceNode = psDevInfo->psDeviceNode;
-
-	if ((psDeviceNode->pfnGetDeviceFeatureValue))
-	{
-		i32Ret = psDeviceNode->pfnGetDeviceFeatureValue(psDeviceNode, ui64Feature);
-	}
-
-	return i32Ret;
-}
-
-IMG_BOOL RGXDeviceHasFeature(const void *hPrivate, IMG_UINT64 ui64Feature)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-
-	return (psDevInfo->sDevFeatureCfg.ui64Features & ui64Feature) != 0;
-}
-
-IMG_UINT32 RGXGetFWCorememSize(const void *hPrivate)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-
-	if (RGX_IS_FEATURE_VALUE_SUPPORTED(psDevInfo, META_COREMEM_SIZE))
-	{
-		return RGX_GET_FEATURE_VALUE(psDevInfo, META_COREMEM_SIZE);
-	}
-	return 0;
-}
-
-void RGXWriteReg32(const void *hPrivate, IMG_UINT32 ui32RegAddr, IMG_UINT32 ui32RegValue)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	void __iomem *pvRegsBase;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	pvRegsBase = (ui32RegAddr < RGX_HOST_SECURE_REGBANK_OFFSET) ?
-	             (psDevInfo->pvRegsBaseKM) : (psDevInfo->pvSecureRegsBaseKM);
-
-#if defined(PDUMP)
-	if (!(psParams->ui32PdumpFlags & PDUMP_FLAGS_NOHW))
-#endif
-	{
-		OSWriteUncheckedHWReg32(pvRegsBase, ui32RegAddr, ui32RegValue);
-	}
-
-	PDUMPREG32(psDevInfo->psDeviceNode, RGX_PDUMPREG_NAME,
-	           ui32RegAddr, ui32RegValue, psParams->ui32PdumpFlags);
-}
-
-void RGXWriteReg64(const void *hPrivate, IMG_UINT32 ui32RegAddr, IMG_UINT64 ui64RegValue)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	void __iomem *pvRegsBase;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	pvRegsBase = (ui32RegAddr < RGX_HOST_SECURE_REGBANK_OFFSET) ?
-	             (psDevInfo->pvRegsBaseKM) : (psDevInfo->pvSecureRegsBaseKM);
-
-#if defined(PDUMP)
-	if (!(psParams->ui32PdumpFlags & PDUMP_FLAGS_NOHW))
-#endif
-	{
-		OSWriteUncheckedHWReg64(pvRegsBase, ui32RegAddr, ui64RegValue);
-	}
-
-	PDUMPREG64(psDevInfo->psDeviceNode, RGX_PDUMPREG_NAME,
-	           ui32RegAddr, ui64RegValue, psParams->ui32PdumpFlags);
-}
-
-IMG_UINT32 RGXReadReg32(const void *hPrivate, IMG_UINT32 ui32RegAddr)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	void __iomem *pvRegsBase;
-	IMG_UINT32 ui32RegValue;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	pvRegsBase = (ui32RegAddr < RGX_HOST_SECURE_REGBANK_OFFSET) ?
-	             (psDevInfo->pvRegsBaseKM) : (psDevInfo->pvSecureRegsBaseKM);
-
-#if defined(PDUMP)
-	if (psParams->ui32PdumpFlags & PDUMP_FLAGS_NOHW)
-	{
-		ui32RegValue = IMG_UINT32_MAX;
-	}
-	else
-#endif
-	{
-		ui32RegValue = OSReadUncheckedHWReg32(pvRegsBase, ui32RegAddr);
-	}
-
-	PDUMPREGREAD32(psDevInfo->psDeviceNode, RGX_PDUMPREG_NAME,
-	               ui32RegAddr, psParams->ui32PdumpFlags);
-
-	return ui32RegValue;
-}
-
-IMG_UINT64 RGXReadReg64(const void *hPrivate, IMG_UINT32 ui32RegAddr)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	void __iomem *pvRegsBase;
-	IMG_UINT64 ui64RegValue;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	pvRegsBase = (ui32RegAddr < RGX_HOST_SECURE_REGBANK_OFFSET) ?
-	             (psDevInfo->pvRegsBaseKM) : (psDevInfo->pvSecureRegsBaseKM);
-
-#if defined(PDUMP)
-	if (psParams->ui32PdumpFlags & PDUMP_FLAGS_NOHW)
-	{
-		ui64RegValue = IMG_UINT64_MAX;
-	}
-	else
-#endif
-	{
-		ui64RegValue = OSReadUncheckedHWReg64(pvRegsBase, ui32RegAddr);
-	}
-
-	PDUMPREGREAD64(psDevInfo->psDeviceNode, RGX_PDUMPREG_NAME,
-	               ui32RegAddr, PDUMP_FLAGS_CONTINUOUS);
-
-	return ui64RegValue;
-}
-
-IMG_UINT32 RGXReadModifyWriteReg64(const void *hPrivate,
-                                   IMG_UINT32 ui32RegAddr,
-                                   IMG_UINT64 uiRegValueNew,
-                                   IMG_UINT64 uiRegKeepMask)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	void __iomem *pvRegsBase;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	pvRegsBase = (ui32RegAddr < RGX_HOST_SECURE_REGBANK_OFFSET) ?
-	             (psDevInfo->pvRegsBaseKM) : (psDevInfo->pvSecureRegsBaseKM);
-
-	/* only use the new values for bits we update according to the keep mask */
-	uiRegValueNew &= ~uiRegKeepMask;
-
-#if defined(PDUMP)
-	/* Store register offset to temp PDump variable */
-	PDumpRegRead64ToInternalVar(psDevInfo->psDeviceNode, RGX_PDUMPREG_NAME,
-	                            ":SYSMEM:$1", ui32RegAddr, PDUMP_FLAGS_CONTINUOUS);
-
-	/* Keep the bits set in the mask */
-	PDumpWriteVarANDValueOp(psDevInfo->psDeviceNode, ":SYSMEM:$1",
-	                        uiRegKeepMask, PDUMP_FLAGS_CONTINUOUS);
-
-	/* OR the new values */
-	PDumpWriteVarORValueOp(psDevInfo->psDeviceNode, ":SYSMEM:$1",
-	                       uiRegValueNew, PDUMP_FLAGS_CONTINUOUS);
-
-	/* Do the actual register write */
-	PDumpInternalVarToReg64(psDevInfo->psDeviceNode, RGX_PDUMPREG_NAME,
-	                        ui32RegAddr, ":SYSMEM:$1", 0);
-
-	if (!(psParams->ui32PdumpFlags & PDUMP_FLAGS_NOHW))
-#endif
-
-	{
-		IMG_UINT64 uiRegValue = OSReadUncheckedHWReg64(pvRegsBase, ui32RegAddr);
-		uiRegValue &= uiRegKeepMask;
-		OSWriteUncheckedHWReg64(pvRegsBase, ui32RegAddr, uiRegValue | uiRegValueNew);
-	}
-
-	return PVRSRV_OK;
-}
-
-PVRSRV_ERROR RGXPollReg32(const void *hPrivate,
-                          IMG_UINT32 ui32RegAddr,
-                          IMG_UINT32 ui32RegValue,
-                          IMG_UINT32 ui32RegMask)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	void __iomem *pvRegsBase;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	pvRegsBase = (ui32RegAddr < RGX_HOST_SECURE_REGBANK_OFFSET) ?
-	             (psDevInfo->pvRegsBaseKM) : (psDevInfo->pvSecureRegsBaseKM);
-
-#if defined(PDUMP)
-	if (!(psParams->ui32PdumpFlags & PDUMP_FLAGS_NOHW))
-#endif
-	{
-		if (PVRSRVPollForValueKM(psDevInfo->psDeviceNode,
-		                         (IMG_UINT32 __iomem *)((IMG_UINT8 __iomem *)pvRegsBase + ui32RegAddr),
-		                         ui32RegValue,
-		                         ui32RegMask,
-		                         POLL_FLAG_LOG_ERROR) != PVRSRV_OK)
-		{
-			PVR_DPF((PVR_DBG_ERROR, "RGXPollReg32: Poll for Reg (0x%x) failed", ui32RegAddr));
-			return PVRSRV_ERROR_TIMEOUT;
-		}
-	}
-
-	PDUMPREGPOL(psDevInfo->psDeviceNode,
-	            RGX_PDUMPREG_NAME,
-	            ui32RegAddr,
-	            ui32RegValue,
-	            ui32RegMask,
-	            psParams->ui32PdumpFlags,
-	            PDUMP_POLL_OPERATOR_EQUAL);
-
-	return PVRSRV_OK;
-}
-
-PVRSRV_ERROR RGXPollReg64(const void *hPrivate,
-                          IMG_UINT32 ui32RegAddr,
-                          IMG_UINT64 ui64RegValue,
-                          IMG_UINT64 ui64RegMask)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-	void __iomem *pvRegsBase;
-
-	/* Split lower and upper words */
-	IMG_UINT32 ui32UpperValue = (IMG_UINT32) (ui64RegValue >> 32);
-	IMG_UINT32 ui32LowerValue = (IMG_UINT32) (ui64RegValue);
-	IMG_UINT32 ui32UpperMask = (IMG_UINT32) (ui64RegMask >> 32);
-	IMG_UINT32 ui32LowerMask = (IMG_UINT32) (ui64RegMask);
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-	pvRegsBase = (ui32RegAddr < RGX_HOST_SECURE_REGBANK_OFFSET) ?
-	             (psDevInfo->pvRegsBaseKM) : (psDevInfo->pvSecureRegsBaseKM);
-
-#if defined(PDUMP)
-	if (!(psParams->ui32PdumpFlags & PDUMP_FLAGS_NOHW))
-#endif
-	{
-		if (PVRSRVPollForValueKM(psDevInfo->psDeviceNode,
-		                         (IMG_UINT32 __iomem *)((IMG_UINT8 __iomem *)pvRegsBase + ui32RegAddr + 4),
-		                         ui32UpperValue,
-		                         ui32UpperMask,
-		                         POLL_FLAG_LOG_ERROR) != PVRSRV_OK)
-		{
-			PVR_DPF((PVR_DBG_ERROR, "RGXPollReg64: Poll for upper part of Reg (0x%x) failed", ui32RegAddr));
-			return PVRSRV_ERROR_TIMEOUT;
-		}
-
-		if (PVRSRVPollForValueKM(psDevInfo->psDeviceNode,
-		                         (IMG_UINT32 __iomem *)((IMG_UINT8 __iomem *)pvRegsBase + ui32RegAddr),
-		                         ui32LowerValue,
-		                         ui32LowerMask,
-		                         POLL_FLAG_LOG_ERROR) != PVRSRV_OK)
-		{
-			PVR_DPF((PVR_DBG_ERROR, "RGXPollReg64: Poll for lower part of Reg (0x%x) failed", ui32RegAddr));
-			return PVRSRV_ERROR_TIMEOUT;
-		}
-	}
-
-	PDUMPREGPOL(psDevInfo->psDeviceNode,
-	            RGX_PDUMPREG_NAME,
-	            ui32RegAddr + 4,
-	            ui32UpperValue,
-	            ui32UpperMask,
-	            psParams->ui32PdumpFlags,
-	            PDUMP_POLL_OPERATOR_EQUAL);
-
-
-	PDUMPREGPOL(psDevInfo->psDeviceNode,
-	            RGX_PDUMPREG_NAME,
-	            ui32RegAddr,
-	            ui32LowerValue,
-	            ui32LowerMask,
-	            psParams->ui32PdumpFlags,
-	            PDUMP_POLL_OPERATOR_EQUAL);
-
-	return PVRSRV_OK;
-}
-
-void RGXWaitCycles(const void *hPrivate, IMG_UINT32 ui32Cycles, IMG_UINT32 ui32TimeUs)
-{
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psDevInfo = ((RGX_LAYER_PARAMS*)hPrivate)->psDevInfo;
-	OSWaitus(ui32TimeUs);
-	PDUMPIDLWITHFLAGS(psDevInfo->psDeviceNode, ui32Cycles, PDUMP_FLAGS_CONTINUOUS);
-}
-
-void RGXAcquireKernelMMUPC(const void *hPrivate, IMG_DEV_PHYADDR *psPCAddr)
-{
-	PVR_ASSERT(hPrivate != NULL);
-	*psPCAddr = ((RGX_LAYER_PARAMS*)hPrivate)->sPCAddr;
-}
-
-#if defined(PDUMP)
-void RGXWriteKernelMMUPC32(const void *hPrivate,
-                           IMG_UINT32 ui32PCReg,
-                           IMG_UINT32 ui32PCRegAlignShift,
-                           IMG_UINT32 ui32PCRegShift,
-                           IMG_UINT32 ui32PCVal)
-{
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psDevInfo = ((RGX_LAYER_PARAMS*)hPrivate)->psDevInfo;
-
-	/* Write the cat-base address */
-	OSWriteUncheckedHWReg32(psDevInfo->pvSecureRegsBaseKM, ui32PCReg, ui32PCVal);
-
-	/* Pdump catbase address */
-	MMU_PDumpWritePageCatBase(psDevInfo->psKernelMMUCtx,
-	                          RGX_PDUMPREG_NAME,
-	                          ui32PCReg,
-	                          4,
-	                          ui32PCRegAlignShift,
-	                          ui32PCRegShift,
-	                          PDUMP_FLAGS_CONTINUOUS);
-}
-#endif /* defined(PDUMP) */
 
 #define MAX_NUM_COHERENCY_TESTS  (10)
 IMG_BOOL RGXDoFWSlaveBoot(const void *hPrivate)
 {
 	PVRSRV_RGXDEV_INFO *psDevInfo;
-	PVRSRV_DEVICE_NODE *psDeviceNode;
 
 	PVR_ASSERT(hPrivate != NULL);
 	psDevInfo = ((RGX_LAYER_PARAMS*)hPrivate)->psDevInfo;
@@ -484,13 +79,7 @@ IMG_BOOL RGXDoFWSlaveBoot(const void *hPrivate)
 		return IMG_FALSE;
 	}
 
-	psDeviceNode = psDevInfo->psDeviceNode;
-#if !defined(NO_HARDWARE)
-	return (PVRSRVSystemSnoopingOfCPUCache(psDeviceNode->psDevConfig) &&
-	        PVRSRVSystemSnoopingOfDeviceCache(psDeviceNode->psDevConfig));
-#else
 	return IMG_FALSE;
-#endif
 }
 
 /*
@@ -598,7 +187,7 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 	sFabricCohCcTestBufferDevVA.ui32Addr |= RGXFW_BOOTLDR_META_ADDR;
 	sFabricCohCcTestBufferDevVA.ui32Addr |= RGXFW_SEGMMU_DATA_META_UNCACHED;
 
-	/* Allocate, acquire cpu address and set firmware address for cc=0 buffer  */
+	/* Allocate, acquire cpu address and set firmware address for cc=0 buffer */
 	eError = DevmemFwAllocateExportable(psDevInfo->psDeviceNode,
 										uiFabricCohTestBlockSize,
 										uiFabricCohTestBlockAlign,
@@ -682,8 +271,7 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 			psFabricCohTestBufferDevVA = &sFabricCohCcTestBufferDevVA;
 		}
 
-		if (eTestType == GPU_WRITE_CPU_READ_SH &&
-			!PVRSRVSystemSnoopingOfDeviceCache(psDevInfo->psDeviceNode->psDevConfig))
+		if (eTestType == GPU_WRITE_CPU_READ_SH)
 		{
 			/* Cannot perform this test if there is no snooping of device cache */
 			continue;
@@ -691,7 +279,7 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 
 		/* Acquire underlying PMR CpuPA in preparation for cache maintenance */
 		(void) DevmemLocalGetImportHandle(psFabricCohTestBufferMemDesc, (void**)&psPMR);
-		eError = PMR_CpuPhysAddr(psPMR, OSGetPageShift(), 1, 0, &sCpuPhyAddr, &bValid);
+		eError = PMR_CpuPhysAddr(psPMR, OSGetPageShift(), 1, 0, &sCpuPhyAddr, &bValid, CPU_USE);
 		if (eError != PVRSRV_OK || bValid == IMG_FALSE)
 		{
 			PVR_DPF((PVR_DBG_ERROR,
@@ -706,6 +294,29 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 		for (ui32OddEven = 1; ui32OddEven < 3 && bExit == IMG_FALSE; ui32OddEven++)
 		{
 			IMG_UINT32 i;
+
+#if defined(DEBUG)
+			switch (eTestType)
+			{
+			case CPU_WRITE_GPU_READ_SM:
+				PVR_LOG(("CPU:Write/GPU:Read Snoop Miss Test: starting [run #%u]", ui32OddEven));
+				break;
+			case GPU_WRITE_CPU_READ_SM:
+				PVR_LOG(("GPU:Write/CPU:Read Snoop Miss Test: starting [run #%u]", ui32OddEven));
+				break;
+			case CPU_WRITE_GPU_READ_SH:
+				PVR_LOG(("CPU:Write/GPU:Read Snoop Hit  Test: starting [run #%u]", ui32OddEven));
+				break;
+			case GPU_WRITE_CPU_READ_SH:
+				PVR_LOG(("GPU:Write/CPU:Read Snoop Hit  Test: starting [run #%u]", ui32OddEven));
+				break;
+			default:
+				PVR_LOG(("Internal error, exiting test"));
+				eError = PVRSRV_ERROR_INIT_FAILURE;
+				bExit = IMG_TRUE;
+				continue;
+			}
+#endif
 
 			/* Do multiple sub-dword cache line tests */
 			for (i = 0; i < 2 && bExit == IMG_FALSE; i++)
@@ -726,7 +337,7 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 					   what we are about to write via slave-port here because if it drains from the CPU
 					   dcache before we read it, it would corrupt what we are going to read back via
 					   the CPU */
-					CacheOpValExec(psPMR, 0, ui32Offset, sizeof(IMG_UINT32), PVRSRV_CACHE_OP_CLEAN);
+					CacheOpValExec(psPMR, 0, ui32Offset, sizeof(IMG_UINT32), PVRSRV_CACHE_OP_FLUSH);
 
 					/* Calculate a new value to write */
 					ui32FWValue = i + ui32OddEvenSeed;
@@ -736,8 +347,8 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 					if (eError != PVRSRV_OK)
 					{
 						PVR_DPF((PVR_DBG_ERROR,
-								"RGXWriteFWModuleAddr error: %s, exiting",
-								 PVRSRVGetErrorString(eError)));
+						         "RGXWriteFWModuleAddr error: %s, exiting",
+						          PVRSRVGetErrorString(eError)));
 						bExit = IMG_TRUE;
 						continue;
 					}
@@ -748,8 +359,8 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 					if (eError != PVRSRV_OK)
 					{
 						PVR_DPF((PVR_DBG_ERROR,
-								"RGXReadFWModuleAddr error: %s, exiting",
-								 PVRSRVGetErrorString(eError)));
+						         "RGXReadFWModuleAddr error: %s, exiting",
+						         PVRSRVGetErrorString(eError)));
 						bExit = IMG_TRUE;
 						continue;
 					}
@@ -769,15 +380,12 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 						continue;
 					}
 
-					if (!PVRSRVSystemSnoopingOfDeviceCache(psDevInfo->psDeviceNode->psDevConfig))
-					{
-						/* Invalidate dcache to ensure that any prefetched data by the CPU from this memory
-						   region is discarded before we read (i.e. next read must trigger a cache miss).
-						   If there is snooping of device cache, then any prefetching done by the CPU
-						   will reflect the most up to date datum writing by GPU into said location,
-						   that is to say prefetching must be coherent so CPU d-flush is not needed */
-						CacheOpValExec(psPMR, 0, ui32Offset, sizeof(IMG_UINT32), PVRSRV_CACHE_OP_INVALIDATE);
-					}
+					/* Invalidate dcache to ensure that any prefetched data by the CPU from this memory
+					   region is discarded before we read (i.e. next read must trigger a cache miss).
+					   Previously there was snooping of device cache, where prefetching done by the CPU
+					   would reflect the most up to date datum writing by GPU into said location,
+					   that is to say prefetching was coherent so CPU d-flush was not needed */
+					CacheOpValExec(psPMR, 0, ui32Offset, sizeof(IMG_UINT32), PVRSRV_CACHE_OP_INVALIDATE);
 				}
 				else
 				{
@@ -793,15 +401,11 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 					/* Flush possible cpu store-buffer(ing) on LMA */
 					OSWriteMemoryBarrier(&pui32FabricCohTestBufferCpuVA[i]);
 
-					switch (eTestType)
+					if (eTestType == CPU_WRITE_GPU_READ_SM)
 					{
-					case CPU_WRITE_GPU_READ_SM:
 						/* Flush dcache to force subsequent incoming CPU-bound snoop to miss so
 						   memory is coherent before the SlavePort reads */
 						CacheOpValExec(psPMR, 0, ui32Offset, sizeof(IMG_UINT32), PVRSRV_CACHE_OP_FLUSH);
-						break;
-					default:
-						break;
 					}
 
 					/* Read back value using RGX slave-port interface */
@@ -809,7 +413,7 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 					if (eError != PVRSRV_OK)
 					{
 						PVR_DPF((PVR_DBG_ERROR,
-								"RGXReadWithSP error: %s, exiting",
+								"RGXReadFWModuleAddr error: %s, exiting",
 								PVRSRVGetErrorString(eError)));
 						bExit = IMG_TRUE;
 						continue;
@@ -869,7 +473,11 @@ PVRSRV_ERROR RGXFabricCoherencyTest(const void *hPrivate)
 			}
 
 #if defined(DEBUG)
-			bSubTestPassed = bExit ? IMG_FALSE : bSubTestPassed;
+			if (bExit)
+			{
+				continue;
+			}
+
 			switch (eTestType)
 			{
 			case CPU_WRITE_GPU_READ_SM:
@@ -932,79 +540,100 @@ e0:
 	return eError;
 }
 
-IMG_BOOL RGXDeviceHasErnBrn(const void *hPrivate, IMG_UINT64 ui64ErnsBrns)
+static IMG_UINT64 RGXMMUComputeRangeValue(IMG_UINT32 ui32DataPageShift, IMG_UINT64 ui64BaseAddress, IMG_UINT64 ui64RangeSize)
 {
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
+	/* end address of range is inclusive */
+	IMG_UINT64 ui64EndAddress = ui64BaseAddress + ui64RangeSize - (1 << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_END_ADDR_ALIGNSHIFT);
+	IMG_UINT64 ui64RegValue = 0;
 
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-
-	return (psDevInfo->sDevFeatureCfg.ui64ErnsBrns & ui64ErnsBrns) != 0;
-}
-
-IMG_UINT32 RGXGetDeviceSLCBanks(const void *hPrivate)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-
-	if (!RGX_IS_FEATURE_VALUE_SUPPORTED(psDevInfo, SLC_BANKS))
+	switch (ui32DataPageShift)
 	{
-		return 0;
+		case RGX_HEAP_16KB_PAGE_SHIFT:
+			ui64RegValue = 1;
+			break;
+		case RGX_HEAP_64KB_PAGE_SHIFT:
+			ui64RegValue = 2;
+			break;
+		case RGX_HEAP_256KB_PAGE_SHIFT:
+			ui64RegValue = 3;
+			break;
+		case RGX_HEAP_1MB_PAGE_SHIFT:
+			ui64RegValue = 4;
+			break;
+		case RGX_HEAP_2MB_PAGE_SHIFT:
+			ui64RegValue = 5;
+			break;
+		case RGX_HEAP_4KB_PAGE_SHIFT:
+			/* fall through */
+		default:
+			/* anything we don't support, use 4K */
+			break;
 	}
-	return RGX_GET_FEATURE_VALUE(psDevInfo, SLC_BANKS);
+
+	/* check that the range is defined by valid 40 bit virtual addresses */
+	PVR_ASSERT((ui64BaseAddress & ~((1ULL << 40) - 1)) == 0);
+	PVR_ASSERT((ui64EndAddress  & ~((1ULL << 40) - 1)) == 0);
+
+	/* the range config register addresses are in 2MB chunks so check 21 lsb are zero */
+	PVR_ASSERT((ui64BaseAddress & ((1 << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_BASE_ADDR_ALIGNSHIFT) - 1)) == 0);
+	PVR_ASSERT((ui64EndAddress  & ((1 << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_END_ADDR_ALIGNSHIFT)  - 1)) == 0);
+
+	ui64BaseAddress >>= RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_BASE_ADDR_ALIGNSHIFT;
+	ui64EndAddress  >>= RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_END_ADDR_ALIGNSHIFT;
+
+	ui64RegValue = (ui64RegValue << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_PAGE_SIZE_SHIFT) |
+				   (ui64EndAddress  << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_END_ADDR_SHIFT) |
+				   (ui64BaseAddress << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_BASE_ADDR_SHIFT);
+	return ui64RegValue;
 }
 
-IMG_UINT32 RGXGetDeviceCacheLineSize(const void *hPrivate)
+IMG_UINT64 RGXMMUInitRangeValue(IMG_UINT32 ui32MMURange)
 {
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
+	IMG_UINT64 ui64RegVal;
+	IMG_UINT32 ui32Non4KHeapPageShift;
+	IMG_UINT32 ui32RgxDefaultPageShift = RGXHeapDerivePageSize(OSGetPageShift());
+	PVRSRV_ERROR eError;
 
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-
-	if (!RGX_IS_FEATURE_VALUE_SUPPORTED(psDevInfo, SLC_CACHE_LINE_SIZE_BITS))
+	switch (ui32MMURange)
 	{
-		return 0;
+		case RGX_MMU_RANGE_GLOBAL:
+			/* set the last MMU config range covering the entire virtual memory to the OS's page size */
+			ui64RegVal = RGXMMUComputeRangeValue(ui32RgxDefaultPageShift, 0, (1ULL << 40));
+			break;
+		case RGX_MMU_RANGE_NON4KHEAP:
+			/*
+			 * If the Non4K heap has a different page size than the OS's page size
+			 * (used as default for all other heaps), configure one MMU config range
+			 * for the Non4K heap
+			 */
+			eError = RGXGetNon4KHeapPageShift(NULL, &ui32Non4KHeapPageShift);
+			PVR_LOG_IF_ERROR(eError, "RGXGetNon4KHeapPageShift");
+
+			if (eError == PVRSRV_OK)
+			{
+				if (ui32Non4KHeapPageShift != ui32RgxDefaultPageShift)
+				{
+					ui64RegVal = RGXMMUComputeRangeValue(ui32Non4KHeapPageShift, RGX_GENERAL_NON4K_HEAP_BASE, RGX_GENERAL_NON4K_HEAP_SIZE);
+				}
+				else
+				{
+					ui64RegVal = RGXMMUComputeRangeValue(ui32RgxDefaultPageShift, 0, (1 << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_END_ADDR_ALIGNSHIFT));
+				}
+			}
+			else
+			{
+				/*
+				 * Error from Non4K Heap shift. Default to the normal PageShift
+				 * to attempt to continue.
+				 */
+				ui64RegVal = RGXMMUComputeRangeValue(ui32RgxDefaultPageShift, 0, (1 << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_END_ADDR_ALIGNSHIFT));
+			}
+			break;
+		default:
+			ui64RegVal = RGXMMUComputeRangeValue(ui32RgxDefaultPageShift, 0, (1 << RGX_CR_MMU_PAGE_SIZE_RANGE_ONE_END_ADDR_ALIGNSHIFT));
+			break;
 	}
-	return RGX_GET_FEATURE_VALUE(psDevInfo, SLC_CACHE_LINE_SIZE_BITS);
+
+	return ui64RegVal;
 }
 
-void RGXAcquireBootCodeAddr(const void *hPrivate, IMG_DEV_VIRTADDR *psBootCodeAddr)
-{
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psDevInfo = ((RGX_LAYER_PARAMS*)hPrivate)->psDevInfo;
-
-	*psBootCodeAddr = psDevInfo->sFWCodeDevVAddrBase;
-}
-
-void RGXAcquireBootDataAddr(const void *hPrivate, IMG_DEV_VIRTADDR *psBootDataAddr)
-{
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psDevInfo = ((RGX_LAYER_PARAMS*)hPrivate)->psDevInfo;
-
-	*psBootDataAddr = psDevInfo->sFWDataDevVAddrBase;
-}
-
-IMG_BOOL RGXDeviceAckIrq(const void *hPrivate)
-{
-	RGX_LAYER_PARAMS *psParams;
-	PVRSRV_RGXDEV_INFO *psDevInfo;
-
-	PVR_ASSERT(hPrivate != NULL);
-	psParams = (RGX_LAYER_PARAMS*)hPrivate;
-	psDevInfo = psParams->psDevInfo;
-
-	return (psDevInfo->pfnRGXAckIrq != NULL) ?
-			psDevInfo->pfnRGXAckIrq(psDevInfo) : IMG_TRUE;
-}

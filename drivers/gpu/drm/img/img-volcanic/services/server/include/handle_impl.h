@@ -82,6 +82,7 @@ typedef struct _HANDLE_IMPL_FUNCTAB_
 
 	/* Destroy handle base */
 	PVRSRV_ERROR (*pfnDestroyHandleBase)(HANDLE_IMPL_BASE *psHandleBase);
+
 } HANDLE_IMPL_FUNCTAB;
 
 PVRSRV_ERROR PVRSRVHandleGetFuncTable(HANDLE_IMPL_FUNCTAB const **ppsFuncs);

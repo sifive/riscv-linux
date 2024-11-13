@@ -174,7 +174,7 @@ PVRSRV_ERROR TLClientOpenStream(SHARED_DEV_CONNECTION hDevConnection,
 			hTLImportHandle);
 
 	/* Copy stream name */
-	OSStringLCopy(psSD->szName, pszName, PRVSRVTL_MAX_STREAM_NAME_SIZE);
+	OSStringSafeCopy(psSD->szName, pszName, PRVSRVTL_MAX_STREAM_NAME_SIZE);
 
 	/* Return client descriptor handle to caller */
 	*phSD = psSD;

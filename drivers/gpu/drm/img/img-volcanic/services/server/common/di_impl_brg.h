@@ -44,6 +44,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define PVR_IMPL_BRG_H
 
 #include "pvrsrv_error.h"
+#include "lock_types.h"
 
 typedef struct DI_CONTEXT_TAG DI_CONTEXT;
 typedef struct DI_ENTRY_DESC DI_ENTRY_DESC;
@@ -88,5 +89,6 @@ PVRSRV_ERROR DIWriteEntryKM(DI_CONTEXT *psContext, const IMG_CHAR *pszEntryPath,
                             IMG_UINT32 ui32ValueSize, const IMG_CHAR *pszValue);
 
 PVRSRV_ERROR DIListAllEntriesKM(DI_CONTEXT *psContext);
+
 
 #endif /* PVR_IMPL_BRG_H */

@@ -51,11 +51,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvr_debug.h"
 #include "rgxutils.h"
 #include "rgxfwutils.h"
+#include "rgxfwcmnctx.h"
 #include "rgxta3d.h"
 #include "rgxmem.h"
 #include "allocmem.h"
 #include "devicemem.h"
 #include "devicemem_pdump.h"
+#include "ri_server.h"
 #include "osfunc.h"
 #include "pvrsrv.h"
 #include "rgx_memallocflags.h"
@@ -63,7 +65,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgxhwperf.h"
 #include "ospvr_gputrace.h"
 #include "rgxsyncutils.h"
-#include "htbuffer.h"
+#include "htbserver.h"
 
 #include "rgxdefs_km.h"
 #include "rgx_fwif_km.h"
@@ -73,7 +75,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "sync.h"
 #include "process_stats.h"
 
+#if !defined(PM_INTERACTIVE_MODE)
 #include "rgxpmdefs.h"
+#endif
 
 #include "rgxtimerquery.h"
 
@@ -204,23 +208,17 @@ PVRSRV_ERROR _DestroyTAContext(RGX_SERVER_RC_TA_DATA *psTAData,
 											  psTAData->psServerCommonContext,
 											  RGXFWIF_DM_GEOM,
 											  PDUMP_FLAGS_CONTINUOUS);
-	if (eError == PVRSRV_ERROR_RETRY)
-	{
-		return eError;
-	}
-	else if (eError != PVRSRV_OK)
-	{
-		PVR_LOG(("%s: Unexpected error from RGXFWRequestCommonContextCleanUp (%s)",
-				__func__,
-				PVRSRVGetErrorString(eError)));
-		return eError;
-	}
+
+	RGX_RETURN_IF_ERROR_AND_DEVICE_RECOVERABLE(psDeviceNode,
+						   eError,
+						   RGXFWRequestCommonContextCleanUp);
 
 	/* ... it has so we can free its resources */
 	FWCommonContextFree(psTAData->psServerCommonContext);
 	DevmemFwUnmapAndFree(psDeviceNode->pvDevice, psTAData->psContextStateMemDesc);
 	psTAData->psServerCommonContext = NULL;
-	return PVRSRV_OK;
+
+	return eError;
 }
 
 static
@@ -234,23 +232,17 @@ PVRSRV_ERROR _Destroy3DContext(RGX_SERVER_RC_3D_DATA *ps3DData,
 											  ps3DData->psServerCommonContext,
 											  RGXFWIF_DM_3D,
 											  PDUMP_FLAGS_CONTINUOUS);
-	if (eError == PVRSRV_ERROR_RETRY)
-	{
-		return eError;
-	}
-	else if (eError != PVRSRV_OK)
-	{
-		PVR_LOG(("%s: Unexpected error from RGXFWRequestCommonContextCleanUp (%s)",
-				__func__,
-				PVRSRVGetErrorString(eError)));
-		return eError;
-	}
+
+	RGX_RETURN_IF_ERROR_AND_DEVICE_RECOVERABLE(psDeviceNode,
+						   eError,
+						   RGXFWRequestCommonContextCleanUp);
 
 	/* ... it has so we can free its resources */
 	FWCommonContextFree(ps3DData->psServerCommonContext);
 	DevmemFwUnmapAndFree(psDeviceNode->pvDevice, ps3DData->psContextStateMemDesc);
 	ps3DData->psServerCommonContext = NULL;
-	return PVRSRV_OK;
+
+	return eError;
 }
 
 static void _RGXDumpPMRPageList(DLLIST_NODE *psNode)
@@ -384,8 +376,9 @@ static void _CheckFreelist(RGX_FREELIST *psFreeList,
 
 	if (ui64ExpectedCheckSum != 0  &&  ui64ExpectedCheckSum != *pui64CalculatedCheckSum)
 	{
-		PVR_LOG(("%s: Checksum mismatch for freelist %p! Expected 0x%016llx calculated 0x%016llx",
-		        __func__, psFreeList, ui64ExpectedCheckSum, *pui64CalculatedCheckSum));
+		PVR_LOG(("%s: Checksum mismatch for freelist %p! Expected 0x%016" IMG_UINT64_FMTSPECx " calculated 0x%016" IMG_UINT64_FMTSPECx,
+				__func__, psFreeList,
+				ui64ExpectedCheckSum, *pui64CalculatedCheckSum));
 		bFreelistBad = IMG_TRUE;
 	}
 
@@ -498,6 +491,7 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
 	{
 		uiSize -= RGX_BIF_PM_PHYSICAL_PAGE_SIZE;
 	}
+
 	eError = PhysmemNewRamBackedPMR(psFreeList->psConnection,
 			psFreeList->psDevInfo->psDeviceNode,
 			uiSize,
@@ -505,7 +499,10 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
 			1,
 			&ui32MappingTable,
 			RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT,
-			PVRSRV_MEMALLOCFLAG_GPU_READABLE,
+			PVRSRV_MEMALLOCFLAG_GPU_READABLE |
+			PVRSRV_MEMALLOCFLAG_OS_LINUX_DENY_MOVE |
+			PVRSRV_MEMALLOCFLAG_PHYS_HEAP_HINT(GPU_PRIVATE) |
+			PVRSRV_MEMALLOCFLAG_MANDATE_PHYSHEAP,
 			sizeof(szAllocName),
 			szAllocName,
 			psFreeList->ownerPid,
@@ -554,13 +551,14 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
 	}
 
 	 /* Attach RI information */
-	eError = RIWriteMEMDESCEntryKM(psPMRNode->psPMR,
+	eError = RIWriteMEMDESCEntryKM(psFreeList->psConnection,
+	                               psFreeList->psDevInfo->psDeviceNode,
+	                               psPMRNode->psPMR,
 	                               OSStringNLength(szAllocName, DEVMEM_ANNOTATION_MAX_LEN),
 	                               szAllocName,
 	                               0,
 	                               uiSize,
-	                               IMG_FALSE,
-	                               IMG_FALSE,
+	                               0,
 	                               &psPMRNode->hRIHandle);
 	PVR_LOG_IF_ERROR(eError, "RIWriteMEMDESCEntryKM");
 
@@ -596,6 +594,12 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
 		PVRSRV_ERROR res;
 		IMG_HANDLE hMapHandle;
 
+		/* Check for overflow. Validate size and offset. */
+		PVR_GOTO_IF_INVALID_PARAM(psFreeList->uiFreeListPMROffset + ui32MapSize > psFreeList->uiFreeListPMROffset,
+		                          eError, ErrorPopulateFreelist);
+		PVR_GOTO_IF_INVALID_PARAM(psFreeList->uiFreeListPMROffset + ui32MapSize <= PMR_LogicalSize(psFreeList->psFreeListPMR),
+		                          eError, ErrorPopulateFreelist);
+
 		/* Map both the FL and the shadow FL */
 		res = PMRAcquireKernelMappingData(psFreeList->psFreeListPMR, psFreeList->uiFreeListPMROffset, ui32MapSize,
 		                                  (void**) &pFLMapAddr, &uiNumBytes, &hMapHandle);
@@ -605,6 +609,7 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
 			         "%s: Failed to map freelist (ID=%d)",
 			         __func__,
 			         psFreeList->ui32FreelistID));
+			eError = PVRSRV_ERROR_OUT_OF_MEMORY;
 			goto ErrorPopulateFreelist;
 		}
 
@@ -640,6 +645,7 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
 			         "%s: Failed to release freelist mapping (ID=%d)",
 			         __func__,
 			         psFreeList->ui32FreelistID));
+			eError = PVRSRV_ERROR_OUT_OF_MEMORY;
 			goto ErrorPopulateFreelist;
 		}
 	}
@@ -693,7 +699,7 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
 
 	/* Error handling */
 ErrorPopulateFreelist:
-	PMRUnrefPMR(psPMRNode->psPMR);
+	(void) PMRUnrefPMR(psPMRNode->psPMR);
 
 ErrorBlockAlloc:
 	OSFreeMem(psPMRNode);
@@ -759,7 +765,7 @@ static PVRSRV_ERROR RGXShrinkFreeList(PDLLIST_NODE pListHeader,
 			PVR_LOG_IF_ERROR(eError, "RIDeleteMEMDESCEntryKM");
 		}
 
-#endif  /* if defined(PVRSRV_ENABLE_GPU_MEMORY_INFO) */
+#endif /* if defined(PVRSRV_ENABLE_GPU_MEMORY_INFO) */
 
 		/* Free PMR (We should be the only one that holds a ref on the PMR) */
 		eError = PMRUnrefPMR(psPMRNode->psPMR);
@@ -855,14 +861,12 @@ void RGXProcessRequestGrow(PVRSRV_RGXDEV_INFO *psDevInfo,
 		         "FreeList Lookup for FreeList ID 0x%08x failed (Populate)",
 		         ui32FreelistID));
 		PVR_ASSERT(IMG_FALSE);
-
 		return;
 	}
 
 	/* Since the FW made the request, it has already consumed the ready pages, update the host struct */
 	psFreeList->ui32CurrentFLPages += psFreeList->ui32ReadyFLPages;
 	psFreeList->ui32ReadyFLPages = 0;
-
 
 	/* Try to grow the freelist */
 	eError = RGXGrowFreeList(psFreeList,
@@ -905,7 +909,6 @@ void RGXProcessRequestGrow(PVRSRV_RGXDEV_INFO *psDevInfo,
 	s3DCCBCmd.uCmdData.sFreeListGSData.ui32NewPages = psFreeList->ui32CurrentFLPages + psFreeList->ui32ReadyFLPages;
 	s3DCCBCmd.uCmdData.sFreeListGSData.ui32ReadyPages = psFreeList->ui32ReadyFLPages;
 
-
 	PVR_DPF((PVR_DBG_MESSAGE, "Freelist [%p]: Grow pages=%u, new pages=%u, ready pages=%u, counter=%d",
 	         psFreeList,
 	         ui32GrowValue,
@@ -913,7 +916,7 @@ void RGXProcessRequestGrow(PVRSRV_RGXDEV_INFO *psDevInfo,
 	         s3DCCBCmd.uCmdData.sFreeListGSData.ui32ReadyPages,
 	         psFreeList->ui32NumGrowReqByFW));
 
-	LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 	{
 		eError = RGXScheduleCommand(psDevInfo,
 		                            RGXFWIF_DM_3D,
@@ -924,8 +927,8 @@ void RGXProcessRequestGrow(PVRSRV_RGXDEV_INFO *psDevInfo,
 			break;
 		}
 		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-	} END_LOOP_UNTIL_TIMEOUT();
-	/* Kernel CCB should never fill up, as the FW is processing them right away  */
+	} END_LOOP_UNTIL_TIMEOUT_US();
+	/* Kernel CCB should never fill up, as the FW is processing them right away */
 
 	PVR_ASSERT(eError == PVRSRV_OK);
 }
@@ -954,14 +957,14 @@ static void _RGXFreeListReconstruction(PDLLIST_NODE psNode)
 	PMRUnwritePMPageList(psPMRNode->psPageList);
 	psPMRNode->psPageList = NULL;
 	eError = PMRWritePMPageList(
-						/* Target PMR, offset, and length */
-						psFreeList->psFreeListPMR,
-						(psPMRNode->bFirstPageMissing ? uiOffset + sizeof(IMG_UINT32) : uiOffset),
-						(psPMRNode->bFirstPageMissing ? uiLength - sizeof(IMG_UINT32) : uiLength),
-						/* Referenced PMR, and "page" granularity */
-						psPMRNode->psPMR,
-						RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT,
-						&psPMRNode->psPageList);
+			/* Target PMR, offset, and length */
+			psFreeList->psFreeListPMR,
+			(psPMRNode->bFirstPageMissing ? uiOffset + sizeof(IMG_UINT32) : uiOffset),
+			(psPMRNode->bFirstPageMissing ? uiLength - sizeof(IMG_UINT32) : uiLength),
+			/* Referenced PMR, and "page" granularity */
+			psPMRNode->psPMR,
+			RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT,
+			&psPMRNode->psPageList);
 
 	if (eError != PVRSRV_OK)
 	{
@@ -996,10 +999,8 @@ static PVRSRV_ERROR RGXReconstructFreeList(RGX_FREELIST *psFreeList)
 {
 	IMG_UINT32        ui32OriginalFLPages;
 	DLLIST_NODE       *psNode, *psNext;
+	RGXFWIF_FREELIST  *psFWFreeList;
 	PVRSRV_ERROR      eError;
-#if !defined(PM_INTERACTIVE_MODE)
-	IMG_DEV_VIRTADDR  sFreeListBaseDevVAddr;
-#endif
 
 	//PVR_DPF((PVR_DBG_ERROR, "FreeList RECONSTRUCTION: Reconstructing freelist %p (ID=%u)", psFreeList, psFreeList->ui32FreelistID));
 
@@ -1027,30 +1028,36 @@ static PVRSRV_ERROR RGXReconstructFreeList(RGX_FREELIST *psFreeList)
 		return PVRSRV_ERROR_FREELIST_RECONSTRUCTION_FAILED;
 	}
 
+	/* Update firmware freelist structure */
+	eError = DevmemAcquireCpuVirtAddr(psFreeList->psFWFreelistMemDesc, (void **)&psFWFreeList);
+	if (eError != PVRSRV_OK)
 	{
-		RGXFWIF_FREELIST  *psFWFreeList;
+		return eError;
+	}
 
-		/* Update firmware freelist structure */
-		eError = DevmemAcquireCpuVirtAddr(psFreeList->psFWFreelistMemDesc, (void **)&psFWFreeList);
-		if (eError != PVRSRV_OK)
-		{
-			return eError;
-		}
+	psFWFreeList->ui32MaxPages     = psFreeList->ui32MaxFLPages;
+	psFWFreeList->ui32GrowPages    = psFreeList->ui32GrowFLPages;
+	psFWFreeList->ui32CurrentPages = psFreeList->ui32CurrentFLPages;
+	psFWFreeList->ui32FreeListID   = psFreeList->ui32FreelistID;
+	psFWFreeList->bGrowPending     = IMG_FALSE;
+	psFWFreeList->ui32ReadyPages   = psFreeList->ui32ReadyFLPages;
 
 #if defined(PM_INTERACTIVE_MODE)
-		psFWFreeList->ui32CurrentStackTop       = psFWFreeList->ui32CurrentPages - 1;
-		psFWFreeList->ui32AllocatedPageCount    = 0;
-		psFWFreeList->ui32AllocatedMMUPageCount = 0;
+	psFWFreeList->ui32CurrentStackTop       = psFWFreeList->ui32CurrentPages - 1;
+	psFWFreeList->ui64CurrentDevVAddr       = (psFWFreeList->psFreeListDevVAddr.uiAddr +
+				((psFreeList->ui32MaxFLPages - psFreeList->ui32CurrentFLPages) * sizeof(IMG_UINT32))) &
+				~((IMG_UINT64)RGX_BIF_PM_FREELIST_BASE_ADDR_ALIGNSIZE-1);
+	psFWFreeList->ui32AllocatedPageCount    = 0;
+	psFWFreeList->ui32AllocatedMMUPageCount = 0;
 #else
-		sFreeListBaseDevVAddr                          = psFWFreeList->sFreeListBaseDevVAddr;
-		psFWFreeList->bUpdatePending                   = IMG_FALSE;
-		psFWFreeList->ui32UpdateNewPages               = 0;
-		psFWFreeList->ui32UpdateNewReadyPages          = 0;
-		psFWFreeList->sFreeListLastGrowDevVAddr.uiAddr = 0;
+	psFWFreeList->bUpdatePending                   = IMG_FALSE;
+	psFWFreeList->ui32UpdateNewPages               = 0;
+	psFWFreeList->ui32UpdateNewReadyPages          = 0;
+	psFWFreeList->sFreeListLastGrowDevVAddr.uiAddr = 0;
 #endif
+	RGXFwSharedMemCacheOpPtr(psFWFreeList, FLUSH);
 
-		DevmemReleaseCpuVirtAddr(psFreeList->psFWFreelistMemDesc);
-	}
+	DevmemReleaseCpuVirtAddr(psFreeList->psFWFreelistMemDesc);
 
 #if !defined(PM_INTERACTIVE_MODE)
 	/* Reset freelist state buffer */
@@ -1068,7 +1075,7 @@ static PVRSRV_ERROR RGXReconstructFreeList(RGX_FREELIST *psFreeList)
 
 		PVR_ASSERT(uiNbBytes == sizeof(sFLState));
 
-		sFLBaseAddr.uiAddr = (sFreeListBaseDevVAddr.uiAddr +
+		sFLBaseAddr.uiAddr = (psFreeList->sFreeListBaseDevVAddr.uiAddr +
 		                      ((psFreeList->ui32MaxFLPages - psFreeList->ui32CurrentFLPages) * sizeof(IMG_UINT32))) &
 		                      ~((IMG_UINT64)RGX_BIF_PM_FREELIST_BASE_ADDR_ALIGNSIZE-1);
 		/* Note: Freelist base address is packed shifted down. */
@@ -1113,8 +1120,8 @@ void RGXProcessRequestFreelistsReconstruction(PVRSRV_RGXDEV_INFO *psDevInfo,
 	RGX_KM_HW_RT_DATASET *psKMHWRTDataSet;
 	RGXFWIF_HWRTDATA     *psHWRTData;
 #endif
-	IMG_UINT32        ui32FinalFreelistsCount = 0;
-	IMG_UINT32        aui32FinalFreelists[RGXFWIF_MAX_FREELISTS_TO_RECONSTRUCT * 2]; /* Worst-case is double what we are sent */
+	IMG_UINT32        ui32PIDCount = 0;
+	IMG_UINT32        aui32PIDList[RGXFWIF_MAX_FREELISTS_TO_RECONSTRUCT];
 
 	PVR_ASSERT(psDevInfo != NULL);
 	PVR_ASSERT(ui32FreelistsCount <= RGXFWIF_MAX_FREELISTS_TO_RECONSTRUCT);
@@ -1136,53 +1143,37 @@ void RGXProcessRequestFreelistsReconstruction(PVRSRV_RGXDEV_INFO *psDevInfo,
 	{
 		sTACCBCmd.uCmdData.sFreeListsReconstructionData.aui32FreelistIDs[ui32Loop] = paui32Freelists[ui32Loop] |
 				RGXFWIF_FREELISTS_RECONSTRUCTION_FAILED_FLAG;
-		aui32FinalFreelists[ui32Loop] = paui32Freelists[ui32Loop];
 	}
 
-	ui32FinalFreelistsCount = ui32FreelistsCount;
-
 	/*
-	 *  The list of freelists we have been given for reconstruction will
-	 *  consist of local and global freelists (maybe MMU as well). Any
-	 *  local freelists should have their global list specified as well.
-	 *  There may be cases where the global freelist is not given (in
-	 *  cases of partial setups before a poll failure for example). To
-	 *  handle that we must first ensure every local freelist has a global
-	 *  freelist specified, otherwise we add that to the 'final' list.
-	 *  This final list of freelists is created in a first pass.
-	 *
-	 *  Even with the global freelists listed, there may be other local
-	 *  freelists not listed, which are going to have their global freelist
-	 *  reconstructed. Therefore we have to find those freelists as well
-	 *  meaning we will have to iterate the entire list of freelists to
-	 *  find which must be reconstructed. This is the second pass.
+	 *  All freelists belonging to the same PID will be reconstructed.
+	 *  This simplifies tracking for AGP, since there is no longer a
+	 *  single global freelist per local freelist. The list of unique
+	 *  PIDs is calculated from the list of freelists in this first pass.
 	 */
 	OSLockAcquire(psDevInfo->hLockFreeList);
 	dllist_foreach_node(&psDevInfo->sFreeListHead, psNode, psNext)
 	{
 		RGX_FREELIST  *psFreeList   = IMG_CONTAINER_OF(psNode, RGX_FREELIST, sNode);
-		IMG_BOOL      bInList       = IMG_FALSE;
-		IMG_BOOL      bGlobalInList = IMG_FALSE;
 
-		/* Check if this local freelist is in the list and ensure its global is too. */
-		if (psFreeList->ui32FreelistGlobalID != 0)
+		for (ui32Loop = 0; ui32Loop < ui32FreelistsCount; ui32Loop++)
 		{
-			for (ui32Loop = 0; ui32Loop < ui32FinalFreelistsCount; ui32Loop++)
-			{
-				if (aui32FinalFreelists[ui32Loop] == psFreeList->ui32FreelistID)
-				{
-					bInList = IMG_TRUE;
-				}
-				if (aui32FinalFreelists[ui32Loop] == psFreeList->ui32FreelistGlobalID)
-				{
-					bGlobalInList = IMG_TRUE;
-				}
-			}
+			IMG_UINT32 ui32PIDLoop;
 
-			if (bInList  &&  !bGlobalInList)
+			if (paui32Freelists[ui32Loop] == psFreeList->ui32FreelistID)
 			{
-				aui32FinalFreelists[ui32FinalFreelistsCount] = psFreeList->ui32FreelistGlobalID;
-				ui32FinalFreelistsCount++;
+				for (ui32PIDLoop = 0; ui32PIDLoop < ui32PIDCount; ui32PIDLoop++)
+				{
+					if (aui32PIDList[ui32PIDLoop] == psFreeList->ownerPid)
+					{
+						break;
+					}
+				}
+
+				if (ui32PIDLoop == ui32PIDCount)
+				{
+					aui32PIDList[ui32PIDCount++] = psFreeList->ownerPid;
+				}
 			}
 		}
 	}
@@ -1190,15 +1181,15 @@ void RGXProcessRequestFreelistsReconstruction(PVRSRV_RGXDEV_INFO *psDevInfo,
 	{
 		RGX_FREELIST  *psFreeList  = IMG_CONTAINER_OF(psNode, RGX_FREELIST, sNode);
 		IMG_BOOL      bReconstruct = IMG_FALSE;
+		IMG_UINT32    ui32PIDLoop;
 
 		/*
-		 *  Check if this freelist needs to be reconstructed (was it requested
-		 *  or is its global freelist going to be reconstructed)...
+		 *  Check if this freelist needs to be reconstructed (is it in the list
+		 *  of PIDs which will have every single one of their freelists reconstructed)
 		 */
-		for (ui32Loop = 0; ui32Loop < ui32FinalFreelistsCount; ui32Loop++)
+		for (ui32PIDLoop = 0; ui32PIDLoop < ui32PIDCount; ui32PIDLoop++)
 		{
-			if (aui32FinalFreelists[ui32Loop] == psFreeList->ui32FreelistID  ||
-			    aui32FinalFreelists[ui32Loop] == psFreeList->ui32FreelistGlobalID)
+			if (aui32PIDList[ui32PIDLoop] == psFreeList->ownerPid)
 			{
 				bReconstruct = IMG_TRUE;
 				break;
@@ -1227,6 +1218,8 @@ void RGXProcessRequestFreelistsReconstruction(PVRSRV_RGXDEV_INFO *psDevInfo,
 
 					psHWRTData->eState = RGXFWIF_RTDATA_STATE_HWR;
 					psHWRTData->ui32HWRTDataFlags &= ~HWRTDATA_HAS_LAST_TA;
+					RGXFwSharedMemCacheOpValue(psHWRTData->eState, FLUSH);
+					RGXFwSharedMemCacheOpValue(psHWRTData->ui32HWRTDataFlags, FLUSH);
 
 					DevmemReleaseCpuVirtAddr(psKMHWRTDataSet->psHWRTDataFwMemDesc);
 				}
@@ -1262,7 +1255,7 @@ void RGXProcessRequestFreelistsReconstruction(PVRSRV_RGXDEV_INFO *psDevInfo,
 	}
 
 	/* send feedback */
-	LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 	{
 		eError = RGXScheduleCommand(psDevInfo,
 		                            RGXFWIF_DM_GEOM,
@@ -1273,23 +1266,23 @@ void RGXProcessRequestFreelistsReconstruction(PVRSRV_RGXDEV_INFO *psDevInfo,
 			break;
 		}
 		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-	} END_LOOP_UNTIL_TIMEOUT();
+	} END_LOOP_UNTIL_TIMEOUT_US();
 
-	/* Kernel CCB should never fill up, as the FW is processing them right away  */
+	/* Kernel CCB should never fill up, as the FW is processing them right away */
 	PVR_ASSERT(eError == PVRSRV_OK);
 }
 
-/* Create HWRTDataSet */
-static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
-                                  PVRSRV_DEVICE_NODE       *psDeviceNode,
-                                  IMG_DEV_VIRTADDR          psVHeapTableDevVAddr,
-                                  IMG_DEV_VIRTADDR          sPMDataDevVAddr, /* per-HWRTData */
-                                  IMG_DEV_VIRTADDR          sPMSecureDataDevVAddr, /* per-HWRTData */
-                                  RGX_FREELIST	           *apsFreeLists[RGXFW_MAX_FREELISTS],
-                                  IMG_DEV_VIRTADDR          sTailPtrsDevVAddr,
-                                  IMG_UINT16                ui16MaxRTs,
-                                  RGX_HWRTDATA_COMMON_COOKIE	*psHWRTDataCommonCookie,
-                                  RGX_KM_HW_RT_DATASET    **ppsKMHWRTDataSet) /* per-HWRTData */
+/* Create a single HWRTData instance */
+static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA		*psConnection,
+                                          PVRSRV_DEVICE_NODE	*psDeviceNode,
+                                          IMG_DEV_VIRTADDR		psVHeapTableDevVAddr,
+                                          IMG_DEV_VIRTADDR		sPMDataDevVAddr, /* per-HWRTData */
+                                          IMG_DEV_VIRTADDR sPMSecureDataDevVAddr, /* per-HWRTData */
+                                          RGX_FREELIST			*apsFreeLists[RGXFW_MAX_FREELISTS],
+                                          IMG_DEV_VIRTADDR		sTailPtrsDevVAddr,
+                                          IMG_UINT16			ui16MaxRTs,
+                                          RGX_HWRTDATA_COMMON_COOKIE	*psHWRTDataCommonCookie,
+                                          RGX_KM_HW_RT_DATASET	**ppsKMHWRTDataSet) /* per-HWRTData */
 {
 	PVRSRV_ERROR eError;
 	PVRSRV_RGXDEV_INFO *psDevInfo;
@@ -1306,6 +1299,14 @@ static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
 	/* local pointer for CPU-mapped [FW]HWRTData */
 	RGXFWIF_HWRTDATA *psHWRTData = NULL;
 
+	/*
+	 * Fill in a local copy of RGXFWIF_HWRTDATA first to reduces reads and writes to
+	 * device memory. Using a byte array buffer avoids the limitation that some OSs
+	 * cannot align local variables to 64 bytes, usually needed by RGXFWIF_HWRTDATA
+	 */
+	IMG_BYTE aui8HWRTDataLocal[sizeof(RGXFWIF_HWRTDATA)] = {0};
+	RGXFWIF_HWRTDATA *psHWRTDataLocal = (RGXFWIF_HWRTDATA *)aui8HWRTDataLocal;
+
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
 	/* Prepare the HW RT DataSet struct */
@@ -1318,9 +1319,7 @@ static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
 
 	*ppsKMHWRTDataSet = psKMHWRTDataSet;
 	psKMHWRTDataSet->psDeviceNode = psDeviceNode;
-
 	psKMHWRTDataSet->psHWRTDataCommonCookie = psHWRTDataCommonCookie;
-
 	psDevInfo = psDeviceNode->pvDevice;
 
 	/*
@@ -1329,11 +1328,11 @@ static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
 	 * Therefore the GPU cache doesn't need coherency and write-combine will
 	 * suffice on the CPU side. (WC buffer will be flushed at the first TA-kick)
 	 */
-	eError = DevmemFwAllocate(	psDevInfo,
-								sizeof(RGXFWIF_HWRTDATA),
-								RGX_FWCOMCTX_ALLOCFLAGS,
-								"FwHwRTData",
-								&psHWRTDataFwMemDesc	);
+	eError = DevmemFwAllocate(psDevInfo,
+	                          sizeof(RGXFWIF_HWRTDATA),
+	                          RGX_FWCOMCTX_ALLOCFLAGS,
+	                          "FwHwRTData",
+	                          &psHWRTDataFwMemDesc);
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
@@ -1354,39 +1353,21 @@ static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
 	PVR_LOG_GOTO_IF_ERROR(eError, "Devmem AcquireCpuVirtAddr", FWRTDataCpuMapError);
 
 #if defined(PM_INTERACTIVE_MODE)
-	psHWRTData->psVHeapTableDevVAddr = psVHeapTableDevVAddr;
+	psHWRTDataLocal->psVHeapTableDevVAddr = psVHeapTableDevVAddr;
 #endif
 
-	psHWRTData->sHWRTDataCommonFwAddr = psHWRTDataCommonCookie->sHWRTDataCommonFwAddr;
-
-	psHWRTData->sPMSecureRenderStateDevVAddr = sPMSecureDataDevVAddr;
+	psHWRTDataLocal->sPMSecureRenderStateDevVAddr = sPMSecureDataDevVAddr;
 
 #if defined(PM_INTERACTIVE_MODE)
-	psHWRTData->sPMMListDevVAddr = sPMDataDevVAddr;
+	psHWRTDataLocal->psPMMListDevVAddr = sPMDataDevVAddr;
 #else
-	psHWRTData->sPMRenderStateDevVAddr = sPMDataDevVAddr;
+	psHWRTDataLocal->sPMRenderStateDevVAddr = sPMDataDevVAddr;
 #endif
 
-	psHWRTData->sTailPtrsDevVAddr     = sTailPtrsDevVAddr;
-	OSLockAcquire(psDevInfo->hLockFreeList);
-	for (ui32Loop = 0; ui32Loop < RGXFW_MAX_FREELISTS; ui32Loop++)
-	{
-		psKMHWRTDataSet->apsFreeLists[ui32Loop] = apsFreeLists[ui32Loop];
-		psKMHWRTDataSet->apsFreeLists[ui32Loop]->ui32RefCount++;
-		psHWRTData->apsFreeLists[ui32Loop].ui32Addr = psKMHWRTDataSet->apsFreeLists[ui32Loop]->sFreeListFWDevVAddr.ui32Addr;
-		/* invalid initial snapshot value, the snapshot is always taken during first kick
-		 * and hence the value get replaced during the first kick anyway. So it's safe to set it 0.
-		*/
-		psHWRTData->aui32FreeListHWRSnapshot[ui32Loop] = 0;
-		psHWRTData->bRenderStateNeedsReset = IMG_FALSE;
-	}
-#if !defined(SUPPORT_SHADOW_FREELISTS)
-	dllist_add_to_tail(&apsFreeLists[RGXFW_LOCAL_FREELIST]->sNodeHWRTDataHead, &(psKMHWRTDataSet->sNodeHWRTData));
-#endif
-	OSLockRelease(psDevInfo->hLockFreeList);
+	psHWRTDataLocal->sTailPtrsDevVAddr     = sTailPtrsDevVAddr;
 
 	{
-		RGXFWIF_RTA_CTL *psRTACtl = &psHWRTData->sRTACtl;
+		RGXFWIF_RTA_CTL *psRTACtl = &psHWRTDataLocal->sRTACtl;
 
 		psRTACtl->ui32RenderTargetIndex = 0;
 		psRTACtl->ui32ActiveRenderTargets = 0;
@@ -1396,7 +1377,6 @@ static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
 
 		if (ui16MaxRTs > 1)
 		{
-			/* Allocate memory for the checks */
 			PDUMPCOMMENT(psDeviceNode, "Allocate memory for shadow render target cache");
 			eError = DevmemFwAllocate(	psDevInfo,
 										ui16MaxRTs * sizeof(IMG_UINT32),
@@ -1426,7 +1406,6 @@ static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
 									RFW_FWADDR_FLAG_NONE	);
 			PVR_LOG_GOTO_IF_ERROR(eError, "RGXSetFirmwareAddress:2", FWAllocateRTArryFwAddrError);
 
-			/* Allocate memory for the checks */
 			PDUMPCOMMENT(psDeviceNode, "Allocate memory for tracking renders accumulation");
 			eError = DevmemFwAllocate(psDevInfo,
 			                          ui16MaxRTs * sizeof(IMG_UINT32),
@@ -1458,11 +1437,31 @@ static PVRSRV_ERROR RGXCreateHWRTData_aux(CONNECTION_DATA  *psConnection,
 		}
 	}
 
+	OSLockAcquire(psDevInfo->hLockFreeList);
+	for (ui32Loop = 0; ui32Loop < RGXFW_MAX_FREELISTS; ui32Loop++)
+	{
+		psKMHWRTDataSet->apsFreeLists[ui32Loop] = apsFreeLists[ui32Loop];
+		psKMHWRTDataSet->apsFreeLists[ui32Loop]->ui32RefCount++;
+		psHWRTDataLocal->apsFreeLists[ui32Loop].ui32Addr = psKMHWRTDataSet->apsFreeLists[ui32Loop]->sFreeListFWDevVAddr.ui32Addr;
+		/* Invalid initial snapshot value. The snapshot is always taken during the first
+		 * kick and hence this value gets replaced, so it's safe to set it to zero.
+		 */
+		psHWRTDataLocal->aui32FreeListHWRSnapshot[ui32Loop] = 0;
+		psHWRTDataLocal->bRenderStateNeedsReset = IMG_FALSE;
+	}
+#if !defined(SUPPORT_SHADOW_FREELISTS)
+	dllist_add_to_tail(&apsFreeLists[RGXFW_LOCAL_FREELIST]->sNodeHWRTDataHead, &(psKMHWRTDataSet->sNodeHWRTData));
+#endif
+	OSLockRelease(psDevInfo->hLockFreeList);
+
+	OSCachedMemCopy(psHWRTData, psHWRTDataLocal, sizeof(*psHWRTDataLocal));
+
 #if defined(PDUMP)
 	PDUMPCOMMENT(psDeviceNode, "Dump HWRTData 0x%08X", psKMHWRTDataSet->sHWRTDataFwAddr.ui32Addr);
 	DevmemPDumpLoadMem(psKMHWRTDataSet->psHWRTDataFwMemDesc, 0, sizeof(*psHWRTData), PDUMP_FLAGS_CONTINUOUS);
 #endif
 
+	RGXFwSharedMemCacheOpPtr(psHWRTData, FLUSH);
 	DevmemReleaseCpuVirtAddr(psKMHWRTDataSet->psHWRTDataFwMemDesc);
 	return PVRSRV_OK;
 
@@ -1473,13 +1472,6 @@ FWAllocateRTAccArryError:
 FWAllocateRTArryFwAddrError:
 	DevmemFwUnmapAndFree(psDevInfo, psRTArrayFwMemDesc);
 FWAllocateRTArryError:
-	OSLockAcquire(psDevInfo->hLockFreeList);
-	for (ui32Loop = 0; ui32Loop < RGXFW_MAX_FREELISTS; ui32Loop++)
-	{
-		PVR_ASSERT(psKMHWRTDataSet->apsFreeLists[ui32Loop]->ui32RefCount > 0);
-		psKMHWRTDataSet->apsFreeLists[ui32Loop]->ui32RefCount--;
-	}
-	OSLockRelease(psDevInfo->hLockFreeList);
 	DevmemReleaseCpuVirtAddr(psKMHWRTDataSet->psHWRTDataFwMemDesc);
 FWRTDataCpuMapError:
 	RGXUnsetFirmwareAddress(psKMHWRTDataSet->psHWRTDataFwMemDesc);
@@ -1493,13 +1485,15 @@ AllocError:
 	return eError;
 }
 
-/* Destroy HWRTDataSet */
-static PVRSRV_ERROR RGXDestroyHWRTData_aux(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet)
+static void RGXDestroyHWRTData_aux(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet)
 {
 	PVRSRV_RGXDEV_INFO *psDevInfo;
 	IMG_UINT32 ui32Loop;
 
-	PVR_ASSERT(psKMHWRTDataSet);
+	if (psKMHWRTDataSet == NULL)
+	{
+		return;
+	}
 
 	psDevInfo = psKMHWRTDataSet->psDeviceNode->pvDevice;
 
@@ -1533,113 +1527,177 @@ static PVRSRV_ERROR RGXDestroyHWRTData_aux(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet
 	DevmemFwUnmapAndFree(psDevInfo, psKMHWRTDataSet->psHWRTDataFwMemDesc);
 
 	OSFreeMem(psKMHWRTDataSet);
-
-	return PVRSRV_OK;
 }
 
 /* Create set of HWRTData(s) and bind it with a shared FW HWRTDataCommon */
-PVRSRV_ERROR RGXCreateHWRTDataSet(CONNECTION_DATA      *psConnection,
-		PVRSRV_DEVICE_NODE	*psDeviceNode,
-		IMG_DEV_VIRTADDR	psVHeapTableDevVAddr,
+PVRSRV_ERROR RGXCreateHWRTDataSet(
+		CONNECTION_DATA			*psConnection,
+		PVRSRV_DEVICE_NODE		*psDeviceNode,
+		IMG_DEV_VIRTADDR		psVHeapTableDevVAddr,
 		IMG_DEV_VIRTADDR		asPMDataDevVAddr[RGXMKIF_NUM_RTDATAS],
-		IMG_DEV_VIRTADDR        asPMSecureDataDevVAddr[RGXMKIF_NUM_RTDATAS],
-		RGX_FREELIST	           *apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
-		IMG_UINT32                ui32ScreenPixelMax,
-		IMG_UINT64                ui64PPPMultiSampleCtl,
-		IMG_UINT32                ui32TEStride,
-		IMG_DEV_VIRTADDR          asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
-		IMG_UINT32                ui32TPCSize,
-		IMG_UINT32                ui32TEScreen,
-		IMG_UINT32                ui32TEAA,
-		IMG_UINT32                ui32TEMTILE1,
-		IMG_UINT32                ui32TEMTILE2,
-		IMG_UINT32                ui32RgnStride,
-		IMG_UINT32                ui32ISPMergeLowerX,
-		IMG_UINT32                ui32ISPMergeLowerY,
-		IMG_UINT32                ui32ISPMergeUpperX,
-		IMG_UINT32                ui32ISPMergeUpperY,
-		IMG_UINT32                ui32ISPMergeScaleX,
-		IMG_UINT32                ui32ISPMergeScaleY,
-		IMG_UINT16                ui16MaxRTs,
-		RGX_KM_HW_RT_DATASET     *pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS])
+		IMG_DEV_VIRTADDR		asPMSecureDataDevVAddr[RGXMKIF_NUM_RTDATAS],
+		RGX_FREELIST			*apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
+		IMG_DEV_VIRTADDR		asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+		IMG_UINT16			ui16MaxRTs,
+		RGX_KM_HW_RT_DATASET	*pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS])
+{
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+	PVR_UNREFERENCED_PARAMETER(psVHeapTableDevVAddr);
+	PVR_UNREFERENCED_PARAMETER(asPMDataDevVAddr);
+	PVR_UNREFERENCED_PARAMETER(asPMSecureDataDevVAddr);
+	PVR_UNREFERENCED_PARAMETER(apsFreeLists);
+	PVR_UNREFERENCED_PARAMETER(asTailPtrsDevVAddr);
+	PVR_UNREFERENCED_PARAMETER(ui16MaxRTs);
+	PVR_UNREFERENCED_PARAMETER(pasKMHWRTDataSet);
+
+	return PVRSRV_ERROR_NOT_IMPLEMENTED;
+}
+
+static PVRSRV_ERROR
+_WritePMStateBuffer(PMR* psRenderStatesPMR,
+                    IMG_DEVMEM_OFFSET_T ui64Offset,
+                    IMG_DEV_VIRTADDR sMListDevVAddr,
+                    IMG_DEV_VIRTADDR sVHeapTableDevVAddr)
+{
+	PVRSRV_ERROR eError;
+
+	size_t uiNbBytes;
+	IMG_UINT32 asRenderStateBuffer[RGX_PM_MAX_RSTATE_SIZE_DWORDS] = {0};
+
+	PVR_ASSERT(PVRSRV_IS_FEATURE_SUPPORTED(PMR_DeviceNode(psRenderStatesPMR), PM_BYTE_ALIGNED_BASE_ADDRESSES));
+	PVR_ASSERT((sMListDevVAddr.uiAddr & (RGX_PM_MLIST_BASE_ADDR_MAX_ALIGNSIZE - 1)) == 0);
+	PVR_ASSERT((sVHeapTableDevVAddr.uiAddr & (RGX_PM_VHEAP_BASE_ADDR_MAX_ALIGNSIZE - 1)) == 0);
+
+	/* Initialise the Mlist base and Vheap base */
+	_RGX_PM_RENDERSTATE_BUFFER_SET_MLIST_BASE_ADDR(asRenderStateBuffer, sMListDevVAddr.uiAddr);
+	_RGX_PM_RENDERSTATE_BUFFER_SET_VHEAP_BASE_ADDR(asRenderStateBuffer, sVHeapTableDevVAddr.uiAddr);
+
+	eError = PMR_WriteBytes(psRenderStatesPMR,
+	                        ui64Offset,
+	                        (IMG_UINT8*)&asRenderStateBuffer,
+	                        sizeof(asRenderStateBuffer),
+	                        &uiNbBytes);
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Error from PMR_WriteBytes: %s",
+		        __func__, PVRSRVGetErrorString(eError)));
+		goto ErrorExit;
+	}
+
+	PVR_ASSERT(uiNbBytes == sizeof(asRenderStateBuffer));
+
+	PDUMPCOMMENT(PMR_DeviceNode(psRenderStatesPMR), "PMState buffer");
+	PMRPDumpLoadMem(psRenderStatesPMR, ui64Offset, sizeof(asRenderStateBuffer), PDUMP_FLAGS_CONTINUOUS, false);
+
+	return PVRSRV_OK;
+ErrorExit:
+	return eError;
+}
+
+PVRSRV_ERROR RGXCreateHWRTDataSet2(
+        CONNECTION_DATA         *psConnection,
+        PVRSRV_DEVICE_NODE      *psDeviceNode,
+        IMG_DEV_VIRTADDR        sVHeapTableDevVAddr,
+        DEVMEMINT_RESERVATION   *psPMMListsReservation,
+        DEVMEMINT_RESERVATION   *psPMStateReservation,
+        DEVMEMINT_RESERVATION   *psPMSecureStateReservation,
+        RGX_FREELIST            *apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
+        IMG_DEV_VIRTADDR        asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+        IMG_UINT16              ui16MaxRTs,
+        RGX_KM_HW_RT_DATASET    *pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS])
 {
 	PVRSRV_ERROR eError;
 	IMG_UINT32 ui32RTDataID;
-	PVRSRV_RGXDEV_INFO		*psDevInfo = psDeviceNode->pvDevice;
+	IMG_UINT32 ui32GlobalFLMaxPages, ui32LocalFLMaxPages;
+	IMG_DEVMEM_SIZE_T ui64MListSize, ui64AlignedRenderStateSize;
+	RGX_HWRTDATA_COMMON_COOKIE *psHWRTDataCommonCookie;
 
-	RGX_HWRTDATA_COMMON_COOKIE	*psHWRTDataCommonCookie;
-	RGXFWIF_HWRTDATA_COMMON		*psHWRTDataCommon;
-	DEVMEM_MEMDESC				*psHWRTDataCommonFwMemDesc;
-	RGXFWIF_DEV_VIRTADDR		sHWRTDataCommonFwAddr;
+	PMR *psPMStatePMR=NULL, *psPMSecureStatePMR=NULL, *psMListsPMR=NULL;
+	IMG_DEV_VIRTADDR sPMStateBaseDevVAddr, sPMSecureStateDevVAddr, sMListsDevVAddr;
 
-	/* Prepare KM cleanup object for HWRTDataCommon FW object */
+	PVR_LOG_RETURN_IF_INVALID_PARAM(0 < ui16MaxRTs && ui16MaxRTs <= RGX_MAX_RTA_INDICES, "Number of TA Render targets outside the range (0, RGX_MAX_RTA_INDICES) is unsupported");
+
+	ui64AlignedRenderStateSize = PVR_ALIGN(sizeof(RGX_PM_RENDERSTATE_BUFFER),
+	   MAX(RGX_PM_RENDERSTATE_BASE_ADDR_ALIGNSIZE,
+	       GET_ROGUE_CACHE_LINE_SIZE(PVRSRV_GET_DEVICE_FEATURE_VALUE(psDeviceNode, SLC_CACHE_LINE_SIZE_BITS))));
+
+	/* Check if freelists have uniform sizes */
+	eError = ValidateFreeListSizes(apsFreeLists,
+	                               &ui32LocalFLMaxPages,
+	                               &ui32GlobalFLMaxPages);
+	PVR_LOG_RETURN_IF_ERROR(eError, "Invalid freelist sizes");
+
+	ui64MListSize = RGXCalcMListSize(psDeviceNode,
+	    ui32LocalFLMaxPages * RGX_BIF_PM_PHYSICAL_PAGE_SIZE,
+	    ui32GlobalFLMaxPages * RGX_BIF_PM_PHYSICAL_PAGE_SIZE);
+
+	eError = AcquireValidateRefCriticalBuffer(psDeviceNode,
+	                                          psPMStateReservation,
+	                                          ui64AlignedRenderStateSize * RGXMKIF_NUM_RTDATAS,
+	                                          &psPMStatePMR,
+	                                          &sPMStateBaseDevVAddr);
+	PVR_LOG_GOTO_IF_ERROR(eError,
+	    "Validation failed for MListAndState reservations", err_validation_rs);
+
+	eError = AcquireValidateRefCriticalBuffer(psDeviceNode,
+	                                          psPMSecureStateReservation,
+	                                          ui64AlignedRenderStateSize * RGXMKIF_NUM_RTDATAS,
+	                                          &psPMSecureStatePMR,
+	                                          &sPMSecureStateDevVAddr);
+	PVR_LOG_GOTO_IF_ERROR(eError,
+	    "Validation failed for secure data reservations", err_validation_srs);
+
+	eError = AcquireValidateRefCriticalBuffer(psDeviceNode,
+	                                          psPMMListsReservation,
+	                                          ui64MListSize * RGXMKIF_NUM_RTDATAS,
+	                                          &psMListsPMR,
+	                                          &sMListsDevVAddr);
+	PVR_LOG_GOTO_IF_ERROR(eError,
+	    "Validation failed for secure data reservations", err_validation_mlist);
+
+	/* Prepare KM cleanup object for common data */
 	psHWRTDataCommonCookie = OSAllocZMem(sizeof(*psHWRTDataCommonCookie));
 	if (psHWRTDataCommonCookie == NULL)
 	{
 		eError = PVRSRV_ERROR_OUT_OF_MEMORY;
-		goto err_HWRTDataCommonCookieAlloc;
+		goto err_common_cookie_alloc;
 	}
 
-	/*
-	 * This FW common context is only mapped into kernel for initialisation.
-	 * Otherwise this allocation is only used by the FW.
-	 * Therefore the GPU cache doesn't need coherency, and write-combine will
-	 * suffice on the CPU side (WC buffer will be flushed at the first TA-kick)
-	 */
-	eError = DevmemFwAllocate(psDevInfo,
-			sizeof(RGXFWIF_HWRTDATA_COMMON),
-			RGX_FWCOMCTX_ALLOCFLAGS,
-			"FwHWRTDataCommon",
-			&psHWRTDataCommonFwMemDesc);
-
-	if (eError != PVRSRV_OK)
-	{
-		PVR_DPF((PVR_DBG_ERROR, "%s: DevmemAllocate for FwHWRTDataCommon failed", __func__));
-		goto err_HWRTDataCommonAlloc;
-	}
-	eError = RGXSetFirmwareAddress(&sHWRTDataCommonFwAddr, psHWRTDataCommonFwMemDesc, 0, RFW_FWADDR_FLAG_NONE);
-	PVR_LOG_GOTO_IF_ERROR(eError, "RGXSetFirmwareAddress", err_HWRTDataCommonFwAddr);
-
-	eError = DevmemAcquireCpuVirtAddr(psHWRTDataCommonFwMemDesc, (void **)&psHWRTDataCommon);
-	PVR_LOG_GOTO_IF_ERROR(eError, "DevmemAcquireCpuVirtAddr", err_HWRTDataCommonVA);
-
-	psHWRTDataCommon->ui32ScreenPixelMax    = ui32ScreenPixelMax;
-	psHWRTDataCommon->ui64PPPMultiSampleCtl = ui64PPPMultiSampleCtl;
-	psHWRTDataCommon->ui32TEStride          = ui32TEStride;
-	psHWRTDataCommon->ui32TPCSize           = ui32TPCSize;
-	psHWRTDataCommon->ui32TEScreen          = ui32TEScreen;
-	psHWRTDataCommon->ui32TEAA              = ui32TEAA;
-	psHWRTDataCommon->ui32TEMTILE1          = ui32TEMTILE1;
-	psHWRTDataCommon->ui32TEMTILE2          = ui32TEMTILE2;
-	psHWRTDataCommon->ui32RgnStride         = ui32RgnStride; /* Region stride in Bytes */
-	psHWRTDataCommon->ui32ISPMergeLowerX    = ui32ISPMergeLowerX;
-	psHWRTDataCommon->ui32ISPMergeLowerY    = ui32ISPMergeLowerY;
-	psHWRTDataCommon->ui32ISPMergeUpperX    = ui32ISPMergeUpperX;
-	psHWRTDataCommon->ui32ISPMergeUpperY    = ui32ISPMergeUpperY;
-	psHWRTDataCommon->ui32ISPMergeScaleX    = ui32ISPMergeScaleX;
-	psHWRTDataCommon->ui32ISPMergeScaleY    = ui32ISPMergeScaleY;
-#if defined(PDUMP)
-	PDUMPCOMMENT(psDeviceNode, "Dump HWRTDataCommon");
-	DevmemPDumpLoadMem(psHWRTDataCommonFwMemDesc, 0, sizeof(*psHWRTDataCommon), PDUMP_FLAGS_CONTINUOUS);
-#endif
-	DevmemReleaseCpuVirtAddr(psHWRTDataCommonFwMemDesc);
-
-	psHWRTDataCommonCookie->ui32RefCount = 0;
-	psHWRTDataCommonCookie->psHWRTDataCommonFwMemDesc = psHWRTDataCommonFwMemDesc;
-	psHWRTDataCommonCookie->sHWRTDataCommonFwAddr = sHWRTDataCommonFwAddr;
+	psHWRTDataCommonCookie->psPMStateReservation = psPMStateReservation;
+	psHWRTDataCommonCookie->psPMSecureStateReservation = psPMSecureStateReservation;
+	psHWRTDataCommonCookie->psPMMListsReservation = psPMMListsReservation;
 
 	/* Here we are creating a set of HWRTData(s)
 	   the number of elements in the set equals RGXMKIF_NUM_RTDATAS.
 	*/
-
 	for (ui32RTDataID = 0; ui32RTDataID < RGXMKIF_NUM_RTDATAS; ui32RTDataID++)
 	{
+		IMG_DEV_VIRTADDR sRenderStateDevVirtAddr;
+		IMG_DEV_VIRTADDR sSecureRenderStateDevVirtAddr;
+		IMG_DEV_VIRTADDR sMListDevVirtAddr;
+
+		sRenderStateDevVirtAddr.uiAddr =
+		    sPMStateBaseDevVAddr.uiAddr + ui64AlignedRenderStateSize * ui32RTDataID;
+		sSecureRenderStateDevVirtAddr.uiAddr =
+		    sPMSecureStateDevVAddr.uiAddr + ui64AlignedRenderStateSize * ui32RTDataID;
+		sMListDevVirtAddr.uiAddr =
+		    sMListsDevVAddr.uiAddr + ui64MListSize * ui32RTDataID;
+
+		eError = _WritePMStateBuffer(psPMStatePMR,
+		                             ui64AlignedRenderStateSize * ui32RTDataID,
+		                             sMListDevVirtAddr,
+		                             sVHeapTableDevVAddr);
+		PVR_LOG_GOTO_IF_ERROR(eError,
+		    "Failed to write PM state buffer", err_HWRTDataAlloc);
+
 		eError = RGXCreateHWRTData_aux(
 			psConnection,
 			psDeviceNode,
-			psVHeapTableDevVAddr,
-			asPMDataDevVAddr[ui32RTDataID],
-			asPMSecureDataDevVAddr[ui32RTDataID],
+			sVHeapTableDevVAddr,
+			sRenderStateDevVirtAddr,
+			sSecureRenderStateDevVirtAddr,
 			&apsFreeLists[(ui32RTDataID % RGXMKIF_NUM_GEOMDATAS) * RGXFW_MAX_FREELISTS],
 			asTailPtrsDevVAddr[ui32RTDataID % RGXMKIF_NUM_GEOMDATAS],
 			ui16MaxRTs,
@@ -1661,11 +1719,10 @@ PVRSRV_ERROR RGXCreateHWRTDataSet(CONNECTION_DATA      *psConnection,
 	return PVRSRV_OK;
 
 err_HWRTDataAlloc:
-	PVR_DPF((PVR_DBG_WARNING, "%s: err_HWRTDataAlloc %u",
-			 __func__, psHWRTDataCommonCookie->ui32RefCount));
+	PVR_DPF((PVR_DBG_WARNING, "%s: err_HWRTDataAlloc", __func__));
 	if (pasKMHWRTDataSet)
 	{
-		for (ui32RTDataID = psHWRTDataCommonCookie->ui32RefCount; ui32RTDataID > 0; ui32RTDataID--)
+		for (; ui32RTDataID > 0; ui32RTDataID--)
 		{
 			if (pasKMHWRTDataSet[ui32RTDataID-1] != NULL)
 			{
@@ -1674,14 +1731,14 @@ err_HWRTDataAlloc:
 			}
 		}
 	}
-err_HWRTDataCommonVA:
-	RGXUnsetFirmwareAddress(psHWRTDataCommonFwMemDesc);
-err_HWRTDataCommonFwAddr:
-	DevmemFwUnmapAndFree(psDevInfo, psHWRTDataCommonFwMemDesc);
-err_HWRTDataCommonAlloc:
 	OSFreeMem(psHWRTDataCommonCookie);
-err_HWRTDataCommonCookieAlloc:
-
+err_common_cookie_alloc:
+	UnrefAndReleaseCriticalBuffer(psPMMListsReservation);
+err_validation_mlist:
+	UnrefAndReleaseCriticalBuffer(psPMSecureStateReservation);
+err_validation_srs:
+	UnrefAndReleaseCriticalBuffer(psPMStateReservation);
+err_validation_rs:
 	return eError;
 }
 
@@ -1691,16 +1748,13 @@ err_HWRTDataCommonCookieAlloc:
 */
 PVRSRV_ERROR RGXDestroyHWRTDataSet(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet)
 {
-	PVRSRV_RGXDEV_INFO *psDevInfo;
 	PVRSRV_DEVICE_NODE *psDevNode;
 	PVRSRV_ERROR eError;
 	PRGXFWIF_HWRTDATA psHWRTData;
 	RGX_HWRTDATA_COMMON_COOKIE *psCommonCookie;
-
 	PVR_ASSERT(psKMHWRTDataSet);
 
 	psDevNode = psKMHWRTDataSet->psDeviceNode;
-	psDevInfo = psDevNode->pvDevice;
 
 	eError = RGXSetFirmwareAddress(&psHWRTData,
 	                               psKMHWRTDataSet->psHWRTDataFwMemDesc, 0,
@@ -1709,10 +1763,10 @@ PVRSRV_ERROR RGXDestroyHWRTDataSet(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet)
 
 	/* Cleanup HWRTData */
 	eError = RGXFWRequestHWRTDataCleanUp(psDevNode, psHWRTData);
-	if (eError != PVRSRV_OK)
-	{
-		return eError;
-	}
+
+	RGX_RETURN_IF_ERROR_AND_DEVICE_RECOVERABLE(psDevNode,
+						   eError,
+						   RGXFWRequestHWRTDataCleanUp);
 
 	psCommonCookie = psKMHWRTDataSet->psHWRTDataCommonCookie;
 
@@ -1734,46 +1788,100 @@ PVRSRV_ERROR RGXDestroyHWRTDataSet(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet)
 	psCommonCookie->ui32RefCount--;
 
 	/* When ref count for HWRTDataCommonCookie hits ZERO
-	 * we have to destroy the HWRTDataCommon [FW object] and the cookie
+	 * we have to destroy the cookie
 	 * [KM object] afterwards. */
 	if (psCommonCookie->ui32RefCount == 0)
 	{
-		RGXUnsetFirmwareAddress(psCommonCookie->psHWRTDataCommonFwMemDesc);
+		UnrefAndReleaseCriticalBuffer(psCommonCookie->psPMStateReservation);
+		UnrefAndReleaseCriticalBuffer(psCommonCookie->psPMSecureStateReservation);
+		UnrefAndReleaseCriticalBuffer(psCommonCookie->psPMMListsReservation);
 
-		/* We don't need to flush the SLC before freeing.
-		 * FW RequestCleanUp has already done that for HWRTData, so we're fine
-		 * now. */
-
-		DevmemFwUnmapAndFree(psDevNode->pvDevice,
-		                     psCommonCookie->psHWRTDataCommonFwMemDesc);
 		OSFreeMem(psCommonCookie);
 	}
-
 	return PVRSRV_OK;
 }
 
-PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
-                               PVRSRV_DEVICE_NODE	*psDeviceNode,
-                               IMG_HANDLE			hMemCtxPrivData,
-                               IMG_UINT32			ui32MaxFLPages,
-                               IMG_UINT32			ui32InitFLPages,
-                               IMG_UINT32			ui32GrowFLPages,
-                               IMG_UINT32           ui32GrowParamThreshold,
-                               RGX_FREELIST			*psGlobalFreeList,
-                               IMG_BOOL				bCheckFreelist,
-                               IMG_DEV_VIRTADDR		sFreeListBaseDevVAddr,
-                               IMG_DEV_VIRTADDR		sFreeListStateDevVAddr,
-                               PMR					*psFreeListPMR,
-                               IMG_DEVMEM_OFFSET_T	uiFreeListPMROffset,
-                               PMR					*psFreeListStatePMR,
-                               IMG_DEVMEM_OFFSET_T	uiFreeListStatePMROffset,
-                               RGX_FREELIST			**ppsFreeList)
+PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA       *psConnection,
+                               PVRSRV_DEVICE_NODE     *psDeviceNode,
+                               IMG_HANDLE             hMemCtxPrivData,
+                               IMG_UINT32             ui32MaxFLPages,
+                               IMG_UINT32             ui32InitFLPages,
+                               IMG_UINT32             ui32GrowFLPages,
+                               IMG_UINT32             ui32GrowParamThreshold,
+                               RGX_FREELIST           *psGlobalFreeList,
+                               IMG_BOOL               bCheckFreelist,
+                               DEVMEMINT_RESERVATION *psFreeListAndStateReservation,
+                               RGX_FREELIST           **ppsFreeList)
 {
-	PVRSRV_ERROR				eError;
-	RGXFWIF_FREELIST			*psFWFreeList;
-	DEVMEM_MEMDESC				*psFWFreelistMemDesc;
-	RGX_FREELIST				*psFreeList;
-	PVRSRV_RGXDEV_INFO			*psDevInfo = psDeviceNode->pvDevice;
+	PVRSRV_ERROR        eError;
+	RGXFWIF_FREELIST    *psFWFreeList;
+	RGXFWIF_FREELIST    sFWFreeList = {{0}};
+	DEVMEM_MEMDESC      *psFWFreelistMemDesc;
+	RGX_FREELIST        *psFreeList;
+	PVRSRV_RGXDEV_INFO  *psDevInfo = psDeviceNode->pvDevice;
+	IMG_DEV_VIRTADDR    sFreeListBaseDevVAddr;
+	IMG_DEV_VIRTADDR    sFreeListStateDevVAddr;
+	PMR*                psFreeListAndStatePMR = NULL;
+	IMG_UINT32          ui32ReadyPages;
+	IMG_UINT32          uiFreeListOffset = PVR_ALIGN(
+	                        sizeof(RGX_PM_FREELISTSTATE_BUFFER),
+	                        GET_ROGUE_CACHE_LINE_SIZE(PVRSRV_GET_DEVICE_FEATURE_VALUE(psDeviceNode, SLC_CACHE_LINE_SIZE_BITS)));
+
+	/* Obtain reference to reservation object */
+	if (!DevmemIntReservationAcquire(psFreeListAndStateReservation))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Failed to acquire reservation for freelist buffer",
+		        __func__));
+		eError = PVRSRV_ERROR_REFCOUNT_OVERFLOW;
+		goto ErrorReservationAcquire;
+	}
+
+	eError = DevmemIntGetReservationData(psFreeListAndStateReservation, &psFreeListAndStatePMR, &sFreeListStateDevVAddr);
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Error from DevmemIntGetReservationData: %s",
+		        __func__, PVRSRVGetErrorString(eError)));
+
+		goto ErrorAllocHost;
+	}
+
+	/* Check if client properly allocated PMMETA_PROTECT */
+	if ((PMR_Flags(psFreeListAndStatePMR) & PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(PMMETA_PROTECT)) == 0)
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Freelist PMR must have PMMETA_PROTECT set",
+		        __func__));
+		eError = PVRSRV_ERROR_INVALID_FLAGS;
+		goto ErrorAllocHost;
+	}
+
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+	if (PVRSRV_CHECK_OS_LINUX_MOVABLE(PMR_Flags(psFreeListAndStatePMR)))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Freelist PMR must not have OS_LINUX_MOVABLE set",
+		        __func__));
+		eError = PVRSRV_ERROR_INVALID_FLAGS;
+		goto ErrorAllocHost;
+	}
+#endif
+
+	/* Ref the PMR to prevent resource being destroyed before use */
+	eError = PMRRefPMR(psFreeListAndStatePMR);
+	PVR_LOG_GOTO_IF_ERROR(eError, "PMRRefPMR", ErrorAllocHost);
+
+	if (PMR_IsSparse(psFreeListAndStatePMR))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		        "%s: Free list PMR cannot be sparse!",
+		        __func__));
+		eError = PVRSRV_ERROR_INVALID_PARAMS;
+		goto ErrorRefPMR;
+	}
+
+	sFreeListBaseDevVAddr.uiAddr = sFreeListStateDevVAddr.uiAddr + uiFreeListOffset;
 
 	if (OSGetPageShift() > RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT)
 	{
@@ -1793,8 +1901,8 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 		ui32Size = PVR_ALIGN(ui32Size, (IMG_DEVMEM_SIZE_T)OSGetPageSize());
 		ui32NewMaxFLPages = ui32Size >> RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT;
 
-		PVR_DPF((PVR_DBG_WARNING, "%s: Increased number of PB pages: Init %u -> %u, Grow %u -> %u, Max %u -> %u",
-				 __func__, ui32InitFLPages, ui32NewInitFLPages, ui32GrowFLPages, ui32NewGrowFLPages, ui32MaxFLPages, ui32NewMaxFLPages));
+		PVR_DPF((PVR_DBG_MESSAGE, "%s: Increased number of PB pages: Init %u -> %u, Grow %u -> %u, Max %u -> %u",
+		         __func__, ui32InitFLPages, ui32NewInitFLPages, ui32GrowFLPages, ui32NewGrowFLPages, ui32MaxFLPages, ui32NewMaxFLPages));
 
 		ui32InitFLPages = ui32NewInitFLPages;
 		ui32GrowFLPages = ui32NewGrowFLPages;
@@ -1806,10 +1914,10 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 	if (psFreeList == NULL)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-				"%s: failed to allocate host data structure",
-				__func__));
+		        "%s: failed to allocate host data structure",
+		        __func__));
 		eError = PVRSRV_ERROR_OUT_OF_MEMORY;
-		goto ErrorAllocHost;
+		goto ErrorRefPMR;
 	}
 
 	/*
@@ -1820,36 +1928,42 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 	 * suffice on the CPU side (WC buffer will be flushed at the first TA-kick)
 	 */
 	eError = DevmemFwAllocate(psDevInfo,
-							sizeof(*psFWFreeList),
-							PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(PMMETA_PROTECT) |
-							PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(FIRMWARE_CACHED) |
-							PVRSRV_MEMALLOCFLAG_ZERO_ON_ALLOC |
-							PVRSRV_MEMALLOCFLAG_GPU_READABLE |
-							PVRSRV_MEMALLOCFLAG_GPU_WRITEABLE |
-							PVRSRV_MEMALLOCFLAG_GPU_CACHE_INCOHERENT |
-							PVRSRV_MEMALLOCFLAG_CPU_READABLE |
-							PVRSRV_MEMALLOCFLAG_CPU_WRITEABLE |
-							PVRSRV_MEMALLOCFLAG_CPU_UNCACHED_WC |
-							PVRSRV_MEMALLOCFLAG_KERNEL_CPU_MAPPABLE |
-							PVRSRV_MEMALLOCFLAG_PHYS_HEAP_HINT(FW_MAIN),
-							"FwFreeList",
-							&psFWFreelistMemDesc);
+	                          sizeof(*psFWFreeList),
+	                          PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(PMMETA_PROTECT) |
+	                          PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(FIRMWARE_CACHED) |
+	                          PVRSRV_MEMALLOCFLAG_GPU_READABLE |
+	                          PVRSRV_MEMALLOCFLAG_GPU_WRITEABLE |
+	                          PVRSRV_MEMALLOCFLAG_GPU_CACHE_INCOHERENT |
+	                          PVRSRV_MEMALLOCFLAG_CPU_READABLE |
+	                          PVRSRV_MEMALLOCFLAG_CPU_WRITEABLE |
+	                          PVRSRV_MEMALLOCFLAG_CPU_UNCACHED_WC |
+	                          PVRSRV_MEMALLOCFLAG_KERNEL_CPU_MAPPABLE |
+	                          PVRSRV_MEMALLOCFLAG_OS_LINUX_DENY_MOVE |
+	                          PVRSRV_MEMALLOCFLAG_PHYS_HEAP_HINT(FW_MAIN),
+	                          "FwFreeList",
+	                          &psFWFreelistMemDesc);
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-				"%s: DevmemAllocate for RGXFWIF_FREELIST failed",
-				__func__));
+		        "%s: DevmemAllocate for RGXFWIF_FREELIST failed",
+		        __func__));
 		goto FWFreeListAlloc;
 	}
 
 	/* Initialise host data structures */
 	psFreeList->psDevInfo = psDevInfo;
 	psFreeList->psConnection = psConnection;
-	psFreeList->psFreeListPMR = psFreeListPMR;
-	psFreeList->uiFreeListPMROffset = uiFreeListPMROffset;
-	psFreeList->psFreeListStatePMR = psFreeListStatePMR;
-	psFreeList->uiFreeListStatePMROffset = uiFreeListStatePMROffset;
+
+	psFreeList->psFreeListStatePMR = psFreeListAndStatePMR;
+	psFreeList->uiFreeListStatePMROffset = 0;
+
+	psFreeList->psFreeListPMR = psFreeListAndStatePMR;
+	psFreeList->uiFreeListPMROffset = uiFreeListOffset;
+
+	psFreeList->psFreeListAndStateReservation = psFreeListAndStateReservation;
+
 	psFreeList->psFWFreelistMemDesc = psFWFreelistMemDesc;
+	psFreeList->sFreeListBaseDevVAddr = sFreeListBaseDevVAddr;
 	eError = RGXSetFirmwareAddress(&psFreeList->sFreeListFWDevVAddr, psFWFreelistMemDesc, 0, RFW_FWADDR_FLAG_NONE);
 	PVR_LOG_GOTO_IF_ERROR(eError, "RGXSetFirmwareAddress", ErrorSetFwAddr);
 
@@ -1871,48 +1985,77 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 #endif
 	psFreeList->ownerPid = OSGetCurrentClientProcessIDKM();
 
-
 	/* Add to list of freelists */
 	OSLockAcquire(psDevInfo->hLockFreeList);
 	psFreeList->ui32FreelistID = psDevInfo->ui32FreelistCurrID++;
 	dllist_add_to_tail(&psDevInfo->sFreeListHead, &psFreeList->sNode);
 	OSLockRelease(psDevInfo->hLockFreeList);
 
+	ui32ReadyPages = _CalculateFreelistReadyPages(psFreeList, ui32InitFLPages);
+
+	/* Write freelist state buffer */
+	{
+		RGX_PM_FREELISTSTATE_BUFFER sFLState = {0};
+		size_t uiNbBytes;
+		IMG_DEV_VIRTADDR sFLBaseAddr;
+
+		sFLBaseAddr.uiAddr = (psFreeList->sFreeListBaseDevVAddr.uiAddr +
+		                      ((psFreeList->ui32MaxFLPages - ui32InitFLPages + ui32ReadyPages) * sizeof(IMG_UINT32))) &
+		                      ~((IMG_UINT64)RGX_BIF_PM_FREELIST_BASE_ADDR_ALIGNSIZE-1);
+
+
+		RGX_PM_FREELISTSTATE_BUFFER_SET_BASE_ADDR(sFLState, (sFLBaseAddr.uiAddr >> RGX_PM_FREELISTSTATE_BASE_ADDR_ALIGNSHIFT));
+
+		RGX_PM_FREELISTSTATE_BUFFER_SET_STACK_PTR(sFLState, ui32InitFLPages - ui32ReadyPages - 1);
+		RGX_PM_FREELISTSTATE_BUFFER_SET_PAGE_STATUS(sFLState, 0);
+		RGX_PM_FREELISTSTATE_BUFFER_SET_MMUPAGE_STATUS(sFLState, 0);
+
+		eError = PMR_WriteBytes(psFreeList->psFreeListStatePMR, psFreeList->uiFreeListStatePMROffset, (IMG_UINT8*)&sFLState, sizeof(sFLState), &uiNbBytes);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,
+			        "%s: Error from PMR_WriteBytes: %s",
+			        __func__, PVRSRVGetErrorString(eError)));
+			goto FWFreeListAlloc;
+		}
+		PVR_ASSERT(uiNbBytes == sizeof(sFLState));
+
+		PDUMPCOMMENT(psDeviceNode, "FreeListState buffer");
+		PMRPDumpLoadMem(psFreeList->psFreeListStatePMR, psFreeList->uiFreeListStatePMROffset, sizeof(sFLState), PDUMP_FLAGS_CONTINUOUS, false);
+	}
 
 	/* Initialise FW data structure */
 	eError = DevmemAcquireCpuVirtAddr(psFreeList->psFWFreelistMemDesc, (void **)&psFWFreeList);
 	PVR_LOG_GOTO_IF_ERROR(eError, "Devmem AcquireCpuVirtAddr", FWFreeListCpuMap);
 
 	{
-		const IMG_UINT32 ui32ReadyPages = _CalculateFreelistReadyPages(psFreeList, ui32InitFLPages);
-
-		psFWFreeList->ui32MaxPages = ui32MaxFLPages;
-		psFWFreeList->ui32CurrentPages = ui32InitFLPages - ui32ReadyPages;
-		psFWFreeList->ui32GrowPages = ui32GrowFLPages;
-		psFWFreeList->bUpdatePending = IMG_FALSE;
-		psFWFreeList->ui32UpdateNewPages = 0;
-		psFWFreeList->ui32UpdateNewReadyPages = 0;
-		psFWFreeList->sFreeListBaseDevVAddr = sFreeListBaseDevVAddr;
+		sFWFreeList.ui32MaxPages = ui32MaxFLPages;
+		sFWFreeList.ui32CurrentPages = ui32InitFLPages - ui32ReadyPages;
+		sFWFreeList.ui32GrowPages = ui32GrowFLPages;
+		sFWFreeList.bUpdatePending = IMG_FALSE;
+		sFWFreeList.ui32UpdateNewPages = 0;
+		sFWFreeList.ui32UpdateNewReadyPages = 0;
+		sFWFreeList.sFreeListBaseDevVAddr = sFreeListBaseDevVAddr;
 #if defined(PM_INTERACTIVE_MODE)
-		psFWFreeList->ui32CurrentStackTop = psFWFreeList->ui32CurrentPages - 1;
-		psFWFreeList->ui64CurrentDevVAddr = (sFreeListBaseDevVAddr.uiAddr +
-	                                         ((ui32MaxFLPages - psFWFreeList->ui32CurrentPages) * sizeof(IMG_UINT32))) &
-			                                ~((IMG_UINT64)RGX_BIF_PM_FREELIST_BASE_ADDR_ALIGNSIZE-1);
+		sFWFreeList.ui32CurrentStackTop = sFWFreeList.ui32CurrentPages - 1;
+		sFWFreeList.ui64CurrentDevVAddr = (sFreeListBaseDevVAddr.uiAddr +
+		                                     ((ui32MaxFLPages - sFWFreeList.ui32CurrentPages) * sizeof(IMG_UINT32))) &
+		                                    ~((IMG_UINT64)RGX_BIF_PM_FREELIST_BASE_ADDR_ALIGNSIZE-1);
 #endif
-		psFWFreeList->ui32FreeListID = psFreeList->ui32FreelistID;
-		psFWFreeList->bGrowPending = IMG_FALSE;
-		psFWFreeList->ui32ReadyPages = ui32ReadyPages;
+		sFWFreeList.ui32FreeListID = psFreeList->ui32FreelistID;
+		sFWFreeList.bGrowPending = IMG_FALSE;
+		sFWFreeList.ui32ReadyPages = ui32ReadyPages;
 
 #if defined(SUPPORT_SHADOW_FREELISTS)
 		/* Get the FW Memory Context address... */
-		eError = RGXSetFirmwareAddress(&psFWFreeList->psFWMemContext,
+		eError = RGXSetFirmwareAddress(&sFWFreeList.psFWMemContext,
 		                               RGXGetFWMemDescFromMemoryContextHandle(hMemCtxPrivData),
 		                               0, RFW_FWADDR_NOREF_FLAG);
 		if (eError != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR,
-					"%s: RGXSetFirmwareAddress for RGXFWIF_FWMEMCONTEXT failed",
-					__func__));
+			        "%s: RGXSetFirmwareAddress for RGXFWIF_FWMEMCONTEXT failed",
+			        __func__));
 			DevmemReleaseCpuVirtAddr(psFreeList->psFWFreelistMemDesc);
 			goto FWFreeListCpuMap;
 		}
@@ -1927,20 +2070,26 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 		 * Access to the physical PMR will be used to update the contents of the
 		 * PM state buffer when PB grow occurs following OOM.
 		 */
-		psFWFreeList->sFreeListLastGrowDevVAddr.uiAddr = 0;
-		psFWFreeList->sFreeListStateDevVAddr = sFreeListStateDevVAddr;
+		sFWFreeList.sFreeListLastGrowDevVAddr.uiAddr = 0;
+		sFWFreeList.sFreeListStateDevVAddr = sFreeListStateDevVAddr;
 	}
 
+	OSCachedMemCopy(psFWFreeList, &sFWFreeList, sizeof(sFWFreeList));
+	RGXFwSharedMemCacheOpPtr(psFWFreeList, FLUSH);
+
 	PVR_DPF((PVR_DBG_MESSAGE,
-			"Freelist [%p]: Created: Max pages 0x%08x, Init pages 0x%08x, FL base address 0x%016" IMG_UINT64_FMTSPECx ", Current FL base address 0x%016" IMG_UINT64_FMTSPECx ", Current pages %u",
-			psFreeList,
-			ui32MaxFLPages,
-			ui32InitFLPages,
-			sFreeListBaseDevVAddr.uiAddr,
-			(sFreeListBaseDevVAddr.uiAddr +
-	         ((ui32MaxFLPages - psFWFreeList->ui32CurrentPages) * sizeof(IMG_UINT32))) &
-			~((IMG_UINT64)RGX_BIF_PM_FREELIST_BASE_ADDR_ALIGNSIZE-1),
-			psFWFreeList->ui32CurrentPages - 1));
+	        "Freelist %p created: Max pages 0x%08x, Init pages 0x%08x, "
+	        "FL base address 0x%016" IMG_UINT64_FMTSPECx ", "
+	        "Current FL base address 0x%016" IMG_UINT64_FMTSPECx ", "
+	        "Current pages %u",
+	        psFreeList,
+	        ui32MaxFLPages,
+	        ui32InitFLPages,
+	        sFreeListBaseDevVAddr.uiAddr,
+	        (sFreeListBaseDevVAddr.uiAddr +
+	            ((ui32MaxFLPages - sFWFreeList.ui32CurrentPages) * sizeof(IMG_UINT32))) &
+	        ~((IMG_UINT64)RGX_BIF_PM_FREELIST_BASE_ADDR_ALIGNSIZE-1),
+	        sFWFreeList.ui32CurrentPages - 1));
 #if defined(PDUMP)
 	PDUMPCOMMENT(psDeviceNode, "Dump FW FreeList");
 	DevmemPDumpLoadMem(psFreeList->psFWFreelistMemDesc, 0, sizeof(*psFWFreeList), PDUMP_FLAGS_CONTINUOUS);
@@ -1952,14 +2101,14 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 	 */
 	PDUMPCOMMENT(psDeviceNode, "FreeList TotalPages");
 	DevmemPDumpLoadMemValue32(psFreeList->psFWFreelistMemDesc,
-							offsetof(RGXFWIF_FREELIST, ui32CurrentPages),
-							psFWFreeList->ui32CurrentPages,
-							PDUMP_FLAGS_CONTINUOUS);
+	                          offsetof(RGXFWIF_FREELIST, ui32CurrentPages),
+	                          sFWFreeList.ui32CurrentPages,
+	                          PDUMP_FLAGS_CONTINUOUS);
 	PDUMPCOMMENT(psDeviceNode, "FreeList StackPointer");
 	DevmemPDumpLoadMemValue32(psFreeList->psFWFreelistMemDesc,
-							offsetof(RGXFWIF_FREELIST, ui32CurrentStackTop),
-							psFWFreeList->ui32CurrentStackTop,
-							PDUMP_FLAGS_CONTINUOUS);
+	                          offsetof(RGXFWIF_FREELIST, ui32CurrentStackTop),
+	                          sFWFreeList.ui32CurrentStackTop,
+	                          PDUMP_FLAGS_CONTINUOUS);
 #endif
 #endif
 	DevmemReleaseCpuVirtAddr(psFreeList->psFWFreelistMemDesc);
@@ -1972,10 +2121,10 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-				"%s: failed to allocate initial memory block for free list 0x%016" IMG_UINT64_FMTSPECx " (%s)",
-				__func__,
-				sFreeListBaseDevVAddr.uiAddr,
-				PVRSRVGetErrorString(eError)));
+		        "%s: failed to allocate initial memory block for free list 0x%016" IMG_UINT64_FMTSPECx " (%s)",
+		        __func__,
+		        sFreeListBaseDevVAddr.uiAddr,
+		        PVRSRVGetErrorString(eError)));
 		goto FWFreeListCpuMap;
 	}
 #if defined(PVRSRV_ENABLE_PROCESS_STATS)
@@ -1995,9 +2144,8 @@ PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
 	return PVRSRV_OK;
 
 	/* Error handling */
-
 FWFreeListCpuMap:
-	/* Remove freelists from list  */
+	/* Remove freelists from list */
 	OSLockAcquire(psDevInfo->hLockFreeList);
 	dllist_remove_node(&psFreeList->sNode);
 	OSLockRelease(psDevInfo->hLockFreeList);
@@ -2009,7 +2157,13 @@ ErrorSetFwAddr:
 FWFreeListAlloc:
 	OSFreeMem(psFreeList);
 
+ErrorRefPMR:
+	(void) PMRUnrefPMR(psFreeListAndStatePMR);
+
 ErrorAllocHost:
+	DevmemIntReservationRelease(psFreeListAndStateReservation);
+
+ErrorReservationAcquire:
 	PVR_ASSERT(eError != PVRSRV_OK);
 	return eError;
 }
@@ -2038,12 +2192,14 @@ PVRSRV_ERROR RGXDestroyFreeList(RGX_FREELIST *psFreeList)
 	/* Freelist is not in use => start firmware cleanup */
 	eError = RGXFWRequestFreeListCleanUp(psFreeList->psDevInfo,
 										 psFreeList->sFreeListFWDevVAddr);
-	if (eError != PVRSRV_OK)
-	{
-		/* Can happen if the firmware took too long to handle the cleanup request,
-		 * or if SLC-flushes didn't went through (due to some GPU lockup) */
-		return eError;
-	}
+
+	RGX_RETURN_IF_ERROR_AND_DEVICE_RECOVERABLE(psFreeList->psDevInfo->psDeviceNode,
+						   eError,
+						   RGXFWRequestFreeListCleanUp);
+
+	/* Device becomes unrecoverable if the firmware took too long to
+	 * handle the cleanup request, or if SLC-flushes didn't go through
+	 * (due to some GPU lockup) */
 
 	/* Remove FreeList from linked list before we destroy it... */
 	OSLockAcquire(psFreeList->psDevInfo->hLockFreeList);
@@ -2058,15 +2214,22 @@ PVRSRV_ERROR RGXDestroyFreeList(RGX_FREELIST *psFreeList)
 	if (psFreeList->bCheckFreelist)
 	{
 		RGXFWIF_FREELIST  *psFWFreeList;
-		IMG_UINT64        ui32CurrentStackTop;
+		IMG_UINT32        ui32CurrentStackTop;
 		IMG_UINT64        ui64CheckSum;
 
 		/* Get the current stack pointer for this free list */
 		DevmemAcquireCpuVirtAddr(psFreeList->psFWFreelistMemDesc, (void **)&psFWFreeList);
+		RGXFwSharedMemCacheOpValue(psFWFreeList->ui32CurrentStackTop, INVALIDATE);
 		ui32CurrentStackTop = psFWFreeList->ui32CurrentStackTop;
 		DevmemReleaseCpuVirtAddr(psFreeList->psFWFreelistMemDesc);
 
-		if (ui32CurrentStackTop == psFreeList->ui32CurrentFLPages-1)
+		if (ui32CurrentStackTop > psFreeList->ui32MaxFLPages)
+		{
+			PVR_LOG(("%s: FW freelist corrupted (%d)",
+					 __func__,
+					 ui32CurrentStackTop));
+		}
+		else if (ui32CurrentStackTop == psFreeList->ui32CurrentFLPages-1)
 		{
 			/* Do consistency tests (as the list is fully populated) */
 			_CheckFreelist(psFreeList, psFreeList->ui32CurrentFLPages + psFreeList->ui32ReadyFLPages, psFreeList->ui64FreelistChecksum, &ui64CheckSum);
@@ -2098,6 +2261,12 @@ PVRSRV_ERROR RGXDestroyFreeList(RGX_FREELIST *psFreeList)
 	PVR_ASSERT(dllist_is_empty(&psFreeList->sMemoryBlockInitHead));
 	PVR_ASSERT(psFreeList->ui32CurrentFLPages == 0);
 
+	/* Remove references from the PMR resources */
+	eError = PMRUnrefPMR(psFreeList->psFreeListStatePMR);
+	PVR_ASSERT(eError == PVRSRV_OK);
+
+	DevmemIntReservationRelease(psFreeList->psFreeListAndStateReservation);
+
 	/* free Freelist */
 	OSFreeMem(psFreeList);
 
@@ -2118,9 +2287,12 @@ PVRSRV_ERROR RGXCreateZSBufferKM(CONNECTION_DATA * psConnection,
 	PVRSRV_ERROR				eError;
 	PVRSRV_RGXDEV_INFO			*psDevInfo = psDeviceNode->pvDevice;
 	RGXFWIF_PRBUFFER			*psFWZSBuffer;
+	RGXFWIF_PRBUFFER			sFWZSBuffer = {0};
 	RGX_ZSBUFFER_DATA			*psZSBuffer;
 	DEVMEM_MEMDESC				*psFWZSBufferMemDesc;
 	IMG_BOOL					bOnDemand = PVRSRV_CHECK_ON_DEMAND(uiMapFlags) ? IMG_TRUE : IMG_FALSE;
+
+	PVR_UNREFERENCED_PARAMETER(psConnection);
 
 	/* Allocate host data structure */
 	psZSBuffer = OSAllocZMem(sizeof(*psZSBuffer));
@@ -2136,20 +2308,25 @@ PVRSRV_ERROR RGXCreateZSBufferKM(CONNECTION_DATA * psConnection,
 	/* Populate Host data */
 	psZSBuffer->psDevInfo = psDevInfo;
 	psZSBuffer->psReservation = psReservation;
-	psZSBuffer->psPMR = psPMR;
-	psZSBuffer->uiMapFlags = uiMapFlags;
-	psZSBuffer->ui32RefCount = 0;
-	psZSBuffer->bOnDemand = bOnDemand;
-	if (bOnDemand)
-	{
-		/* psZSBuffer->ui32ZSBufferID set below with lock... */
-		psZSBuffer->psMapping = NULL;
 
-		OSLockAcquire(psDevInfo->hLockZSBuffer);
-		psZSBuffer->ui32ZSBufferID = psDevInfo->ui32ZSBufferCurrID++;
-		dllist_add_to_tail(&psDevInfo->sZSBufferHead, &psZSBuffer->sNode);
-		OSLockRelease(psDevInfo->hLockZSBuffer);
+	/* Obtain reference to reservation object */
+	if (!DevmemIntReservationAcquire(psZSBuffer->psReservation))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+				"%s: Failed to acquire reservation for ZS-Buffer",
+				__func__));
+		eError = PVRSRV_ERROR_REFCOUNT_OVERFLOW;
+		goto ErrorReservationAcquire;
 	}
+
+	psZSBuffer->psPMR = psPMR;
+	/* Obtain reference to PMR */
+	eError = PMRRefPMR(psZSBuffer->psPMR);
+	PVR_LOG_GOTO_IF_ERROR(eError, "PMRRefPMR", ErrorRefPMR);
+
+	psZSBuffer->ui32RefCount = 0;
+	psZSBuffer->bIsBacked = IMG_FALSE;
+	psZSBuffer->bOnDemand = bOnDemand;
 
 	/* Allocate firmware memory for ZS-Buffer. */
 	PDUMPCOMMENT(psDeviceNode, "Allocate firmware ZS-Buffer data structure");
@@ -2157,7 +2334,6 @@ PVRSRV_ERROR RGXCreateZSBufferKM(CONNECTION_DATA * psConnection,
 							sizeof(*psFWZSBuffer),
 							PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(PMMETA_PROTECT) |
 							PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(FIRMWARE_CACHED) |
-							PVRSRV_MEMALLOCFLAG_ZERO_ON_ALLOC |
 							PVRSRV_MEMALLOCFLAG_GPU_READABLE |
 							PVRSRV_MEMALLOCFLAG_GPU_WRITEABLE |
 							PVRSRV_MEMALLOCFLAG_GPU_CACHE_INCOHERENT |
@@ -2190,20 +2366,31 @@ PVRSRV_ERROR RGXCreateZSBufferKM(CONNECTION_DATA * psConnection,
 		goto ErrorAcquireFWZSBuffer;
 	}
 
-	/* Populate FW ZS-Buffer data structure */
-	psFWZSBuffer->bOnDemand = bOnDemand;
-	psFWZSBuffer->eState = (bOnDemand) ? RGXFWIF_PRBUFFER_UNBACKED : RGXFWIF_PRBUFFER_BACKED;
-	psFWZSBuffer->ui32BufferID = psZSBuffer->ui32ZSBufferID;
-
 	/* Get firmware address of ZS-Buffer. */
 	eError = RGXSetFirmwareAddress(&psZSBuffer->sZSBufferFWDevVAddr, psFWZSBufferMemDesc, 0, RFW_FWADDR_FLAG_NONE);
 	PVR_LOG_GOTO_IF_ERROR(eError, "RGXSetFirmwareAddress", ErrorSetFwAddr);
 
+	if (bOnDemand)
+	{
+		/* psZSBuffer->ui32ZSBufferID set below with lock... */
+		OSLockAcquire(psDevInfo->hLockZSBuffer);
+		psZSBuffer->ui32ZSBufferID = psDevInfo->ui32ZSBufferCurrID++;
+		dllist_add_to_tail(&psDevInfo->sZSBufferHead, &psZSBuffer->sNode);
+		OSLockRelease(psDevInfo->hLockZSBuffer);
+	}
+
+	/* Populate FW ZS-Buffer data structure */
+	sFWZSBuffer.bOnDemand = bOnDemand;
+	sFWZSBuffer.eState = (bOnDemand) ? RGXFWIF_PRBUFFER_UNBACKED : RGXFWIF_PRBUFFER_BACKED;
+	sFWZSBuffer.ui32BufferID = psZSBuffer->ui32ZSBufferID;
+
+	OSCachedMemCopy(psFWZSBuffer, &sFWZSBuffer, sizeof(sFWZSBuffer));
 	/* Dump the ZS-Buffer and the memory content */
 #if defined(PDUMP)
 	PDUMPCOMMENT(psDeviceNode, "Dump firmware ZS-Buffer");
 	DevmemPDumpLoadMem(psFWZSBufferMemDesc, 0, sizeof(*psFWZSBuffer), PDUMP_FLAGS_CONTINUOUS);
 #endif
+	RGXFwSharedMemCacheOpPtr(psFWZSBuffer, FLUSH);
 
 	/* Release address acquired above. */
 	DevmemReleaseCpuVirtAddr(psFWZSBufferMemDesc);
@@ -2228,6 +2415,10 @@ ErrorAcquireFWZSBuffer:
 	DevmemFwUnmapAndFree(psDevInfo, psFWZSBufferMemDesc);
 
 ErrorAllocFWZSBuffer:
+	(void) PMRUnrefPMR(psZSBuffer->psPMR);
+ErrorRefPMR:
+	DevmemIntReservationRelease(psZSBuffer->psReservation);
+ErrorReservationAcquire:
 	OSFreeMem(psZSBuffer);
 
 ErrorAllocCleanup:
@@ -2242,7 +2433,7 @@ ErrorAllocCleanup:
 PVRSRV_ERROR RGXDestroyZSBufferKM(RGX_ZSBUFFER_DATA *psZSBuffer)
 {
 	POS_LOCK hLockZSBuffer;
-	PVRSRV_ERROR eError;
+	PVRSRV_ERROR eError, eError2;
 
 	PVR_ASSERT(psZSBuffer);
 	hLockZSBuffer = psZSBuffer->psDevInfo->hLockZSBuffer;
@@ -2250,29 +2441,44 @@ PVRSRV_ERROR RGXDestroyZSBufferKM(RGX_ZSBUFFER_DATA *psZSBuffer)
 	/* Request ZS Buffer cleanup */
 	eError = RGXFWRequestZSBufferCleanUp(psZSBuffer->psDevInfo,
 										psZSBuffer->sZSBufferFWDevVAddr);
-	if (eError == PVRSRV_OK)
+
+	RGX_RETURN_IF_ERROR_AND_DEVICE_RECOVERABLE(psZSBuffer->psDevInfo->psDeviceNode,
+						   eError,
+						   RGXFWRequestZSBufferCleanUp);
+
+	OSLockAcquire(hLockZSBuffer);
+
+	if (psZSBuffer->ui32RefCount != 0)
 	{
-		/* Free the firmware render context. */
-		RGXUnsetFirmwareAddress(psZSBuffer->psFWZSBufferMemDesc);
-		DevmemFwUnmapAndFree(psZSBuffer->psDevInfo, psZSBuffer->psFWZSBufferMemDesc);
-
-		/* Remove Deferred Allocation from list */
-		if (psZSBuffer->bOnDemand)
-		{
-			OSLockAcquire(hLockZSBuffer);
-			PVR_ASSERT(dllist_node_is_in_list(&psZSBuffer->sNode));
-			dllist_remove_node(&psZSBuffer->sNode);
-			OSLockRelease(hLockZSBuffer);
-		}
-
-		PVR_ASSERT(psZSBuffer->ui32RefCount == 0);
-
-		PVR_DPF((PVR_DBG_MESSAGE, "ZS-Buffer [%p] destroyed", psZSBuffer));
-
-		/* Free ZS-Buffer host data structure */
-		OSFreeMem(psZSBuffer);
-
+		/* ZS-Buffer is still referenced */
+		OSLockRelease(hLockZSBuffer);
+		PVR_DPF((PVR_DBG_WARNING, "Trying to destroy a ZS-Buffer [%p] that's still in use.", psZSBuffer));
+		return PVRSRV_ERROR_RETRY;
 	}
+
+	/* Free the firmware render context. */
+	RGXUnsetFirmwareAddress(psZSBuffer->psFWZSBufferMemDesc);
+	DevmemFwUnmapAndFree(psZSBuffer->psDevInfo, psZSBuffer->psFWZSBufferMemDesc);
+
+	/* Remove Deferred Allocation from list */
+	if (psZSBuffer->bOnDemand)
+	{
+		PVR_ASSERT(dllist_node_is_in_list(&psZSBuffer->sNode));
+		dllist_remove_node(&psZSBuffer->sNode);
+	}
+
+	PVR_DPF((PVR_DBG_MESSAGE, "ZS-Buffer [%p] destroyed", psZSBuffer));
+
+	/* Release reference to reservation object and the PMR */
+	eError2 = PMRUnrefPMR(psZSBuffer->psPMR);
+	PVR_LOG_IF_ERROR(eError2, "PMRUnrefPMR");
+
+	DevmemIntReservationRelease(psZSBuffer->psReservation);
+
+	/* Free ZS-Buffer host data structure */
+	OSFreeMem(psZSBuffer);
+
+	OSLockRelease(hLockZSBuffer);
 
 	return eError;
 }
@@ -2302,47 +2508,36 @@ RGXBackingZSBuffer(RGX_ZSBUFFER_DATA *psZSBuffer)
 
 	OSLockAcquire(hLockZSBuffer);
 
-	if (psZSBuffer->ui32RefCount == 0)
+	if (psZSBuffer->bIsBacked == IMG_FALSE)
 	{
-		if (psZSBuffer->bOnDemand)
+		IMG_HANDLE hDevmemHeap;
+
+		/* Get Heap */
+		eError = DevmemServerGetHeapHandle(psZSBuffer->psReservation, &hDevmemHeap);
+		if (unlikely(hDevmemHeap == (IMG_HANDLE)NULL))
 		{
-			IMG_HANDLE hDevmemHeap = (IMG_HANDLE)NULL;
-
-			PVR_ASSERT(psZSBuffer->psMapping == NULL);
-
-			/* Get Heap */
-			eError = DevmemServerGetHeapHandle(psZSBuffer->psReservation, &hDevmemHeap);
-			PVR_ASSERT(psZSBuffer->psMapping == NULL);
-			if (unlikely(hDevmemHeap == (IMG_HANDLE)NULL))
-			{
-				OSLockRelease(hLockZSBuffer);
-				return PVRSRV_ERROR_INVALID_HEAP;
-			}
-
-			eError = DevmemIntMapPMR(hDevmemHeap,
-									psZSBuffer->psReservation,
-									psZSBuffer->psPMR,
-									psZSBuffer->uiMapFlags,
-									&psZSBuffer->psMapping);
-			if (eError != PVRSRV_OK)
-			{
-				PVR_DPF((PVR_DBG_ERROR,
-						"Unable populate ZS Buffer [%p, ID=0x%08x] (%s)",
-						psZSBuffer,
-						psZSBuffer->ui32ZSBufferID,
-						PVRSRVGetErrorString(eError)));
-				OSLockRelease(hLockZSBuffer);
-				return eError;
-
-			}
-			PVR_DPF((PVR_DBG_MESSAGE, "ZS Buffer [%p, ID=0x%08x]: Physical backing acquired",
-										psZSBuffer,
-										psZSBuffer->ui32ZSBufferID));
+			OSLockRelease(hLockZSBuffer);
+			return PVRSRV_ERROR_INVALID_HEAP;
 		}
-	}
 
-	/* Increase refcount*/
-	psZSBuffer->ui32RefCount++;
+		eError = DevmemIntMapPMR(psZSBuffer->psReservation, psZSBuffer->psPMR);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,
+					"Unable populate ZS Buffer [%p, ID=0x%08x] (%s)",
+					psZSBuffer,
+					psZSBuffer->ui32ZSBufferID,
+					PVRSRVGetErrorString(eError)));
+			OSLockRelease(hLockZSBuffer);
+			return eError;
+
+		}
+		PVR_DPF((PVR_DBG_MESSAGE, "ZS Buffer [%p, ID=0x%08x]: Physical backing acquired",
+		                          psZSBuffer,
+		                          psZSBuffer->ui32ZSBufferID));
+
+		psZSBuffer->bIsBacked = IMG_TRUE;
+	}
 
 	OSLockRelease(hLockZSBuffer);
 
@@ -2356,6 +2551,10 @@ RGXPopulateZSBufferKM(RGX_ZSBUFFER_DATA *psZSBuffer,
 {
 	RGX_POPULATION *psPopulation;
 	PVRSRV_ERROR eError;
+
+	OSLockAcquire(psZSBuffer->psDevInfo->hLockZSBuffer);
+	psZSBuffer->ui32RefCount++;
+	OSLockRelease(psZSBuffer->psDevInfo->hLockZSBuffer);
 
 	psZSBuffer->ui32NumReqByApp++;
 
@@ -2391,6 +2590,11 @@ OnErrorAlloc:
 
 OnErrorBacking:
 	PVR_ASSERT(eError != PVRSRV_OK);
+
+	OSLockAcquire(psZSBuffer->psDevInfo->hLockZSBuffer);
+	psZSBuffer->ui32RefCount--;
+	OSLockRelease(psZSBuffer->psDevInfo->hLockZSBuffer);
+
 	return eError;
 }
 
@@ -2405,8 +2609,6 @@ RGXUnbackingZSBuffer(RGX_ZSBUFFER_DATA *psZSBuffer)
 		return PVRSRV_ERROR_INVALID_PARAMS;
 	}
 
-	PVR_ASSERT(psZSBuffer->ui32RefCount);
-
 	PVR_DPF((PVR_DBG_MESSAGE,
 			"ZS Buffer [%p, ID=0x%08x]: Physical backing removal requested",
 								psZSBuffer,
@@ -2416,32 +2618,26 @@ RGXUnbackingZSBuffer(RGX_ZSBUFFER_DATA *psZSBuffer)
 
 	OSLockAcquire(hLockZSBuffer);
 
-	if (psZSBuffer->bOnDemand)
+	if (psZSBuffer->bOnDemand && psZSBuffer->bIsBacked == IMG_TRUE)
 	{
-		if (psZSBuffer->ui32RefCount == 1)
+		eError = DevmemIntUnmapPMR(psZSBuffer->psReservation);
+		if (eError != PVRSRV_OK)
 		{
-			PVR_ASSERT(psZSBuffer->psMapping);
-
-			eError = DevmemIntUnmapPMR(psZSBuffer->psMapping);
-			if (eError != PVRSRV_OK)
-			{
-				PVR_DPF((PVR_DBG_ERROR,
-						"Unable to unpopulate ZS Buffer [%p, ID=0x%08x] (%s)",
-						psZSBuffer,
-						psZSBuffer->ui32ZSBufferID,
-						PVRSRVGetErrorString(eError)));
-				OSLockRelease(hLockZSBuffer);
-				return eError;
-			}
-
-			PVR_DPF((PVR_DBG_MESSAGE, "ZS Buffer [%p, ID=0x%08x]: Physical backing removed",
-										psZSBuffer,
-										psZSBuffer->ui32ZSBufferID));
+			PVR_DPF((PVR_DBG_ERROR,
+					"Unable to unpopulate ZS Buffer [%p, ID=0x%08x] (%s)",
+					psZSBuffer,
+					psZSBuffer->ui32ZSBufferID,
+					PVRSRVGetErrorString(eError)));
+			OSLockRelease(hLockZSBuffer);
+			return eError;
 		}
-	}
 
-	/* Decrease refcount*/
-	psZSBuffer->ui32RefCount--;
+		PVR_DPF((PVR_DBG_MESSAGE, "ZS Buffer [%p, ID=0x%08x]: Physical backing removed",
+									psZSBuffer,
+									psZSBuffer->ui32ZSBufferID));
+
+		psZSBuffer->bIsBacked = IMG_FALSE;
+	}
 
 	OSLockRelease(hLockZSBuffer);
 
@@ -2452,11 +2648,14 @@ PVRSRV_ERROR
 RGXUnpopulateZSBufferKM(RGX_POPULATION *psPopulation)
 {
 	PVRSRV_ERROR eError;
+	POS_LOCK hLockZSBuffer;
 
 	if (!psPopulation)
 	{
 		return PVRSRV_ERROR_INVALID_PARAMS;
 	}
+
+	hLockZSBuffer = psPopulation->psZSBuffer->psDevInfo->hLockZSBuffer;
 
 	eError = RGXUnbackingZSBuffer(psPopulation->psZSBuffer);
 	if (eError != PVRSRV_OK)
@@ -2464,12 +2663,16 @@ RGXUnpopulateZSBufferKM(RGX_POPULATION *psPopulation)
 		return eError;
 	}
 
+	OSLockAcquire(hLockZSBuffer);
+	psPopulation->psZSBuffer->ui32RefCount--;
+	OSLockRelease(hLockZSBuffer);
+
 	OSFreeMem(psPopulation);
 
 	return PVRSRV_OK;
 }
 
-static RGX_ZSBUFFER_DATA *FindZSBuffer(PVRSRV_RGXDEV_INFO *psDevInfo, IMG_UINT32 ui32ZSBufferID)
+static RGX_ZSBUFFER_DATA *FindAndRefZSBuffer(PVRSRV_RGXDEV_INFO *psDevInfo, IMG_UINT32 ui32ZSBufferID)
 {
 	DLLIST_NODE *psNode, *psNext;
 	RGX_ZSBUFFER_DATA *psZSBuffer = NULL;
@@ -2483,6 +2686,8 @@ static RGX_ZSBUFFER_DATA *FindZSBuffer(PVRSRV_RGXDEV_INFO *psDevInfo, IMG_UINT32
 		if (psThisZSBuffer->ui32ZSBufferID == ui32ZSBufferID)
 		{
 			psZSBuffer = psThisZSBuffer;
+
+			psZSBuffer->ui32RefCount++;
 			break;
 		}
 	}
@@ -2502,7 +2707,7 @@ void RGXProcessRequestZSBufferBacking(PVRSRV_RGXDEV_INFO *psDevInfo,
 	PVR_ASSERT(psDevInfo);
 
 	/* scan all deferred allocations */
-	psZSBuffer = FindZSBuffer(psDevInfo, ui32ZSBufferID);
+	psZSBuffer = FindAndRefZSBuffer(psDevInfo, ui32ZSBufferID);
 
 	if (psZSBuffer == NULL)
 	{
@@ -2518,8 +2723,9 @@ void RGXProcessRequestZSBufferBacking(PVRSRV_RGXDEV_INFO *psDevInfo,
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-		         "Populating ZS-Buffer failed with error %u (ID = 0x%08x)",
-		         eError, ui32ZSBufferID));
+				"Populating ZS-Buffer (ID = 0x%08x) failed (%s)",
+				ui32ZSBufferID,
+				PVRSRVGetErrorString(eError)));
 		bBackingDone = IMG_FALSE;
 	}
 
@@ -2528,20 +2734,20 @@ void RGXProcessRequestZSBufferBacking(PVRSRV_RGXDEV_INFO *psDevInfo,
 	sTACCBCmd.uCmdData.sZSBufferBackingData.sZSBufferFWDevVAddr.ui32Addr = psZSBuffer->sZSBufferFWDevVAddr.ui32Addr;
 	sTACCBCmd.uCmdData.sZSBufferBackingData.bDone = bBackingDone;
 
-	LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 	{
 		eError = RGXScheduleCommand(psDevInfo,
-									RGXFWIF_DM_GEOM,
-									&sTACCBCmd,
-									PDUMP_FLAGS_NONE);
+		                            RGXFWIF_DM_GEOM,
+		                            &sTACCBCmd,
+		                            PDUMP_FLAGS_NONE);
 		if (eError != PVRSRV_ERROR_RETRY)
 		{
 			break;
 		}
 		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-	} END_LOOP_UNTIL_TIMEOUT();
+	} END_LOOP_UNTIL_TIMEOUT_US();
 
-	/* Kernel CCB should never fill up, as the FW is processing them right away  */
+	/* Kernel CCB should never fill up, as the FW is processing them right away */
 	PVR_ASSERT(eError == PVRSRV_OK);
 
 	psZSBuffer->ui32NumReqByFW++;
@@ -2550,6 +2756,11 @@ void RGXProcessRequestZSBufferBacking(PVRSRV_RGXDEV_INFO *psDevInfo,
 	PVRSRVStatsUpdateZSBufferStats(psDevInfo->psDeviceNode,
 	                               0, 1, psZSBuffer->owner);
 #endif
+
+	OSLockAcquire(psDevInfo->hLockZSBuffer);
+	psZSBuffer->ui32RefCount--;
+	OSLockRelease(psDevInfo->hLockZSBuffer);
+
 }
 
 void RGXProcessRequestZSBufferUnbacking(PVRSRV_RGXDEV_INFO *psDevInfo,
@@ -2562,7 +2773,7 @@ void RGXProcessRequestZSBufferUnbacking(PVRSRV_RGXDEV_INFO *psDevInfo,
 	PVR_ASSERT(psDevInfo);
 
 	/* scan all deferred allocations */
-	psZSBuffer = FindZSBuffer(psDevInfo, ui32ZSBufferID);
+	psZSBuffer = FindAndRefZSBuffer(psDevInfo, ui32ZSBufferID);
 
 	if (psZSBuffer == NULL)
 	{
@@ -2578,8 +2789,9 @@ void RGXProcessRequestZSBufferUnbacking(PVRSRV_RGXDEV_INFO *psDevInfo,
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-		         "UnPopulating ZS-Buffer failed with error %u (ID = 0x%08x)",
-		         eError, ui32ZSBufferID));
+				"UnPopulating ZS-Buffer (ID = 0x%08x) failed (%s)",
+				ui32ZSBufferID,
+				PVRSRVGetErrorString(eError)));
 		PVR_ASSERT(IMG_FALSE);
 	}
 
@@ -2588,38 +2800,42 @@ void RGXProcessRequestZSBufferUnbacking(PVRSRV_RGXDEV_INFO *psDevInfo,
 	sTACCBCmd.uCmdData.sZSBufferBackingData.sZSBufferFWDevVAddr.ui32Addr = psZSBuffer->sZSBufferFWDevVAddr.ui32Addr;
 	sTACCBCmd.uCmdData.sZSBufferBackingData.bDone = IMG_TRUE;
 
-	LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 	{
 		eError = RGXScheduleCommand(psDevInfo,
-									RGXFWIF_DM_GEOM,
-									&sTACCBCmd,
-									PDUMP_FLAGS_NONE);
+		                            RGXFWIF_DM_GEOM,
+		                            &sTACCBCmd,
+		                            PDUMP_FLAGS_NONE);
 		if (eError != PVRSRV_ERROR_RETRY)
 		{
 			break;
 		}
 		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-	} END_LOOP_UNTIL_TIMEOUT();
+	} END_LOOP_UNTIL_TIMEOUT_US();
 
 	/* Kernel CCB should never fill up, as the FW is processing them right away */
 	PVR_ASSERT(eError == PVRSRV_OK);
+
+	OSLockAcquire(psDevInfo->hLockZSBuffer);
+	psZSBuffer->ui32RefCount--;
+	OSLockRelease(psDevInfo->hLockZSBuffer);
 }
 
 static
 PVRSRV_ERROR _CreateTAContext(CONNECTION_DATA *psConnection,
-							  PVRSRV_DEVICE_NODE *psDeviceNode,
-							  SERVER_MMU_CONTEXT *psServerMMUContext,
-							  DEVMEM_MEMDESC *psAllocatedMemDesc,
-							  IMG_UINT32 ui32AllocatedOffset,
-							  DEVMEM_MEMDESC *psFWMemContextMemDesc,
-							  IMG_INT32 i32Priority,
-							  IMG_UINT32 ui32MaxDeadlineMS,
-							  IMG_UINT64 ui64RobustnessAddress,
-							  RGX_COMMON_CONTEXT_INFO *psInfo,
-							  RGX_SERVER_RC_TA_DATA *psTAData,
-							  IMG_UINT32 ui32CCBAllocSizeLog2,
-							  IMG_UINT32 ui32CCBMaxAllocSizeLog2,
-							  IMG_UINT32 ui32ContextFlags)
+                              PVRSRV_DEVICE_NODE *psDeviceNode,
+                              SERVER_MMU_CONTEXT *psServerMMUContext,
+                              DEVMEM_MEMDESC *psAllocatedMemDesc,
+                              IMG_UINT32 ui32AllocatedOffset,
+                              DEVMEM_MEMDESC *psFWMemContextMemDesc,
+                              IMG_INT32 i32Priority,
+                              IMG_UINT32 ui32MaxDeadlineMS,
+                              IMG_UINT64 ui64RobustnessAddress,
+                              RGX_COMMON_CONTEXT_INFO *psInfo,
+                              RGX_SERVER_RC_TA_DATA *psTAData,
+                              IMG_UINT32 ui32CCBAllocSizeLog2,
+                              IMG_UINT32 ui32CCBMaxAllocSizeLog2,
+                              IMG_UINT32 ui32ContextFlags)
 {
 	PVRSRV_RGXDEV_INFO *psDevInfo = psDeviceNode->pvDevice;
 	PVRSRV_ERROR eError;
@@ -2645,22 +2861,22 @@ PVRSRV_ERROR _CreateTAContext(CONNECTION_DATA *psConnection,
 	}
 
 	eError = FWCommonContextAllocate(psConnection,
-									 psDeviceNode,
-									 REQ_TYPE_TA,
-									 RGXFWIF_DM_GEOM,
-									 psServerMMUContext,
-									 psAllocatedMemDesc,
-									 ui32AllocatedOffset,
-									 psFWMemContextMemDesc,
-									 psTAData->psContextStateMemDesc,
-									 ui32CCBAllocSizeLog2 ? ui32CCBAllocSizeLog2 : RGX_TA_CCB_SIZE_LOG2,
-									 ui32CCBMaxAllocSizeLog2 ? ui32CCBMaxAllocSizeLog2 : RGX_TA_CCB_MAX_SIZE_LOG2,
-									 ui32ContextFlags,
-									 i32Priority,
-									 ui32MaxDeadlineMS,
-									 ui64RobustnessAddress,
-									 psInfo,
-									 &psTAData->psServerCommonContext);
+	                                 psDeviceNode,
+	                                 REQ_TYPE_TA,
+	                                 RGXFWIF_DM_GEOM,
+	                                 psServerMMUContext,
+	                                 psAllocatedMemDesc,
+	                                 ui32AllocatedOffset,
+	                                 psFWMemContextMemDesc,
+	                                 psTAData->psContextStateMemDesc,
+	                                 ui32CCBAllocSizeLog2 ? ui32CCBAllocSizeLog2 : RGX_TA_CCB_SIZE_LOG2,
+	                                 ui32CCBMaxAllocSizeLog2 ? ui32CCBMaxAllocSizeLog2 : RGX_TA_CCB_MAX_SIZE_LOG2,
+	                                 ui32ContextFlags,
+	                                 i32Priority,
+	                                 ui32MaxDeadlineMS,
+	                                 ui64RobustnessAddress,
+	                                 psInfo,
+	                                 &psTAData->psServerCommonContext);
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
@@ -2694,23 +2910,23 @@ fail_tacontextsuspendalloc:
 
 static
 PVRSRV_ERROR _Create3DContext(CONNECTION_DATA *psConnection,
-							  PVRSRV_DEVICE_NODE *psDeviceNode,
-							  SERVER_MMU_CONTEXT *psServerMMUContext,
-							  DEVMEM_MEMDESC *psAllocatedMemDesc,
-							  IMG_UINT32 ui32AllocatedOffset,
-							  DEVMEM_MEMDESC *psFWMemContextMemDesc,
-							  IMG_INT32 i32Priority,
-							  IMG_UINT32 ui32MaxDeadlineMS,
-							  IMG_UINT64 ui64RobustnessAddress,
-							  RGX_COMMON_CONTEXT_INFO *psInfo,
-							  RGX_SERVER_RC_3D_DATA *ps3DData,
-							  IMG_UINT32 ui32CCBAllocSizeLog2,
-							  IMG_UINT32 ui32CCBMaxAllocSizeLog2,
-							  IMG_UINT32 ui32ContextFlags)
+                              PVRSRV_DEVICE_NODE *psDeviceNode,
+                              SERVER_MMU_CONTEXT *psServerMMUContext,
+                              DEVMEM_MEMDESC *psAllocatedMemDesc,
+                              IMG_UINT32 ui32AllocatedOffset,
+                              DEVMEM_MEMDESC *psFWMemContextMemDesc,
+                              IMG_INT32 i32Priority,
+                              IMG_UINT32 ui32MaxDeadlineMS,
+                              IMG_UINT64 ui64RobustnessAddress,
+                              RGX_COMMON_CONTEXT_INFO *psInfo,
+                              RGX_SERVER_RC_3D_DATA *ps3DData,
+                              IMG_UINT32 ui32CCBAllocSizeLog2,
+                              IMG_UINT32 ui32CCBMaxAllocSizeLog2,
+                              IMG_UINT32 ui32ContextFlags)
 {
 	PVRSRV_RGXDEV_INFO *psDevInfo = psDeviceNode->pvDevice;
 	PVRSRV_ERROR eError;
-	IMG_UINT	uiNumISPStoreRegs = RGXFWIF_IPP_RESUME_REG_COUNT; /* default 1 register for IPP_resume */
+	IMG_UINT	uiNumISPStoreRegs;
 	IMG_UINT	ui3DRegISPStateStoreSize = 0;
 
 	/*
@@ -2718,6 +2934,9 @@ PVRSRV_ERROR _Create3DContext(CONNECTION_DATA *psConnection,
 		Note: the FW reads/writes the state to memory by accessing the GPU register interface.
 	*/
 	PDUMPCOMMENT(psDeviceNode, "Allocate RGX firmware 3D context suspend state");
+
+#if defined(RGX_FEATURE_NUM_SPU_MAX_VALUE_IDX)
+	uiNumISPStoreRegs = RGXFWIF_IPP_RESUME_REG_COUNT; /* default 1 register for IPP_resume */
 
 	uiNumISPStoreRegs += (RGX_GET_FEATURE_VALUE(psDevInfo, NUM_SPU) *
 								RGX_GET_FEATURE_VALUE(psDevInfo, NUM_ISP_PER_SPU) *
@@ -2728,6 +2947,23 @@ PVRSRV_ERROR _Create3DContext(CONNECTION_DATA *psConnection,
 	{
 		return PVRSRV_ERROR_NOT_SUPPORTED;
 	}
+#else /* defined(RGX_FEATURE_NUM_SPU_MAX_VALUE_IDX) */
+	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, XE_MEMORY_HIERARCHY))
+	{
+		uiNumISPStoreRegs = psDeviceNode->pfnGetDeviceFeatureValue(psDeviceNode,
+				RGX_FEATURE_NUM_RASTER_PIPES_IDX);
+		if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, GPU_MULTICORE_SUPPORT))
+		{
+			uiNumISPStoreRegs *= (1U + psDeviceNode->pfnGetDeviceFeatureValue(psDeviceNode,
+					RGX_FEATURE_XPU_MAX_SLAVES_IDX));
+		}
+	}
+	else
+	{
+		uiNumISPStoreRegs = psDeviceNode->pfnGetDeviceFeatureValue(psDeviceNode,
+				RGX_FEATURE_NUM_ISP_IPP_PIPES_IDX);
+	}
+#endif /* defined(RGX_FEATURE_NUM_SPU_MAX_VALUE_IDX) */
 
 	/* Size of the CS buffer */
 	/* Calculate the size of the 3DCTX ISP state */
@@ -2749,22 +2985,22 @@ PVRSRV_ERROR _Create3DContext(CONNECTION_DATA *psConnection,
 	}
 
 	eError = FWCommonContextAllocate(psConnection,
-									 psDeviceNode,
-									 REQ_TYPE_3D,
-									 RGXFWIF_DM_3D,
-									 psServerMMUContext,
-									 psAllocatedMemDesc,
-									 ui32AllocatedOffset,
-									 psFWMemContextMemDesc,
-									 ps3DData->psContextStateMemDesc,
-									 ui32CCBAllocSizeLog2 ? ui32CCBAllocSizeLog2 : RGX_3D_CCB_SIZE_LOG2,
-									 ui32CCBMaxAllocSizeLog2 ? ui32CCBMaxAllocSizeLog2 : RGX_3D_CCB_MAX_SIZE_LOG2,
-									 ui32ContextFlags,
-									 i32Priority,
-									 ui32MaxDeadlineMS,
-									 ui64RobustnessAddress,
-									 psInfo,
-									 &ps3DData->psServerCommonContext);
+	                                 psDeviceNode,
+	                                 REQ_TYPE_3D,
+	                                 RGXFWIF_DM_3D,
+	                                 psServerMMUContext,
+	                                 psAllocatedMemDesc,
+	                                 ui32AllocatedOffset,
+	                                 psFWMemContextMemDesc,
+	                                 ps3DData->psContextStateMemDesc,
+	                                 ui32CCBAllocSizeLog2 ? ui32CCBAllocSizeLog2 : RGX_3D_CCB_SIZE_LOG2,
+	                                 ui32CCBMaxAllocSizeLog2 ? ui32CCBMaxAllocSizeLog2 : RGX_3D_CCB_MAX_SIZE_LOG2,
+	                                 ui32ContextFlags,
+	                                 i32Priority,
+	                                 ui32MaxDeadlineMS,
+	                                 ui64RobustnessAddress,
+	                                 psInfo,
+	                                 &ps3DData->psServerCommonContext);
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
@@ -2799,19 +3035,19 @@ fail_3dcontextsuspendalloc:
  * PVRSRVRGXCreateRenderContextKM
  */
 PVRSRV_ERROR PVRSRVRGXCreateRenderContextKM(CONNECTION_DATA				*psConnection,
-											PVRSRV_DEVICE_NODE			*psDeviceNode,
-											IMG_INT32					i32Priority,
-											IMG_UINT32					ui32FrameworkRegisterSize,
-											IMG_PBYTE					pabyFrameworkRegisters,
-											IMG_HANDLE					hMemCtxPrivData,
-											IMG_UINT32					ui32StaticRenderContextStateSize,
-											IMG_PBYTE					pStaticRenderContextState,
-											IMG_UINT32					ui32PackedCCBSizeU8888,
-											IMG_UINT32					ui32ContextFlags,
-											IMG_UINT64					ui64RobustnessAddress,
-											IMG_UINT32					ui32MaxTADeadlineMS,
-											IMG_UINT32					ui32Max3DDeadlineMS,
-											RGX_SERVER_RENDER_CONTEXT	**ppsRenderContext)
+                                            PVRSRV_DEVICE_NODE			*psDeviceNode,
+                                            IMG_INT32					i32Priority,
+                                            IMG_UINT32					ui32FrameworkRegisterSize,
+                                            IMG_PBYTE					pabyFrameworkRegisters,
+                                            IMG_HANDLE					hMemCtxPrivData,
+                                            IMG_UINT32					ui32StaticRenderContextStateSize,
+                                            IMG_PBYTE					pStaticRenderContextState,
+                                            IMG_UINT32					ui32PackedCCBSizeU8888,
+                                            IMG_UINT32					ui32ContextFlags,
+                                            IMG_UINT64					ui64RobustnessAddress,
+                                            IMG_UINT32					ui32MaxTADeadlineMS,
+                                            IMG_UINT32					ui32Max3DDeadlineMS,
+                                            RGX_SERVER_RENDER_CONTEXT	**ppsRenderContext)
 {
 	PVRSRV_ERROR				eError;
 	PVRSRV_RGXDEV_INFO			*psDevInfo = psDeviceNode->pvDevice;
@@ -2857,7 +3093,10 @@ PVRSRV_ERROR PVRSRVRGXCreateRenderContextKM(CONNECTION_DATA				*psConnection,
 	}
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	WorkEstInitTA3D(psDevInfo, &psRenderContext->sWorkEstData);
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDeviceNode))
+	{
+		WorkEstInitTA3D(psDevInfo, &psRenderContext->sWorkEstData);
+	}
 #endif
 
 	if (ui32FrameworkRegisterSize)
@@ -2894,38 +3133,38 @@ PVRSRV_ERROR PVRSRVRGXCreateRenderContextKM(CONNECTION_DATA				*psConnection,
 	}
 
 	eError = _Create3DContext(psConnection,
-							  psDeviceNode,
-							  hMemCtxPrivData,
-							  psRenderContext->psFWRenderContextMemDesc,
-							  offsetof(RGXFWIF_FWRENDERCONTEXT, s3DContext),
-							  psFWMemContextMemDesc,
-							  i32Priority,
-							  ui32Max3DDeadlineMS,
-							  ui64RobustnessAddress,
-							  &sInfo,
-							  &psRenderContext->s3DData,
-							  U32toU8_Unpack3(ui32PackedCCBSizeU8888),
-							  U32toU8_Unpack4(ui32PackedCCBSizeU8888),
-							  ui32ContextFlags);
+	                          psDeviceNode,
+	                          hMemCtxPrivData,
+	                          psRenderContext->psFWRenderContextMemDesc,
+	                          offsetof(RGXFWIF_FWRENDERCONTEXT, s3DContext),
+	                          psFWMemContextMemDesc,
+	                          i32Priority,
+	                          ui32Max3DDeadlineMS,
+	                          ui64RobustnessAddress,
+	                          &sInfo,
+	                          &psRenderContext->s3DData,
+	                          U32toU8_Unpack3(ui32PackedCCBSizeU8888),
+	                          U32toU8_Unpack4(ui32PackedCCBSizeU8888),
+	                          ui32ContextFlags);
 	if (eError != PVRSRV_OK)
 	{
 		goto fail_3dcontext;
 	}
 
 	eError = _CreateTAContext(psConnection,
-							  psDeviceNode,
-							  hMemCtxPrivData,
-							  psRenderContext->psFWRenderContextMemDesc,
-							  offsetof(RGXFWIF_FWRENDERCONTEXT, sTAContext),
-							  psFWMemContextMemDesc,
-							  i32Priority,
-							  ui32MaxTADeadlineMS,
-							  ui64RobustnessAddress,
-							  &sInfo,
-							  &psRenderContext->sTAData,
-							  U32toU8_Unpack1(ui32PackedCCBSizeU8888),
-							  U32toU8_Unpack2(ui32PackedCCBSizeU8888),
-							  ui32ContextFlags);
+	                          psDeviceNode,
+	                          hMemCtxPrivData,
+	                          psRenderContext->psFWRenderContextMemDesc,
+	                          offsetof(RGXFWIF_FWRENDERCONTEXT, sTAContext),
+	                          psFWMemContextMemDesc,
+	                          i32Priority,
+	                          ui32MaxTADeadlineMS,
+	                          ui64RobustnessAddress,
+	                          &sInfo,
+	                          &psRenderContext->sTAData,
+	                          U32toU8_Unpack1(ui32PackedCCBSizeU8888),
+	                          U32toU8_Unpack2(ui32PackedCCBSizeU8888),
+	                          ui32ContextFlags);
 	if (eError != PVRSRV_OK)
 	{
 		goto fail_tacontext;
@@ -2938,8 +3177,13 @@ PVRSRV_ERROR PVRSRVRGXCreateRenderContextKM(CONNECTION_DATA				*psConnection,
 		goto fail_acquire_cpu_mapping;
 	}
 
+	/* Copy the static render context data */
 	OSDeviceMemCopy(&psFWRenderContext->sStaticRenderContextState, pStaticRenderContextState, ui32StaticRenderContextStateSize);
+#if defined(SUPPORT_TRP)
+	psFWRenderContext->eTRPGeomCoreAffinity = RGXFWIF_DM_MAX;
+#endif
 	DevmemPDumpLoadMem(psRenderContext->psFWRenderContextMemDesc, 0, sizeof(RGXFWIF_FWRENDERCONTEXT), PDUMP_FLAGS_CONTINUOUS);
+	RGXFwSharedMemCacheOpPtr(psFWRenderContext, FLUSH);
 	DevmemReleaseCpuVirtAddr(psRenderContext->psFWRenderContextMemDesc);
 
 #if defined(SUPPORT_BUFFER_SYNC)
@@ -2977,14 +3221,32 @@ PVRSRV_ERROR PVRSRVRGXCreateRenderContextKM(CONNECTION_DATA				*psConnection,
 fail_buffer_sync_context_create:
 #endif
 fail_acquire_cpu_mapping:
-	_DestroyTAContext(&psRenderContext->sTAData,
-	                  psDeviceNode);
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		PVRSRV_ERROR eError2 = _DestroyTAContext(&psRenderContext->sTAData,
+		                                         psDeviceNode);
+		if (!PVRSRVIsRetryError(eError2))
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	}
+	END_LOOP_UNTIL_TIMEOUT_US();
 fail_tacontext:
-	_Destroy3DContext(&psRenderContext->s3DData,
-	                  psRenderContext->psDeviceNode);
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		PVRSRV_ERROR eError2 = _Destroy3DContext(&psRenderContext->s3DData,
+		                                         psRenderContext->psDeviceNode);
+		if (!PVRSRVIsRetryError(eError2))
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	}
+	END_LOOP_UNTIL_TIMEOUT_US();
 fail_3dcontext:
 fail_frameworkcopy:
-	if (psRenderContext->psFWFrameworkMemDesc != NULL)
+	if (psRenderContext->psFWFrameworkMemDesc)
 	{
 		DevmemFwUnmapAndFree(psDevInfo, psRenderContext->psFWFrameworkMemDesc);
 	}
@@ -3006,10 +3268,6 @@ PVRSRV_ERROR PVRSRVRGXDestroyRenderContextKM(RGX_SERVER_RENDER_CONTEXT *psRender
 {
 	PVRSRV_ERROR				eError;
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psRenderContext->psDeviceNode->pvDevice;
-#if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	RGXFWIF_FWRENDERCONTEXT	*psFWRenderContext;
-	IMG_UINT32 ui32WorkEstCCBSubmitted;
-#endif
 
 	/* remove node from list before calling destroy - as destroy, if successful
 	 * will invalidate the node
@@ -3061,32 +3319,39 @@ PVRSRV_ERROR PVRSRVRGXDestroyRenderContextKM(RGX_SERVER_RENDER_CONTEXT *psRender
 	}
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	eError = DevmemAcquireCpuVirtAddr(psRenderContext->psFWRenderContextMemDesc,
-			(void **)&psFWRenderContext);
-	if (eError != PVRSRV_OK)
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psRenderContext->psDeviceNode))
 	{
-		PVR_DPF((PVR_DBG_ERROR,
-				"%s: Failed to map firmware render context (%s)",
-				__func__,
-				PVRSRVGetErrorString(eError)));
-		goto e0;
-	}
+		RGXFWIF_FWRENDERCONTEXT	*psFWRenderContext;
+		IMG_UINT32 ui32WorkEstCCBSubmitted;
 
-	ui32WorkEstCCBSubmitted = psFWRenderContext->ui32WorkEstCCBSubmitted;
+		eError = DevmemAcquireCpuVirtAddr(psRenderContext->psFWRenderContextMemDesc,
+				(void **)&psFWRenderContext);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,
+					"%s: Failed to map firmware render context (%s)",
+					__func__,
+					PVRSRVGetErrorString(eError)));
+			goto e0;
+		}
+		RGXFwSharedMemCacheOpValue(psFWRenderContext->ui32WorkEstCCBSubmitted, INVALIDATE);
 
-	DevmemReleaseCpuVirtAddr(psRenderContext->psFWRenderContextMemDesc);
+		ui32WorkEstCCBSubmitted = psFWRenderContext->ui32WorkEstCCBSubmitted;
 
-	/* Check if all of the workload estimation CCB commands for this workload are read */
-	if (ui32WorkEstCCBSubmitted != psRenderContext->sWorkEstData.ui32WorkEstCCBReceived)
-	{
+		DevmemReleaseCpuVirtAddr(psRenderContext->psFWRenderContextMemDesc);
 
-		PVR_DPF((PVR_DBG_WARNING,
-		        "%s: WorkEst # cmds submitted (%u) and received (%u) mismatch",
-		        __func__, ui32WorkEstCCBSubmitted,
-		        psRenderContext->sWorkEstData.ui32WorkEstCCBReceived));
+		/* Check if all of the workload estimation CCB commands for this workload are read */
+		if (ui32WorkEstCCBSubmitted != psRenderContext->sWorkEstData.ui32WorkEstCCBReceived)
+		{
 
-		eError = PVRSRV_ERROR_RETRY;
-		goto e0;
+			PVR_DPF((PVR_DBG_WARNING,
+					"%s: WorkEst # cmds submitted (%u) and received (%u) mismatch",
+					__func__, ui32WorkEstCCBSubmitted,
+					psRenderContext->sWorkEstData.ui32WorkEstCCBReceived));
+
+			eError = PVRSRV_ERROR_RETRY;
+			goto e0;
+		}
 	}
 #endif
 
@@ -3096,7 +3361,7 @@ PVRSRV_ERROR PVRSRVRGXDestroyRenderContextKM(RGX_SERVER_RENDER_CONTEXT *psRender
 	*/
 	if (psRenderContext->ui32CleanupStatus == (RC_CLEANUP_3D_COMPLETE | RC_CLEANUP_TA_COMPLETE))
 	{
-		if (psRenderContext->psFWFrameworkMemDesc != NULL)
+		if (psRenderContext->psFWFrameworkMemDesc)
 		{
 			/* Free the framework buffer */
 			DevmemFwUnmapAndFree(psDevInfo, psRenderContext->psFWFrameworkMemDesc);
@@ -3111,8 +3376,12 @@ PVRSRV_ERROR PVRSRVRGXDestroyRenderContextKM(RGX_SERVER_RENDER_CONTEXT *psRender
 		SyncAddrListDeinit(&psRenderContext->sSyncAddrList3DUpdate);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		WorkEstDeInitTA3D(psDevInfo, &psRenderContext->sWorkEstData);
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psRenderContext->psDeviceNode))
+		{
+			WorkEstDeInitTA3D(psDevInfo, &psRenderContext->sWorkEstData);
+		}
 #endif
+
 		OSLockDestroy(psRenderContext->hLock);
 
 		OSFreeMem(psRenderContext);
@@ -3313,54 +3582,55 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 	RGX_CCB_CMD_HELPER_DATA *pasTACmdHelperData = psRenderContext->asTACmdHelperData;
 	RGX_CCB_CMD_HELPER_DATA *pas3DCmdHelperData = psRenderContext->as3DCmdHelperData;
 
-	IMG_UINT64				ui64FBSCEntryMask;
+	IMG_UINT64                ui64FBSCEntryMask;
 
-	IMG_UINT32				ui32TACmdCount=0;
-	IMG_UINT32				ui323DCmdCount=0;
-	IMG_UINT32				ui32TACmdOffset=0;
-	IMG_UINT32				ui323DCmdOffset=0;
-	RGXFWIF_UFO				sPRUFO;
-	IMG_UINT32				i;
-	PVRSRV_ERROR			eError = PVRSRV_OK;
-	PVRSRV_ERROR			eError2 = PVRSRV_OK;
+	IMG_UINT32                ui32TACmdCount=0;
+	IMG_UINT32                ui323DCmdCount=0;
+	__maybe_unused IMG_UINT32 ui32TACmdOffset=0;
+	__maybe_unused IMG_UINT32 ui323DCmdOffset=0;
 
-	PVRSRV_RGXDEV_INFO      *psDevInfo = FWCommonContextGetRGXDevInfo(psRenderContext->s3DData.psServerCommonContext);
-	IMG_UINT32              ui32IntJobRef = OSAtomicIncrement(&psDevInfo->iCCBSubmissionOrdinal);
-	IMG_BOOL                bCCBStateOpen = IMG_FALSE;
+	RGXFWIF_UFO        sPRUFO;
+	IMG_UINT32         i;
+	PVRSRV_ERROR       eError = PVRSRV_OK;
+	PVRSRV_ERROR       eError2 = PVRSRV_OK;
 
-	IMG_UINT32				ui32ClientPRUpdateCount = 0;
-	PRGXFWIF_UFO_ADDR		*pauiClientPRUpdateUFOAddress = NULL;
-	IMG_UINT32				*paui32ClientPRUpdateValue = NULL;
+	PVRSRV_RGXDEV_INFO *psDevInfo = FWCommonContextGetRGXDevInfo(psRenderContext->s3DData.psServerCommonContext);
+	IMG_UINT32         ui32IntJobRef = OSAtomicIncrement(&psDevInfo->iCCBSubmissionOrdinal);
+	IMG_BOOL           bCCBStateOpen = IMG_FALSE;
+
+	IMG_UINT32         ui32ClientPRUpdateCount = 0;
+	PRGXFWIF_UFO_ADDR  *pauiClientPRUpdateUFOAddress = NULL;
+	IMG_UINT32         *paui32ClientPRUpdateValue = NULL;
 
 	PRGXFWIF_TIMESTAMP_ADDR pPreAddr;
 	PRGXFWIF_TIMESTAMP_ADDR pPostAddr;
 	PRGXFWIF_UFO_ADDR       pRMWUFOAddr;
 
-	PRGXFWIF_UFO_ADDR		*pauiClientTAFenceUFOAddress = NULL;
-	PRGXFWIF_UFO_ADDR		*pauiClientTAUpdateUFOAddress = NULL;
-	PRGXFWIF_UFO_ADDR		*pauiClient3DFenceUFOAddress = NULL;
-	PRGXFWIF_UFO_ADDR		*pauiClient3DUpdateUFOAddress = NULL;
-	PRGXFWIF_UFO_ADDR		uiPRFenceUFOAddress;
+	PRGXFWIF_UFO_ADDR  *pauiClientTAFenceUFOAddress = NULL;
+	PRGXFWIF_UFO_ADDR  *pauiClientTAUpdateUFOAddress = NULL;
+	PRGXFWIF_UFO_ADDR  *pauiClient3DFenceUFOAddress = NULL;
+	PRGXFWIF_UFO_ADDR  *pauiClient3DUpdateUFOAddress = NULL;
+	PRGXFWIF_UFO_ADDR  uiPRFenceUFOAddress;
 
-	IMG_UINT64               uiCheckTAFenceUID = 0;
-	IMG_UINT64               uiCheck3DFenceUID = 0;
-	IMG_UINT64               uiUpdateTAFenceUID = 0;
-	IMG_UINT64               uiUpdate3DFenceUID = 0;
+	IMG_UINT64         uiCheckTAFenceUID = 0;
+	IMG_UINT64         uiCheck3DFenceUID = 0;
+	IMG_UINT64         uiUpdateTAFenceUID = 0;
+	IMG_UINT64         uiUpdate3DFenceUID = 0;
 
 	IMG_BOOL bUseCombined3DAnd3DPR = bKickPR && bKick3D && !pui83DPRDMCmd;
 
-	RGXFWIF_KCCB_CMD_KICK_DATA	sTACmdKickData;
-	RGXFWIF_KCCB_CMD_KICK_DATA	s3DCmdKickData;
+	RGXFWIF_KCCB_CMD_KICK_DATA sTACmdKickData;
+	RGXFWIF_KCCB_CMD_KICK_DATA s3DCmdKickData;
 	IMG_BOOL bUseSingleFWCommand = bKickTA && (bKickPR || bKick3D);
 
 	IMG_UINT32 ui32TACmdSizeTmp = 0, ui323DCmdSizeTmp = 0;
 
 	IMG_BOOL bTAFenceOnSyncCheckpointsOnly = IMG_FALSE;
 
-	PVRSRV_FENCE	iUpdateTAFence = PVRSRV_NO_FENCE;
-	PVRSRV_FENCE	iUpdate3DFence = PVRSRV_NO_FENCE;
+	PVRSRV_FENCE iUpdateTAFence = PVRSRV_NO_FENCE;
+	PVRSRV_FENCE iUpdate3DFence = PVRSRV_NO_FENCE;
 
-	IMG_BOOL b3DFenceOnSyncCheckpointsOnly = IMG_FALSE;
+	IMG_BOOL   b3DFenceOnSyncCheckpointsOnly = IMG_FALSE;
 	IMG_UINT32 ui32TAFenceTimelineUpdateValue = 0;
 	IMG_UINT32 ui323DFenceTimelineUpdateValue = 0;
 
@@ -3386,10 +3656,6 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 	RGX_SYNC_DATA s3DSyncData = {NULL};		/*!< Contains internal update syncs for 3D */
 
 	IMG_BOOL bTestSLRAdd3DCheck = IMG_FALSE;
-#if defined(SUPPORT_VALIDATION)
-	PVRSRV_FENCE hTestSLRTmpFence = PVRSRV_NO_FENCE;
-	PSYNC_CHECKPOINT psDummySyncCheckpoint = NULL;
-#endif
 
 #if defined(SUPPORT_BUFFER_SYNC)
 	PSYNC_CHECKPOINT *apsBufferFenceSyncCheckpoints = NULL;
@@ -3458,6 +3724,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		CMDTA3D_SHARED *psGeomCmdShared = (CMDTA3D_SHARED *)pui8TADMCmd;
 		CMDTA3D_SHARED *ps3DCmdShared = (CMDTA3D_SHARED *)pui83DDMCmd;
 		CMDTA3D_SHARED *psPR3DCmdShared = (CMDTA3D_SHARED *)pui83DPRDMCmd;
+		RGXFWIF_DEV_VIRTADDR sNullFWAddr = {0};
 
 		if (psKMHWRTDataSet == NULL)
 		{
@@ -3469,48 +3736,53 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		*/
 		if (psGeomCmdShared != NULL)
 		{
+			if (ui32TACmdSize < sizeof(*psGeomCmdShared))
+			{
+				PVR_DPF((PVR_DBG_ERROR, "%s: Invalid TACmd size", __func__));
+				return PVRSRV_ERROR_INVALID_PARAMS;
+			}
+
 			psGeomCmdShared->sHWRTData = psKMHWRTDataSet->sHWRTDataFwAddr;
 
-			if (psZSBuffer != NULL)
-			{
-				psGeomCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_ZSBUFFER] = psZSBuffer->sZSBufferFWDevVAddr;
-			}
-			if (psMSAAScratchBuffer != NULL)
-			{
-				psGeomCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_MSAABUFFER] = psMSAAScratchBuffer->sZSBufferFWDevVAddr;
-			}
+			psGeomCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_ZSBUFFER] =
+			    psZSBuffer ? psZSBuffer->sZSBufferFWDevVAddr : sNullFWAddr;
+			psGeomCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_MSAABUFFER] =
+			    psMSAAScratchBuffer ? psMSAAScratchBuffer->sZSBufferFWDevVAddr : sNullFWAddr;
 		}
 
 		/* Write FW address for 3D CMD
 		*/
 		if (ps3DCmdShared != NULL)
 		{
+			if (ui323DCmdSize < sizeof(*ps3DCmdShared))
+			{
+				PVR_DPF((PVR_DBG_ERROR, "%s: Invalid 3DCmd size", __func__));
+				return PVRSRV_ERROR_INVALID_PARAMS;
+			}
+
 			ps3DCmdShared->sHWRTData = psKMHWRTDataSet->sHWRTDataFwAddr;
 
-			if (psZSBuffer != NULL)
-			{
-				ps3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_ZSBUFFER] = psZSBuffer->sZSBufferFWDevVAddr;
-			}
-			if (psMSAAScratchBuffer != NULL)
-			{
-				ps3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_MSAABUFFER] = psMSAAScratchBuffer->sZSBufferFWDevVAddr;
-			}
+			ps3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_ZSBUFFER] =
+			    psZSBuffer ? psZSBuffer->sZSBufferFWDevVAddr : sNullFWAddr;
+			ps3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_MSAABUFFER] =
+			    psMSAAScratchBuffer ? psMSAAScratchBuffer->sZSBufferFWDevVAddr : sNullFWAddr;
 		}
 
 		/* Write FW address for PR3D CMD
 		*/
 		if (psPR3DCmdShared != NULL)
 		{
-			psPR3DCmdShared->sHWRTData = psKMHWRTDataSet->sHWRTDataFwAddr;
+			if (ui323DPRCmdSize < sizeof(*psPR3DCmdShared))
+			{
+				PVR_DPF((PVR_DBG_ERROR, "%s: Invalid 3DPRCmd size", __func__));
+				return PVRSRV_ERROR_INVALID_PARAMS;
+			}
 
-			if (psZSBuffer != NULL)
-			{
-				psPR3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_ZSBUFFER] = psZSBuffer->sZSBufferFWDevVAddr;
-			}
-			if (psMSAAScratchBuffer != NULL)
-			{
-				psPR3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_MSAABUFFER] = psMSAAScratchBuffer->sZSBufferFWDevVAddr;
-			}
+			psPR3DCmdShared->sHWRTData = psKMHWRTDataSet->sHWRTDataFwAddr;
+			psPR3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_ZSBUFFER] =
+			    psZSBuffer ? psZSBuffer->sZSBufferFWDevVAddr : sNullFWAddr;
+			psPR3DCmdShared->asPRBuffer[RGXFWIF_PRBUFFER_MSAABUFFER] =
+			    psMSAAScratchBuffer ? psMSAAScratchBuffer->sZSBufferFWDevVAddr : sNullFWAddr;
 		}
 	}
 
@@ -3597,6 +3869,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 				        __func__, eError));
 			}
 			OSLockRelease(psRenderContext->hLock);
+
 			return eError;
 		}
 
@@ -3627,6 +3900,9 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 			}
 		}
 	}
+#else
+	PVR_UNREFERENCED_PARAMETER(paui32SyncPMRFlags);
+	PVR_UNREFERENCED_PARAMETER(ppsSyncPMRs);
 #endif /* defined(SUPPORT_BUFFER_SYNC) */
 
 #if !defined(UPDATE_FENCE_CHECKPOINT_COUNT) || UPDATE_FENCE_CHECKPOINT_COUNT != 1 && UPDATE_FENCE_CHECKPOINT_COUNT != 2
@@ -3648,8 +3924,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		    &ui32FenceTASyncCheckpointCount,
 		    &apsFenceTASyncCheckpoints,
 		    &uiCheckTAFenceUID,
-		    ui32PDumpFlags
-		);
+		    ui32PDumpFlags);
 		if (unlikely(eError != PVRSRV_OK))
 		{
 			CHKPT_DBG((PVR_DBG_ERROR, "%s: ...done, returned ERROR (eError=%d)",
@@ -3686,8 +3961,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		    &ui32Fence3DSyncCheckpointCount,
 		    &apsFence3DSyncCheckpoints,
 		    &uiCheck3DFenceUID,
-		    ui32PDumpFlags
-		);
+		    ui32PDumpFlags);
 		if (unlikely(eError != PVRSRV_OK))
 		{
 			CHKPT_DBG((PVR_DBG_ERROR, "%s: ...done, returned ERROR (eError=%d)",
@@ -3741,50 +4015,6 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 				UPDATE_FENCE_CHECKPOINT_COUNT : 0;
 	}
 
-#if defined(SUPPORT_VALIDATION)
-	/* Check if TestingSLR is adding an extra sync checkpoint to the
-	 * 3D fence check (which we won't signal)
-	 */
-	if ((psDevInfo->ui32TestSLRInterval > 0) &&
-	    (--psDevInfo->ui32TestSLRCount == 0))
-	{
-		bTestSLRAdd3DCheck = IMG_TRUE;
-		psDevInfo->ui32TestSLRCount = psDevInfo->ui32TestSLRInterval;
-	}
-
-	if ((bTestSLRAdd3DCheck) && (iUpdate3DTimeline != PVRSRV_NO_TIMELINE))
-	{
-		if (iUpdate3DTimeline == PVRSRV_NO_TIMELINE)
-		{
-			PVR_DPF((PVR_DBG_ERROR, "%s: Would append additional SLR checkpoint "
-			         "to 3D fence but no update 3D timeline provided", __func__));
-		}
-		else
-		{
-			SyncCheckpointAlloc(psRenderContext->psDeviceNode->hSyncCheckpointContext,
-			                    iUpdate3DTimeline,
-			                    hTestSLRTmpFence,
-			                    "TestSLRCheck",
-			                    &psDummySyncCheckpoint);
-			PVR_DPF((PVR_DBG_WARNING, "%s: Appending additional SLR checkpoint to 3D fence "
-			                          "checkpoints (psDummySyncCheckpoint=<%p>)",
-			                          __func__, (void*)psDummySyncCheckpoint));
-			SyncAddrListAppendCheckpoints(&psRenderContext->sSyncAddrList3DFence,
-			                              1,
-			                              &psDummySyncCheckpoint);
-			if (!pauiClient3DFenceUFOAddress)
-			{
-				pauiClient3DFenceUFOAddress = psRenderContext->sSyncAddrList3DFence.pasFWAddrs;
-			}
-
-			if (ui32Client3DFenceCount == 0)
-			{
-				b3DFenceOnSyncCheckpointsOnly = IMG_TRUE;
-			}
-			ui323DFenceCount++;
-		}
-	}
-#endif /* defined(SUPPORT_VALIDATION) */
 
 	/*
 	 * Extract the FBSC entries from MMU Context for the deferred FBSC invalidate command,
@@ -3818,7 +4048,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		          __func__, ui32TAFenceCount, ui32TAUpdateCount));
 
 		RGXCmdHelperInitCmdCCB_CommandSize(
-		    psDevInfo,
+			psDevInfo,
 			ui64FBSCEntryMask,
 		    ui32TAFenceCount,
 		    ui32TAUpdateCount,
@@ -3842,7 +4072,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		          ui323DFenceCount));
 
 		RGXCmdHelperInitCmdCCB_CommandSize(
-		    psDevInfo,
+			psDevInfo,
 			0, /* empty ui64FBSCEntryMask it is assumed that PRs should
 		        * not invalidate FBSC */
 		    ui323DFenceCount,
@@ -3862,7 +4092,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		          ui32PRUpdateCount));
 
 		RGXCmdHelperInitCmdCCB_CommandSize(
-		    psDevInfo,
+			psDevInfo,
 			0, /* empty ui64FBSCEntryMask it is assumed that PRs should
 		        * not invalidate FBSC */
 		    0,
@@ -3887,7 +4117,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		}
 
 		RGXCmdHelperInitCmdCCB_CommandSize(
-		    psDevInfo,
+			psDevInfo,
 			ui64FBSCEntryMask, /* equals: [a] 0 if 3D is preceded by TA
 		                        *         [b] value from the MMU ctx otherwise */
 			bKickTA ? 0 : ui323DFenceCount,
@@ -4004,9 +4234,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 	CHKPT_DBG((PVR_DBG_ERROR, "%s: pauiClient3DUpdateUFOAddress=<%p> ",
 			   __func__, (void*)pauiClient3DUpdateUFOAddress));
 
-	eError = SyncPrimitiveBlockToFWAddr(psPRFenceSyncPrimBlock,
-									ui32PRFenceSyncOffset,
-									&uiPRFenceUFOAddress);
+	eError = SyncPrimitiveBlockToFWAddr(psPRFenceSyncPrimBlock, ui32PRFenceSyncOffset, &uiPRFenceUFOAddress);
 
 	if (unlikely(eError != PVRSRV_OK))
 	{
@@ -4041,6 +4269,11 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 			SyncAddrListAppendAndDeRefCheckpoints(&psRenderContext->sSyncAddrListTAFence,
 			                                      ui32BufferFenceSyncCheckpointCount,
 			                                      apsBufferFenceSyncCheckpoints);
+			if (apsBufferFenceSyncCheckpoints)
+			{
+				kfree(apsBufferFenceSyncCheckpoints);
+				apsBufferFenceSyncCheckpoints = NULL;
+			}
 			if (!pauiClientTAFenceUFOAddress)
 			{
 				pauiClientTAFenceUFOAddress = psRenderContext->sSyncAddrListTAFence.pasFWAddrs;
@@ -4067,6 +4300,11 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 			SyncAddrListAppendAndDeRefCheckpoints(&psRenderContext->sSyncAddrList3DFence,
 					ui32BufferFenceSyncCheckpointCount,
 					apsBufferFenceSyncCheckpoints);
+			if (apsBufferFenceSyncCheckpoints)
+			{
+				kfree(apsBufferFenceSyncCheckpoints);
+				apsBufferFenceSyncCheckpoints = NULL;
+			}
 			if (!pauiClient3DFenceUFOAddress)
 			{
 				pauiClient3DFenceUFOAddress = psRenderContext->sSyncAddrList3DFence.pasFWAddrs;
@@ -4157,9 +4395,6 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 	if (iCheckTAFence >= 0 || iUpdateTATimeline >= 0 ||
 	    iCheck3DFence >= 0 || iUpdate3DTimeline >= 0)
 	{
-		PRGXFWIF_UFO_ADDR	*pauiClientTAIntUpdateUFOAddress = NULL;
-		PRGXFWIF_UFO_ADDR	*pauiClient3DIntUpdateUFOAddress = NULL;
-
 		CHKPT_DBG((PVR_DBG_ERROR,
 				   "%s: [TA] iCheckFence = %d, iUpdateTimeline = %d",
 				   __func__, iCheckTAFence, iUpdateTATimeline));
@@ -4190,7 +4425,10 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 						ui32PDumpFlags);
 				if (unlikely(eError != PVRSRV_OK))
 				{
-					PVR_DPF((PVR_DBG_ERROR, "%s:   SyncCheckpointCreateFence[TA] failed (%d)", __func__, eError));
+					PVR_DPF((PVR_DBG_ERROR,
+							"%s:   SyncCheckpointCreateFence[TA] failed (%s)",
+							__func__,
+							PVRSRVGetErrorString(eError)));
 					goto fail_create_ta_fence;
 				}
 
@@ -4202,11 +4440,17 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 						   (void*)psTAFenceTimelineUpdateSync,
 						   ui32TAFenceTimelineUpdateValue));
 
-				/* Store the FW address of the update sync checkpoint in pauiClientTAIntUpdateUFOAddress */
-				pauiClientTAIntUpdateUFOAddress = SyncCheckpointGetRGXFWIFUFOAddr(psUpdateTASyncCheckpoint);
-				CHKPT_DBG((PVR_DBG_ERROR,
-						   "%s: pauiClientIntUpdateUFOAddress[TA]->ui32Addr=0x%x",
-						   __func__, pauiClientTAIntUpdateUFOAddress->ui32Addr));
+#if defined(TA3D_CHECKPOINT_DEBUG)
+				{
+					PRGXFWIF_UFO_ADDR *pauiClientTAIntUpdateUFOAddress = NULL;
+
+					/* Store the FW address of the update sync checkpoint in pauiClientTAIntUpdateUFOAddress */
+					pauiClientTAIntUpdateUFOAddress = SyncCheckpointGetRGXFWIFUFOAddr(psUpdateTASyncCheckpoint);
+					CHKPT_DBG((PVR_DBG_ERROR,
+							   "%s: pauiClientIntUpdateUFOAddress[TA]->ui32Addr=0x%x",
+							   __func__, pauiClientTAIntUpdateUFOAddress->ui32Addr));
+				}
+#endif
 			}
 
 			/* Append the sync prim update for the TA timeline (if required) */
@@ -4256,7 +4500,10 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 						ui32PDumpFlags);
 				if (unlikely(eError != PVRSRV_OK))
 				{
-					PVR_DPF((PVR_DBG_ERROR, "%s:   SyncCheckpointCreateFence[3D] failed (%d)", __func__, eError));
+					PVR_DPF((PVR_DBG_ERROR,
+							"%s:   SyncCheckpointCreateFence[3D] failed (%s)",
+							__func__,
+							PVRSRVGetErrorString(eError)));
 					goto fail_create_3d_fence;
 				}
 
@@ -4268,11 +4515,17 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 						   (void*)ps3DFenceTimelineUpdateSync,
 						   ui323DFenceTimelineUpdateValue));
 
-				/* Store the FW address of the update sync checkpoint in pauiClient3DIntUpdateUFOAddress */
-				pauiClient3DIntUpdateUFOAddress = SyncCheckpointGetRGXFWIFUFOAddr(psUpdate3DSyncCheckpoint);
-				CHKPT_DBG((PVR_DBG_ERROR,
-						   "%s: pauiClientIntUpdateUFOAddress[3D]->ui32Addr=0x%x",
-						   __func__, pauiClient3DIntUpdateUFOAddress->ui32Addr));
+#if defined(TA3D_CHECKPOINT_DEBUG)
+				{
+					PRGXFWIF_UFO_ADDR *pauiClient3DIntUpdateUFOAddress = NULL;
+
+					/* Store the FW address of the update sync checkpoint in pauiClient3DIntUpdateUFOAddress */
+					pauiClient3DIntUpdateUFOAddress = SyncCheckpointGetRGXFWIFUFOAddr(psUpdate3DSyncCheckpoint);
+					CHKPT_DBG((PVR_DBG_ERROR,
+							   "%s: pauiClientIntUpdateUFOAddress[3D]->ui32Addr=0x%x",
+							   __func__, pauiClient3DIntUpdateUFOAddress->ui32Addr));
+				}
+#endif
 			}
 
 			/* Append the sync prim update for the 3D timeline (if required) */
@@ -4594,13 +4847,18 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 	}
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	if (bKickTA || bKick3D || bAbort)
+	if ((!PVRSRV_VZ_MODE_IS(GUEST, DEVINFO, psDevInfo)) && (bKickTA || bKick3D || bAbort))
 	{
 		sWorkloadCharacteristics.sTA3D.ui32RenderTargetSize  = ui32RenderTargetSize;
 		sWorkloadCharacteristics.sTA3D.ui32NumberOfDrawCalls = ui32NumberOfDrawCalls;
 		sWorkloadCharacteristics.sTA3D.ui32NumberOfIndices   = ui32NumberOfIndices;
 		sWorkloadCharacteristics.sTA3D.ui32NumberOfMRTs      = ui32NumberOfMRTs;
 	}
+#else
+	PVR_UNREFERENCED_PARAMETER(ui32RenderTargetSize);
+	PVR_UNREFERENCED_PARAMETER(ui32NumberOfDrawCalls);
+	PVR_UNREFERENCED_PARAMETER(ui32NumberOfIndices);
+	PVR_UNREFERENCED_PARAMETER(ui32NumberOfMRTs);
 #endif
 
 	/* Init and acquire to TA command if required */
@@ -4609,21 +4867,25 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		RGX_SERVER_RC_TA_DATA *psTAData = &psRenderContext->sTAData;
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		/* Prepare workload estimation */
-		WorkEstPrepare(psRenderContext->psDeviceNode->pvDevice,
-				&psRenderContext->sWorkEstData,
-				&psRenderContext->sWorkEstData.uWorkloadMatchingData.sTA3D.sDataTA,
-				RGXFWIF_CCB_CMD_TYPE_GEOM,
-				&sWorkloadCharacteristics,
-				ui64DeadlineInus,
-				&sWorkloadKickDataTA);
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVINFO, psDevInfo))
+		{
+			/* Prepare workload estimation */
+			WorkEstPrepare(psRenderContext->psDeviceNode->pvDevice,
+					&psRenderContext->sWorkEstData,
+					&psRenderContext->sWorkEstData.uWorkloadMatchingData.sTA3D.sDataTA,
+					RGXFWIF_CCB_CMD_TYPE_GEOM,
+					&sWorkloadCharacteristics,
+					ui64DeadlineInus,
+					&sWorkloadKickDataTA);
+		}
 #endif
 
 		/* Init the TA command helper */
 		CHKPT_DBG((PVR_DBG_ERROR,
 				   "%s:   calling RGXCmdHelperInitCmdCCB(), ui32ClientTAFenceCount=%d, ui32ClientTAUpdateCount=%d",
 				   __func__, ui32ClientTAFenceCount, ui32ClientTAUpdateCount));
-		RGXCmdHelperInitCmdCCB_OtherData(FWCommonContextGetClientCCB(psTAData->psServerCommonContext),
+		RGXCmdHelperInitCmdCCB_OtherData(psDevInfo,
+		                                 FWCommonContextGetClientCCB(psTAData->psServerCommonContext),
 		                                 ui32ClientTAFenceCount,
 		                                 pauiClientTAFenceUFOAddress,
 		                                 paui32ClientTAFenceValue,
@@ -4649,9 +4911,12 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		                                 pasTACmdHelperData);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		/* The following is used to determine the offset of the command header containing
-		   the workload estimation data so that can be accessed when the KCCB is read */
-		ui32TACmdHeaderOffset = RGXCmdHelperGetDMCommandHeaderOffset(pasTACmdHelperData);
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psRenderContext->psDeviceNode))
+		{
+			/* The following is used to determine the offset of the command header containing
+			   the workload estimation data so that can be accessed when the KCCB is read */
+			ui32TACmdHeaderOffset = RGXCmdHelperGetDMCommandHeaderOffset(pasTACmdHelperData);
+		}
 #endif
 
 		eError = RGXCmdHelperAcquireCmdCCB(CCB_CMD_HELPER_NUM_TA_COMMANDS, pasTACmdHelperData);
@@ -4684,7 +4949,8 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		CHKPT_DBG((PVR_DBG_ERROR,
 				   "%s:   calling RGXCmdHelperInitCmdCCB(), ui32Client3DFenceCount=%d",
 				   __func__, ui32Client3DFenceCount));
-		RGXCmdHelperInitCmdCCB_OtherData(FWCommonContextGetClientCCB(ps3DData->psServerCommonContext),
+		RGXCmdHelperInitCmdCCB_OtherData(psDevInfo,
+		                                 FWCommonContextGetClientCCB(ps3DData->psServerCommonContext),
 		                                 ui32Client3DFenceCount + (bTestSLRAdd3DCheck ? 1 : 0),
 		                                 pauiClient3DFenceUFOAddress,
 		                                 NULL,
@@ -4724,12 +4990,14 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 					   ui32ClientPRUpdateValueCount,
 					   (ui32ClientPRUpdateValueCount == 0) ? PVRSRV_SYNC_CHECKPOINT_SIGNALLED : *paui32ClientPRUpdateValue));
 		}
+
 		if (!bUseCombined3DAnd3DPR)
 		{
 			CHKPT_DBG((PVR_DBG_ERROR,
 					   "%s:   calling RGXCmdHelperInitCmdCCB(), ui32ClientPRUpdateCount=%d",
 					   __func__, ui32ClientPRUpdateCount));
-			RGXCmdHelperInitCmdCCB_OtherData(FWCommonContextGetClientCCB(ps3DData->psServerCommonContext),
+			RGXCmdHelperInitCmdCCB_OtherData(psDevInfo,
+			                                 FWCommonContextGetClientCCB(ps3DData->psServerCommonContext),
 			                                 0,
 			                                 NULL,
 			                                 NULL,
@@ -4758,18 +5026,22 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		const RGXFWIF_CCB_CMD_TYPE e3DCmdType = bAbort ? RGXFWIF_CCB_CMD_TYPE_ABORT : RGXFWIF_CCB_CMD_TYPE_3D;
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		/* Prepare workload estimation */
-		WorkEstPrepare(psRenderContext->psDeviceNode->pvDevice,
-				&psRenderContext->sWorkEstData,
-				&psRenderContext->sWorkEstData.uWorkloadMatchingData.sTA3D.sData3D,
-				e3DCmdType,
-				&sWorkloadCharacteristics,
-				ui64DeadlineInus,
-				&sWorkloadKickData3D);
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psRenderContext->psDeviceNode))
+		{
+			/* Prepare workload estimation */
+			WorkEstPrepare(psRenderContext->psDeviceNode->pvDevice,
+					&psRenderContext->sWorkEstData,
+					&psRenderContext->sWorkEstData.uWorkloadMatchingData.sTA3D.sData3D,
+					e3DCmdType,
+					&sWorkloadCharacteristics,
+					ui64DeadlineInus,
+					&sWorkloadKickData3D);
+		}
 #endif
 
 		/* Init the 3D command helper */
-		RGXCmdHelperInitCmdCCB_OtherData(FWCommonContextGetClientCCB(ps3DData->psServerCommonContext),
+		RGXCmdHelperInitCmdCCB_OtherData(psDevInfo,
+		                                 FWCommonContextGetClientCCB(ps3DData->psServerCommonContext),
 		                                 bKickTA ? 0 : ui32Client3DFenceCount,  /* For a kick with a TA, the 3D fences are added before the PR command instead */
 		                                 bKickTA ? NULL : pauiClient3DFenceUFOAddress,
 		                                 NULL,
@@ -4795,10 +5067,13 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		                                 &pas3DCmdHelperData[ui323DCmdCount++]);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		/* The following are used to determine the offset of the command header containing the workload estimation
-		   data so that can be accessed when the KCCB is read */
-		ui323DCmdHeaderOffset =	RGXCmdHelperGetDMCommandHeaderOffset(&pas3DCmdHelperData[ui323DCmdCount - 1]);
-		ui323DFullRenderCommandOffset =	RGXCmdHelperGetCommandOffset(pas3DCmdHelperData, ui323DCmdCount - 1);
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psRenderContext->psDeviceNode))
+		{
+			/* The following are used to determine the offset of the command header containing the workload estimation
+			   data so that can be accessed when the KCCB is read */
+			ui323DCmdHeaderOffset =	RGXCmdHelperGetDMCommandHeaderOffset(&pas3DCmdHelperData[ui323DCmdCount - 1]);
+			ui323DFullRenderCommandOffset =	RGXCmdHelperGetCommandOffset(pas3DCmdHelperData, ui323DCmdCount - 1);
+		}
 #endif
 	}
 
@@ -4825,6 +5100,40 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		}
 	}
 
+	if (ui32TACmdCount)
+	{
+		eError = AttachKickResourcesCleanupCtls((PRGXFWIF_CLEANUP_CTL *) &sTACmdKickData.apsCleanupCtl,
+				&sTACmdKickData.ui32NumCleanupCtl,
+				RGXFWIF_DM_GEOM,
+				bKickTA,
+				psKMHWRTDataSet,
+				psZSBuffer,
+				psMSAAScratchBuffer);
+		if (unlikely(eError != PVRSRV_OK))
+		{
+			CHKPT_DBG((PVR_DBG_ERROR, "%s: Failed, eError=%d, Line",
+					   __func__, eError));
+			goto fail_taattachcleanupctls;
+		}
+	}
+
+	if (ui323DCmdCount)
+	{
+		eError = AttachKickResourcesCleanupCtls((PRGXFWIF_CLEANUP_CTL *) &s3DCmdKickData.apsCleanupCtl,
+				&s3DCmdKickData.ui32NumCleanupCtl,
+				RGXFWIF_DM_3D,
+				bKick3D,
+				psKMHWRTDataSet,
+				psZSBuffer,
+				psMSAAScratchBuffer);
+		if (unlikely(eError != PVRSRV_OK))
+		{
+			CHKPT_DBG((PVR_DBG_ERROR, "%s: Failed, eError=%d, Line",
+					   __func__, eError));
+			goto fail_3dattachcleanupctls;
+		}
+	}
+
 	/*
 		We should acquire the space in the kernel CCB here as after this point
 		we release the commands which will take operations on server syncs
@@ -4834,6 +5143,21 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 	/*
 		Everything is ready to go now, release the commands
 	*/
+
+	eError = PVRSRVPowerLock(psDevInfo->psDeviceNode);
+	if (unlikely(eError != PVRSRV_OK))
+	{
+		PVR_DPF((PVR_DBG_WARNING, "%s: failed to acquire powerlock (%s)",
+			__func__, PVRSRVGetErrorString(eError)));
+
+		/* If system is found powered OFF, Retry scheduling the command */
+		if (likely(eError == PVRSRV_ERROR_SYSTEM_STATE_POWERED_OFF))
+		{
+			eError = PVRSRV_ERROR_RETRY;
+		}
+		goto fail_acquirepowerlock;
+	}
+
 	if (ui32TACmdCount)
 	{
 		ui32TACmdOffset = RGXGetHostWriteOffsetCCB(FWCommonContextGetClientCCB(psRenderContext->sTAData.psServerCommonContext));
@@ -4843,17 +5167,20 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 								  FWCommonContextGetFWAddress(psRenderContext->sTAData.psServerCommonContext).ui32Addr);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		ui32TACmdOffsetWrapCheck = RGXGetHostWriteOffsetCCB(FWCommonContextGetClientCCB(psRenderContext->sTAData.psServerCommonContext));
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDevInfo->psDeviceNode))
+		{
+			ui32TACmdOffsetWrapCheck = RGXGetHostWriteOffsetCCB(FWCommonContextGetClientCCB(psRenderContext->sTAData.psServerCommonContext));
 
-		/* This checks if the command would wrap around at the end of the CCB and therefore  would start at an
-		   offset of 0 rather than the current command offset */
-		if (ui32TACmdOffset < ui32TACmdOffsetWrapCheck)
-		{
-			ui32TACommandOffset = ui32TACmdOffset;
-		}
-		else
-		{
-			ui32TACommandOffset = 0;
+			/* This checks if the command would wrap around at the end of the CCB and therefore  would start at an
+			   offset of 0 rather than the current command offset */
+			if (ui32TACmdOffset < ui32TACmdOffsetWrapCheck)
+			{
+				ui32TACommandOffset = ui32TACmdOffset;
+			}
+			else
+			{
+				ui32TACommandOffset = 0;
+			}
 		}
 #endif
 	}
@@ -4867,15 +5194,18 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 								  FWCommonContextGetFWAddress(psRenderContext->s3DData.psServerCommonContext).ui32Addr);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		ui323DCmdOffsetWrapCheck = RGXGetHostWriteOffsetCCB(FWCommonContextGetClientCCB(psRenderContext->s3DData.psServerCommonContext));
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDevInfo->psDeviceNode))
+		{
+			ui323DCmdOffsetWrapCheck = RGXGetHostWriteOffsetCCB(FWCommonContextGetClientCCB(psRenderContext->s3DData.psServerCommonContext));
 
-		if (ui323DCmdOffset < ui323DCmdOffsetWrapCheck)
-		{
-			ui323DCommandOffset = ui323DCmdOffset;
-		}
-		else
-		{
-			ui323DCommandOffset = 0;
+			if (ui323DCmdOffset < ui323DCmdOffsetWrapCheck)
+			{
+				ui323DCommandOffset = ui323DCmdOffset;
+			}
+			else
+			{
+				ui323DCommandOffset = 0;
+			}
 		}
 #endif
 	}
@@ -4891,23 +5221,12 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		sTACmdKickData.ui32CWrapMaskUpdate = RGXGetWrapMaskCCB(psClientCCB);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		/* Add the Workload data into the KCCB kick */
-		sTACmdKickData.ui32WorkEstCmdHeaderOffset = ui32TACommandOffset + ui32TACmdHeaderOffset;
-#endif
-
-		eError = AttachKickResourcesCleanupCtls((PRGXFWIF_CLEANUP_CTL *) &sTACmdKickData.apsCleanupCtl,
-				&sTACmdKickData.ui32NumCleanupCtl,
-				RGXFWIF_DM_GEOM,
-				bKickTA,
-				psKMHWRTDataSet,
-				psZSBuffer,
-				psMSAAScratchBuffer);
-		if (unlikely(eError != PVRSRV_OK))
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDevInfo->psDeviceNode))
 		{
-			CHKPT_DBG((PVR_DBG_ERROR, "%s: Failed, eError=%d, Line",
-					   __func__, eError));
-			goto fail_taattachcleanupctls;
+			/* Add the Workload data into the KCCB kick */
+			sTACmdKickData.ui32WorkEstCmdHeaderOffset = ui32TACommandOffset + ui32TACmdHeaderOffset;
 		}
+#endif
 
 		if (psGeomCmdShared)
 		{
@@ -4940,9 +5259,9 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 			sTAKCCBCmd.eCmdType = RGXFWIF_KCCB_CMD_KICK;
 			sTAKCCBCmd.uCmdData.sCmdKickData = sTACmdKickData;
 
-			LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+			LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 			{
-				eError2 = RGXScheduleCommand(psRenderContext->psDeviceNode->pvDevice,
+				eError2 = RGXScheduleCommandWithoutPowerLock(psRenderContext->psDeviceNode->pvDevice,
 						RGXFWIF_DM_GEOM,
 						&sTAKCCBCmd,
 						ui32PDumpFlags);
@@ -4951,17 +5270,15 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 					break;
 				}
 				OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-			} END_LOOP_UNTIL_TIMEOUT();
+			} END_LOOP_UNTIL_TIMEOUT_US();
 		}
 
 		if (eError2 != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR, "PVRSRVRGXKicKTA3DKM failed to schedule kernel CCB command. (0x%x)", eError2));
-			if (eError == PVRSRV_OK)
-			{
-				eError = eError2;
-			}
-			goto fail_taacquirecmd;
+			/* Mark the error and bail out */
+			eError = eError2;
+			goto fail_tasubmitcmd;
 		}
 
 		PVRGpuTraceEnqueueEvent(psRenderContext->psDeviceNode,
@@ -4982,23 +5299,12 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 
 		/* Add the Workload data into the KCCB kick */
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-		/* Store the offset to the CCCB command header so that it can be referenced when the KCCB command reaches the FW */
-		s3DCmdKickData.ui32WorkEstCmdHeaderOffset = ui323DCommandOffset + ui323DCmdHeaderOffset + ui323DFullRenderCommandOffset;
-#endif
-
-		eError = AttachKickResourcesCleanupCtls((PRGXFWIF_CLEANUP_CTL *) &s3DCmdKickData.apsCleanupCtl,
-				&s3DCmdKickData.ui32NumCleanupCtl,
-				RGXFWIF_DM_3D,
-				bKick3D,
-				psKMHWRTDataSet,
-				psZSBuffer,
-				psMSAAScratchBuffer);
-		if (unlikely(eError != PVRSRV_OK))
+		if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDevInfo->psDeviceNode))
 		{
-			CHKPT_DBG((PVR_DBG_ERROR, "%s: Failed, eError=%d, Line",
-					   __func__, eError));
-			goto fail_3dattachcleanupctls;
+			/* Store the offset to the CCCB command header so that it can be referenced when the KCCB command reaches the FW */
+			s3DCmdKickData.ui32WorkEstCmdHeaderOffset = ui323DCommandOffset + ui323DCmdHeaderOffset + ui323DFullRenderCommandOffset;
 		}
+#endif
 
 		if (ps3DCmdShared)
 		{
@@ -5038,9 +5344,9 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 			s3DKCCBCmd.uCmdData.sCmdKickData = s3DCmdKickData;
 		}
 
-		LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+		LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 		{
-			eError2 = RGXScheduleCommand(psRenderContext->psDeviceNode->pvDevice,
+			eError2 = RGXScheduleCommandWithoutPowerLock(psRenderContext->psDeviceNode->pvDevice,
 										 RGXFWIF_DM_3D,
 										 &s3DKCCBCmd,
 										 ui32PDumpFlags);
@@ -5049,7 +5355,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 				break;
 			}
 			OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-		} END_LOOP_UNTIL_TIMEOUT();
+		} END_LOOP_UNTIL_TIMEOUT_US();
 
 		if (eError2 != PVRSRV_OK)
 		{
@@ -5058,7 +5364,7 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 			{
 				eError = eError2;
 			}
-			goto fail_3dacquirecmd;
+			goto fail_3dsubmitcmd;
 		}
 
 		PVRGpuTraceEnqueueEvent(psRenderContext->psDeviceNode,
@@ -5075,8 +5381,10 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 	{
 		CHKPT_DBG((PVR_DBG_ERROR, "%s: Failed, eError=%d, Line",
 				   __func__, eError));
-		goto fail_3dacquirecmd;
+		goto fail_3dsubmitcmd;
 	}
+
+	PVRSRVPowerUnlock(psDevInfo->psDeviceNode);
 
 #if defined(NO_HARDWARE)
 	/* If NO_HARDWARE, signal the output fence's sync checkpoint and sync prim */
@@ -5184,16 +5492,14 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 		OSFreeMem(s3DSyncData.paui32ClientUpdateValue);
 	}
 
-#if defined(SUPPORT_VALIDATION)
-	if (bTestSLRAdd3DCheck)
-	{
-		SyncCheckpointFree(psDummySyncCheckpoint);
-	}
-#endif
 	OSLockRelease(psRenderContext->hLock);
 
 	return PVRSRV_OK;
 
+fail_3dsubmitcmd:
+fail_tasubmitcmd:
+	PVRSRVPowerUnlock(psDevInfo->psDeviceNode);
+fail_acquirepowerlock:
 fail_3dattachcleanupctls:
 fail_taattachcleanupctls:
 fail_3dacquirecmd:
@@ -5240,8 +5546,11 @@ fail_tacmdinvalfbsc:
 	 * NOTE: 3D fence is always submitted, either via 3D or TA(PR).
 	 */
 #if defined(SUPPORT_BUFFER_SYNC)
-	SyncAddrListDeRefCheckpoints(ui32BufferFenceSyncCheckpointCount,
-	                             apsBufferFenceSyncCheckpoints);
+	if (apsBufferFenceSyncCheckpoints)
+	{
+		SyncAddrListDeRefCheckpoints(ui32BufferFenceSyncCheckpointCount,
+					     apsBufferFenceSyncCheckpoints);
+	}
 #endif
 	SyncAddrListDeRefCheckpoints(ui32Fence3DSyncCheckpointCount, apsFence3DSyncCheckpoints);
 fail_resolve_input_3d_fence:
@@ -5267,12 +5576,6 @@ fail_resolve_input_ta_fence:
 	{
 		OSFreeMem(s3DSyncData.paui32ClientUpdateValue);
 	}
-#if defined(SUPPORT_VALIDATION)
-	if (bTestSLRAdd3DCheck)
-	{
-		SyncCheckpointFree(psDummySyncCheckpoint);
-	}
-#endif
 #if defined(SUPPORT_BUFFER_SYNC)
 	if (psBufferSyncData)
 	{
@@ -5285,6 +5588,56 @@ fail_resolve_input_ta_fence:
 #endif /* defined(SUPPORT_BUFFER_SYNC) */
 	PVR_ASSERT(eError != PVRSRV_OK);
 	OSLockRelease(psRenderContext->hLock);
+	return eError;
+}
+
+PVRSRV_ERROR PVRSRVRGXSendZSStoreDisableKM(CONNECTION_DATA *psConnection,
+									PVRSRV_DEVICE_NODE * psDeviceNode,
+									RGX_SERVER_RENDER_CONTEXT *psRenderContext,
+									IMG_BOOL    bDisableDepthStore,
+									IMG_BOOL    bDisableStencilStore,
+									IMG_UINT32  ui32ExtJobRefToDisableZSStore)
+{
+	PVRSRV_ERROR eError;
+	RGXFWIF_KCCB_CMD		sDisableZSStoreCmd = { 0 };
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+
+	sDisableZSStoreCmd.eCmdType = RGXFWIF_KCCB_CMD_DISABLE_ZSSTORE;
+	sDisableZSStoreCmd.uCmdData.sDisableZSStoreData.psContext = FWCommonContextGetFWAddress(psRenderContext->s3DData.psServerCommonContext);
+	sDisableZSStoreCmd.uCmdData.sDisableZSStoreData.sDisableZSStore.bDisableZStore = bDisableDepthStore;
+	sDisableZSStoreCmd.uCmdData.sDisableZSStoreData.sDisableZSStore.bDisableSStore = bDisableStencilStore;
+	sDisableZSStoreCmd.uCmdData.sDisableZSStoreData.sDisableZSStore.ui32ExtJobRefToDisableZSStore = ui32ExtJobRefToDisableZSStore;
+
+	if (psRenderContext->ui32CleanupStatus & (RC_CLEANUP_TA_COMPLETE | RC_CLEANUP_3D_COMPLETE))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+				"%s: submit disable depth and stencil store command to render context that has been cleaned up (%u)",
+				__func__, PVRSRV_ERROR_INVALID_CONTEXT));
+		return PVRSRV_ERROR_INVALID_CONTEXT;
+	}
+
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		eError = RGXScheduleCommand(psRenderContext->psDeviceNode->pvDevice,
+									RGXFWIF_DM_3D,
+									&sDisableZSStoreCmd,
+									PDUMP_FLAGS_CONTINUOUS);
+		if (eError != PVRSRV_ERROR_RETRY)
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+				"%s: Failed to submit disable depth and stencil store command (%u)",
+				__func__,
+				eError));
+	}
+
 	return eError;
 }
 

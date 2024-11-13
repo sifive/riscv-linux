@@ -103,12 +103,6 @@ PVRSRVRGXQueryTimerKM(CONNECTION_DATA    * psConnection,
  NON BRIDGED/EXPORTED interface
 ******************************************************************************/
 
-/* write the timestamp cmd from the helper*/
-void
-RGXWriteTimestampCommand(void               ** ppvCmd,
-                         RGXFWIF_CCB_CMD_TYPE    eCmdType,
-                         PRGXFWIF_TIMESTAMP_ADDR pAddr);
-
 /* get the relevant data from the Kick to the helper*/
 void
 RGX_GetTimestampCmdHelper(PVRSRV_RGXDEV_INFO      * psDevInfo,

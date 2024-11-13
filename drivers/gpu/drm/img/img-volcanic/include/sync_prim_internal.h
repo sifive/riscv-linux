@@ -71,7 +71,6 @@ typedef struct PVRSRV_CLIENT_SYNC_PRIM_OP_TAG
 {
 	#define PVRSRV_CLIENT_SYNC_PRIM_OP_CHECK	(1U << 0)
 	#define PVRSRV_CLIENT_SYNC_PRIM_OP_UPDATE	(1U << 1)
-	#define PVRSRV_CLIENT_SYNC_PRIM_OP_UNFENCED_UPDATE (PVRSRV_CLIENT_SYNC_PRIM_OP_UPDATE | (1U<<2))
 	uint32_t                    ui32Flags;       /*!< Operation flags: PVRSRV_CLIENT_SYNC_PRIM_OP_XXX */
 	PVRSRV_CLIENT_SYNC_PRIM    *psSync;          /*!< Pointer to the client sync primitive */
 	uint32_t                    ui32FenceValue;  /*!< The Fence value (only used if PVRSRV_CLIENT_SYNC_PRIM_OP_CHECK is set) */

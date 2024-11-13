@@ -54,19 +54,33 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "physmem.h"
 #include "physmem_hostmem.h"
 #include "physmem_lma.h"
+#include "physmem_dlm.h"
+#include "physmem_ima.h"
 #include "physmem_osmem.h"
+#include "debug_common.h"
 
 struct _PHYS_HEAP_
 {
 	/*! The type of this heap */
 	PHYS_HEAP_TYPE			eType;
+
+	/*! The allocation policy for this heap */
+	PHYS_HEAP_POLICY uiPolicy;
+
 	/* Config flags */
 	PHYS_HEAP_USAGE_FLAGS		ui32UsageFlags;
+
+	/* OOM Detection state */
+#if !defined(PVRSRV_PHYSHEAP_DISABLE_OOM_DEMOTION)
+	ATOMIC_T					sOOMDetected;
+#endif
 
 	/*! Pointer to device node struct */
 	PPVRSRV_DEVICE_NODE         psDevNode;
 	/*! PDump name of this physical memory heap */
 	IMG_CHAR					*pszPDumpMemspaceName;
+	/*! Physheap name of this physical memory heap */
+	IMG_CHAR					aszName[PHYS_HEAP_NAME_SIZE];
 	/*! Private data for the translate routines */
 	IMG_HANDLE					hPrivData;
 	/*! Function callbacks */
@@ -81,10 +95,26 @@ struct _PHYS_HEAP_
 
 	/*! Pointer to next physical heap */
 	struct _PHYS_HEAP_		*psNext;
-};
 
-static PHYS_HEAP *g_psPhysHeapList;
-static POS_LOCK g_hPhysHeapLock;
+#if defined(SUPPORT_STATIC_IPA)
+	/*! IPA Policy value from Heap Config */
+	IMG_UINT32                  ui32IPAPolicyValue;
+
+	/*! IPA Clear Mask value from Heap Config */
+	IMG_UINT32                  ui32IPAClearMask;
+
+	/*! IPA Bit Shift value from Heap Config */
+	IMG_UINT32                  ui32IPAShift;
+#endif /* defined(SUPPORT_STATIC_IPA) */
+#if defined(PVRSRV_ENABLE_XD_MEM)
+	/* Pointer to the Spas region the physheap is part of
+	 * or NULL. */
+	PHYS_HEAP_SPAS_REGION      *psSpasRegion;
+	/* The Spas regions list of physheaps.
+	 * Each physheap is only part of at most 1 Spas region. */
+	DLLIST_NODE                 sSpasSibling;
+#endif
+};
 
 #if defined(REFCOUNT_DEBUG)
 #define PHYSHEAP_REFCOUNT_PRINT(fmt, ...)	\
@@ -97,12 +127,22 @@ static POS_LOCK g_hPhysHeapLock;
 #define PHYSHEAP_REFCOUNT_PRINT(fmt, ...)
 #endif
 
+#define IsOOMError(err) ((err == PVRSRV_ERROR_PMR_FAILED_TO_ALLOC_PAGES) | \
+						 (err == PVRSRV_ERROR_OUT_OF_MEMORY) | \
+						 (err == PVRSRV_ERROR_PMR_TOO_LARGE))
 
+typedef enum _PVR_LAYER_HEAP_ACTION_
+{
+	PVR_LAYER_HEAP_ACTION_IGNORE,          /* skip heap during heap init */
+	PVR_LAYER_HEAP_ACTION_INSTANTIATE,     /* instantiate heap but don't acquire */
+	PVR_LAYER_HEAP_ACTION_INITIALISE       /* instantiate and acquire */
+
+} PVR_LAYER_HEAP_ACTION;
 
 typedef struct PHYS_HEAP_PROPERTIES_TAG
 {
 	PVRSRV_PHYS_HEAP eFallbackHeap;
-	IMG_BOOL bPVRLayerAcquire;
+	PVR_LAYER_HEAP_ACTION ePVRLayerAction;
 	IMG_BOOL bUserModeAlloc;
 } PHYS_HEAP_PROPERTIES;
 
@@ -111,57 +151,317 @@ typedef struct PHYS_HEAP_PROPERTIES_TAG
  */
 static PHYS_HEAP_PROPERTIES gasHeapProperties[PVRSRV_PHYS_HEAP_LAST] =
 {
-	/* eFallbackHeap,               bPVRLayerAcquire, bUserModeAlloc */
-    {  PVRSRV_PHYS_HEAP_DEFAULT,    IMG_TRUE,         IMG_TRUE  }, /* DEFAULT */
-    {  PVRSRV_PHYS_HEAP_DEFAULT,    IMG_TRUE,         IMG_TRUE  }, /* GPU_LOCAL */
-    {  PVRSRV_PHYS_HEAP_DEFAULT,    IMG_TRUE,         IMG_TRUE  }, /* CPU_LOCAL */
-    {  PVRSRV_PHYS_HEAP_DEFAULT,    IMG_TRUE,         IMG_TRUE  }, /* GPU_PRIVATE */
-    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  IMG_FALSE,        IMG_FALSE }, /* FW_MAIN */
-    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  IMG_TRUE,         IMG_FALSE }, /* EXTERNAL */
-    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  IMG_TRUE,         IMG_FALSE }, /* GPU_COHERENT */
-    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  IMG_TRUE,         IMG_TRUE  }, /* GPU_SECURE */
-    {  PVRSRV_PHYS_HEAP_FW_MAIN,    IMG_FALSE,        IMG_FALSE }, /* FW_CONFIG */
-    {  PVRSRV_PHYS_HEAP_FW_MAIN,    IMG_FALSE,        IMG_FALSE }, /* FW_CODE */
-    {  PVRSRV_PHYS_HEAP_FW_MAIN,    IMG_FALSE,        IMG_FALSE }, /* FW_DATA */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP0, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP0 */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP1, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP1 */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP2, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP2 */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP3, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP3 */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP4, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP4 */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP5, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP5 */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP6, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP6 */
-    {  PVRSRV_PHYS_HEAP_FW_PREMAP7, IMG_FALSE,        IMG_FALSE }, /* FW_PREMAP7 */
+	/* eFallbackHeap,               ePVRLayerAction,                   bUserModeAlloc */
+    {  PVRSRV_PHYS_HEAP_DEFAULT,    PVR_LAYER_HEAP_ACTION_INITIALISE,  IMG_TRUE  }, /* DEFAULT */
+    {  PVRSRV_PHYS_HEAP_DEFAULT,    PVR_LAYER_HEAP_ACTION_INITIALISE,  IMG_TRUE  }, /* CPU_LOCAL */
+    {  PVRSRV_PHYS_HEAP_DEFAULT,    PVR_LAYER_HEAP_ACTION_INITIALISE,  IMG_TRUE  }, /* GPU_LOCAL */
+    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  PVR_LAYER_HEAP_ACTION_INITIALISE,  IMG_TRUE  }, /* GPU_PRIVATE */
+    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_MAIN */
+    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  PVR_LAYER_HEAP_ACTION_INITIALISE,  IMG_FALSE }, /* EXTERNAL */
+    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  PVR_LAYER_HEAP_ACTION_INITIALISE,  IMG_FALSE }, /* GPU_COHERENT */
+    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  PVR_LAYER_HEAP_ACTION_INITIALISE,  IMG_TRUE  }, /* GPU_SECURE */
+    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_CONFIG */
+    {  PVRSRV_PHYS_HEAP_FW_MAIN,    PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_CODE */
+    {  PVRSRV_PHYS_HEAP_FW_MAIN,    PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PRIV_DATA */
+    {  PVRSRV_PHYS_HEAP_GPU_LOCAL,  PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP_PT */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP0, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP0 */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP1, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP1 */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP2, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP2 */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP3, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP3 */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP4, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP4 */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP5, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP5 */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP6, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP6 */
+    {  PVRSRV_PHYS_HEAP_FW_PREMAP7, PVR_LAYER_HEAP_ACTION_IGNORE,      IMG_FALSE }, /* FW_PREMAP7 */
+    {  PVRSRV_PHYS_HEAP_WRAP,       PVR_LAYER_HEAP_ACTION_INSTANTIATE, IMG_FALSE }, /* WRAP */
+    {  PVRSRV_PHYS_HEAP_DISPLAY,    PVR_LAYER_HEAP_ACTION_INSTANTIATE, IMG_FALSE }, /* DISPLAY */
 };
 
 static_assert((ARRAY_SIZE(gasHeapProperties) == PVRSRV_PHYS_HEAP_LAST),
 	"Size or order of gasHeapProperties entries incorrect for PVRSRV_PHYS_HEAP enum");
 
-void PVRSRVGetDevicePhysHeapCount(PVRSRV_DEVICE_NODE *psDevNode,
-								  IMG_UINT32 *pui32PhysHeapCount)
-{
-	*pui32PhysHeapCount = psDevNode->ui32UserAllocHeapCount;
-}
+static IMG_BOOL PhysHeapCreatedByPVRLayer(PVRSRV_PHYS_HEAP ePhysHeap);
+static IMG_BOOL PhysHeapAcquiredByPVRLayer(PVRSRV_PHYS_HEAP ePhysHeap);
 
-static IMG_UINT32 PhysHeapOSGetPageShift(void)
+/**
+ * ! IMPORTANT !
+ * Do not change this string array unless the usage flag definitions in
+ * physheap_config.h have changed.
+ *
+ * NOTE: Use DebugCommonFlagStrings or GetPhysHeapUsageString to get
+ * usage flags string.
+ */
+static const IMG_FLAGS2DESC g_asPhysHeapUsageFlagStrings[] =
 {
-	return (IMG_UINT32)OSGetPageShift();
-}
-
-static PHEAP_IMPL_FUNCS _sPHEAPImplFuncs =
-{
-	.pfnDestroyData = NULL,
-	.pfnGetPMRFactoryMemStats = PhysmemGetOSRamMemStats,
-	.pfnCreatePMR = PhysmemNewOSRamBackedPMR,
-	.pfnPagesAlloc = &OSPhyContigPagesAlloc,
-	.pfnPagesFree = &OSPhyContigPagesFree,
-	.pfnPagesMap = &OSPhyContigPagesMap,
-	.pfnPagesUnMap = &OSPhyContigPagesUnmap,
-	.pfnPagesClean = &OSPhyContigPagesClean,
-	.pfnGetPageShift = &PhysHeapOSGetPageShift,
+	{PHYS_HEAP_USAGE_CPU_LOCAL,		"CPU_LOCAL"},
+	{PHYS_HEAP_USAGE_GPU_LOCAL,		"GPU_LOCAL"},
+	{PHYS_HEAP_USAGE_GPU_PRIVATE,	"GPU_PRIVATE"},
+	{PHYS_HEAP_USAGE_EXTERNAL,		"EXTERNAL"},
+	{PHYS_HEAP_USAGE_GPU_COHERENT,	"GPU_COHERENT"},
+	{PHYS_HEAP_USAGE_GPU_SECURE,	"GPU_SECURE"},
+	{PHYS_HEAP_USAGE_FW_SHARED,		"FW_SHARED"},
+	{PHYS_HEAP_USAGE_FW_PRIVATE,	"FW_PRIVATE"},
+	{PHYS_HEAP_USAGE_FW_CODE,		"FW_CODE"},
+	{PHYS_HEAP_USAGE_FW_PRIV_DATA,	"FW_PRIV_DATA"},
+	{PHYS_HEAP_USAGE_FW_PREMAP_PT,	"FW_PREMAP_PT"},
+	{PHYS_HEAP_USAGE_FW_PREMAP,		"FW_PREMAP"},
+	{PHYS_HEAP_USAGE_WRAP,			"WRAP"},
+	{PHYS_HEAP_USAGE_DISPLAY,		"DISPLAY"},
+	{PHYS_HEAP_USAGE_DLM,			"DLM"}
 };
 
 /*************************************************************************/ /*!
-@Function       _PhysHeapDebugRequest
+@Function       PhysHeapCheckValidUsageFlags
+@Description    Checks if any bits were set outside of the valid ones within
+                PHYS_HEAP_USAGE_FLAGS.
+
+@Input          ui32PhysHeapUsage  The value of the usage flag.
+
+@Return         True or False depending on whether there were only valid bits set.
+*/ /**************************************************************************/
+static inline IMG_BOOL PhysHeapCheckValidUsageFlags(PHYS_HEAP_USAGE_FLAGS ui32PhysHeapUsage)
+{
+	return !(ui32PhysHeapUsage & ~PHYS_HEAP_USAGE_MASK);
+}
+
+/*************************************************************************/ /*!
+@Function       GetPhysHeapUsageString
+@Description    This function is used to create a comma separated string of all
+                usage flags passed in as a bitfield.
+
+@Input          ui32UsageFlags     The bitfield of usage flags.
+@Input          ui32Size           The size of the memory pointed to by
+                                   pszUsageString.
+@Output         pszUsageString     A pointer to memory where the created string
+                                   will be stored.
+
+@Return         If successful PVRSRV_OK, else a PVRSRV_ERROR.
+*/ /**************************************************************************/
+static PVRSRV_ERROR GetPhysHeapUsageString(PHYS_HEAP_USAGE_FLAGS ui32UsageFlags,
+                                          IMG_UINT32 ui32Size,
+                                          IMG_CHAR *const pszUsageString)
+{
+	IMG_UINT32 i;
+	IMG_BOOL bFirst = IMG_TRUE;
+	size_t uiSize = 0;
+
+	PVR_LOG_RETURN_IF_INVALID_PARAM(pszUsageString != NULL, "pszUsageString");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(ui32Size > 0, "ui32Size");
+
+	/* Initialise the string to be null terminated at the beginning */
+	pszUsageString[0] = '\0';
+
+	if (ui32UsageFlags == 0)
+	{
+		const ssize_t iCopiedCnt = OSStringSafeCopy(pszUsageString, "NONE", (size_t)ui32Size);
+		PVR_LOG_RETURN_IF_FALSE((iCopiedCnt >= 0), "OSStringSafeCopy", PVRSRV_ERROR_OUT_OF_MEMORY);
+
+		return PVRSRV_OK;
+	}
+
+	/* Process from left to right. */
+	for (i = (sizeof(PHYS_HEAP_USAGE_FLAGS) * BITS_PER_BYTE - 1); i > 0; i--)
+	{
+		IMG_UINT32 ui32Flag = BIT(i);
+
+		if (BITMASK_HAS(ui32UsageFlags, ui32Flag))
+		{
+			IMG_CHAR pszString[32] = "\0";
+
+			if (PhysHeapCheckValidUsageFlags(ui32Flag))
+			{
+				DebugCommonFlagStrings(pszString,
+				                   sizeof(pszString),
+				                   g_asPhysHeapUsageFlagStrings,
+				                   ARRAY_SIZE(g_asPhysHeapUsageFlagStrings),
+				                   ui32Flag);
+			}
+			else
+			{
+				uiSize = OSStringLCat(pszString,
+				                      "INVALID",
+				                      sizeof(pszString));
+				PVR_LOG_RETURN_IF_FALSE((uiSize < sizeof(pszString)), "OSStringLCat", PVRSRV_ERROR_OUT_OF_MEMORY);
+			}
+
+			if (!bFirst)
+			{
+				uiSize = OSStringLCat(pszUsageString,
+				                      ", ",
+				                      (size_t)ui32Size);
+				PVR_LOG_RETURN_IF_FALSE((uiSize < ui32Size), "OSStringLCat", PVRSRV_ERROR_OUT_OF_MEMORY);
+			}
+			else
+			{
+				bFirst = IMG_FALSE;
+			}
+
+			uiSize = OSStringLCat(pszUsageString,
+			                      pszString,
+			                      (size_t)ui32Size);
+			PVR_LOG_RETURN_IF_FALSE((uiSize < ui32Size), "OSStringLCat", PVRSRV_ERROR_OUT_OF_MEMORY);
+		}
+	}
+
+	return PVRSRV_OK;
+}
+
+/*************************************************************************/ /*!
+@Function       PhysHeapPrintHeapProperties
+@Description    This function is used to print properties
+                of the specified physheap.
+
+@Input          psPhysHeap          The physheap to create the string from.
+@Input          pfnDumpDebugPrintf  The specified print function that should be
+                                    used to dump any debug information
+                                    (see PVRSRVDebugRequest).
+@Input          pvDumpDebugFile     Optional file identifier to be passed to
+                                    the print function if required.
+
+@Return         If successful PVRSRV_OK, else a PVRSRV_ERROR.
+*/ /**************************************************************************/
+static PVRSRV_ERROR PhysHeapPrintHeapProperties(PHYS_HEAP *psPhysHeap,
+                                                IMG_BOOL bDefaultHeap,
+                                                DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf,
+                                                void *pvDumpDebugFile)
+{
+	static const IMG_CHAR *const pszTypeStrings[] = {
+	#define X(_name) #_name,
+		PHYS_HEAP_TYPE_LIST
+	#undef X
+	};
+
+	IMG_UINT64 ui64TotalSize;
+	IMG_UINT64 ui64FreeSize;
+	IMG_CHAR pszUsageString[127] = "\0";
+	PVRSRV_ERROR eError;
+
+	if (psPhysHeap->eType >= ARRAY_SIZE(pszTypeStrings))
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+		         "PhysHeap at address %p eType is not a PHYS_HEAP_TYPE",
+		         psPhysHeap));
+		PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_INVALID_HEAPINFO, failure);
+	}
+
+	psPhysHeap->psImplFuncs->pfnGetFactoryMemStats(psPhysHeap->pvImplData,
+	                                               &ui64TotalSize,
+	                                               &ui64FreeSize);
+
+	eError = GetPhysHeapUsageString(psPhysHeap->ui32UsageFlags,
+	                                sizeof(pszUsageString),
+	                                pszUsageString);
+	PVR_LOG_GOTO_IF_ERROR(eError, "GetPhysHeapUsageString", failure);
+
+#if defined(PVRSRV_ENABLE_XD_MEM)
+#define PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTSPEC ", Spas Region: %p"
+#define PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTARG(psPhysHeap) (psPhysHeap->psSpasRegion)
+#else
+#define PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTSPEC "%s"
+#define PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTARG(psPhysHeap) ""
+#endif
+
+	if ((psPhysHeap->eType == PHYS_HEAP_TYPE_LMA) ||
+	    (psPhysHeap->eType == PHYS_HEAP_TYPE_DLM))
+	{
+		IMG_CPU_PHYADDR sCPUPAddr;
+		IMG_DEV_PHYADDR sGPUPAddr;
+
+		PVR_ASSERT(psPhysHeap->psImplFuncs->pfnGetCPUPAddr != NULL);
+		PVR_ASSERT(psPhysHeap->psImplFuncs->pfnGetDevPAddr != NULL);
+
+		eError = psPhysHeap->psImplFuncs->pfnGetCPUPAddr(psPhysHeap->pvImplData,
+		                                                 &sCPUPAddr);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_LOG_ERROR(eError, "pfnGetCPUPAddr");
+			sCPUPAddr.uiAddr = IMG_CAST_TO_CPUPHYADDR_UINT(IMG_UINT64_MAX);
+		}
+
+		eError = psPhysHeap->psImplFuncs->pfnGetDevPAddr(psPhysHeap->pvImplData,
+		                                                 &sGPUPAddr);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_LOG_ERROR(eError, "pfnGetDevPAddr");
+			sGPUPAddr.uiAddr = IMG_UINT64_MAX;
+		}
+
+		PVR_DUMPDEBUG_LOG("0x%p -> PdMs: %s, Type: %s, %s, "
+		                  "CPU PA Base: " CPUPHYADDR_UINT_FMTSPEC", "
+		                  "GPU PA Base: 0x%08"IMG_UINT64_FMTSPECx", "
+		                  "Usage Flags: 0x%08x (%s), Refs: %d, "
+		                  "Free Size: %"IMG_UINT64_FMTSPEC"B, "
+		                  "Total Size: %"IMG_UINT64_FMTSPEC"B"
+		                  PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTSPEC,
+		                  psPhysHeap,
+		                  psPhysHeap->pszPDumpMemspaceName,
+		                  pszTypeStrings[psPhysHeap->eType],
+		                  bDefaultHeap ? "default" : "-",
+		                  CPUPHYADDR_FMTARG(sCPUPAddr.uiAddr),
+		                  sGPUPAddr.uiAddr,
+		                  psPhysHeap->ui32UsageFlags,
+		                  pszUsageString,
+		                  psPhysHeap->ui32RefCount,
+		                  ui64FreeSize,
+		                  ui64TotalSize,
+		                  PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTARG(psPhysHeap));
+	}
+	else if (psPhysHeap->eType == PHYS_HEAP_TYPE_IMA)
+	{
+		IMG_CHAR pszSpanString[128] = "\0";
+		void *pvIterHandle = NULL;
+
+		PVR_DUMPDEBUG_LOG("0x%p -> PdMs: %s, Type: %s, %s, "
+		                  "Usage Flags: 0x%08x (%s), Refs: %d, "
+		                  "Free Size: %"IMG_UINT64_FMTSPEC"B, "
+		                  "Total Size: %"IMG_UINT64_FMTSPEC"B Spans:",
+		                  psPhysHeap,
+		                  psPhysHeap->pszPDumpMemspaceName,
+		                  pszTypeStrings[psPhysHeap->eType],
+		                  bDefaultHeap ? "default" : "-",
+		                  psPhysHeap->ui32UsageFlags,
+		                  pszUsageString,
+		                  psPhysHeap->ui32RefCount,
+		                  ui64FreeSize,
+		                  ui64TotalSize);
+
+		while (psPhysHeap->psImplFuncs->pfnGetHeapSpansStringIter(psPhysHeap->pvImplData,
+		                                                                   pszSpanString,
+		                                                                   sizeof(pszSpanString),
+		                                                                   &pvIterHandle))
+		{
+			PVR_DUMPDEBUG_LOG("%s", pszSpanString);
+		}
+	}
+	else
+	{
+		PVR_DUMPDEBUG_LOG("0x%p -> PdMs: %s, Type: %s, %s, "
+		                  "Usage Flags: 0x%08x (%s), Refs: %d, "
+		                  "Free Size: %"IMG_UINT64_FMTSPEC"B, "
+		                  "Total Size: %"IMG_UINT64_FMTSPEC"B"
+		                  PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTSPEC,
+		                  psPhysHeap,
+		                  psPhysHeap->pszPDumpMemspaceName,
+		                  pszTypeStrings[psPhysHeap->eType],
+		                  bDefaultHeap ? "default" : "-",
+		                  psPhysHeap->ui32UsageFlags,
+		                  pszUsageString,
+		                  psPhysHeap->ui32RefCount,
+		                  ui64FreeSize,
+		                  ui64TotalSize,
+		                  PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTARG(psPhysHeap));
+	}
+
+#undef PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTSPEC
+#undef PHYS_HEAP_DISPLAY_PROPS_SPAS_GROUP_FMTARG
+
+	return PVRSRV_OK;
+
+failure:
+	return eError;
+}
+
+/*************************************************************************/ /*!
+@Function       PhysHeapDebugRequest
 @Description    This function is used to output debug information for a given
                 device's PhysHeaps.
 @Input          pfnDbgRequestHandle Data required by this function that is
@@ -175,107 +475,178 @@ static PHEAP_IMPL_FUNCS _sPHEAPImplFuncs =
                                     the print function if required.
 @Return         void
 */ /**************************************************************************/
-static void _PhysHeapDebugRequest(PVRSRV_DBGREQ_HANDLE pfnDbgRequestHandle,
+static void PhysHeapDebugRequest(PVRSRV_DBGREQ_HANDLE pfnDbgRequestHandle,
                                   IMG_UINT32 ui32VerbLevel,
                                   DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf,
                                   void *pvDumpDebugFile)
 {
-	static const IMG_CHAR *const pszTypeStrings[] = {
-		"UNKNOWN",
-		"UMA",
-		"LMA",
-		"DMA",
-#if defined(SUPPORT_WRAP_EXTMEMOBJECT)
-		"WRAP"
-#endif
-	};
-
 	PPVRSRV_DEVICE_NODE psDeviceNode = (PPVRSRV_DEVICE_NODE)pfnDbgRequestHandle;
-	PHYS_HEAP *psPhysHeap = NULL;
-	IMG_UINT64 ui64TotalSize;
-	IMG_UINT64 ui64FreeSize;
-	IMG_UINT32 i;
+	PHYS_HEAP *psPhysHeap;
+
+	PVR_UNREFERENCED_PARAMETER(ui32VerbLevel);
 
 	PVR_LOG_RETURN_VOID_IF_FALSE(psDeviceNode != NULL,
 	                             "Phys Heap debug request failed. psDeviceNode was NULL");
 
 	PVR_DUMPDEBUG_LOG("------[ Device ID: %d - Phys Heaps ]------",
-	                  psDeviceNode->sDevId.i32OsDeviceID);
+	                  psDeviceNode->sDevId.i32KernelDeviceID);
 
-	for (i = 0; i < psDeviceNode->ui32RegisteredPhysHeaps; i++)
+	for (psPhysHeap = psDeviceNode->psPhysHeapList; psPhysHeap != NULL; psPhysHeap = psPhysHeap->psNext)
 	{
-		psPhysHeap = psDeviceNode->papsRegisteredPhysHeaps[i];
+		PVRSRV_ERROR eError = PVRSRV_OK;
+		IMG_BOOL bDefaultHeap = psPhysHeap == psDeviceNode->apsPhysHeap[psDeviceNode->psDevConfig->eDefaultHeap];
 
-		if (psPhysHeap->eType >= ARRAY_SIZE(pszTypeStrings))
+		eError = PhysHeapPrintHeapProperties(psPhysHeap,
+		                                     bDefaultHeap,
+		                                     pfnDumpDebugPrintf,
+		                                     pvDumpDebugFile);
+		if (eError != PVRSRV_OK)
 		{
-			PVR_DPF((PVR_DBG_ERROR,
-			         "PhysHeap at address %p eType is not a PHYS_HEAP_TYPE",
-			         psPhysHeap));
+			PVR_LOG_ERROR(eError, "PhysHeapCreateProperties");
+			continue;
+		}
+	}
+
+#if defined(SUPPORT_PMR_DEFERRED_FREE)
+	OSLockAcquire(psDeviceNode->hPMRZombieListLock);
+	PVR_DUMPDEBUG_LOG("PMR Zombie Count: %u, PMR Zombie Count In Cleanup: %u",
+	                  psDeviceNode->uiPMRZombieCount,
+	                  psDeviceNode->uiPMRZombieCountInCleanup);
+	OSLockRelease(psDeviceNode->hPMRZombieListLock);
+#endif
+	PVR_DUMPDEBUG_LOG("PMR Live Count: %d", PMRGetLiveCount());
+}
+
+/*************************************************************************/ /*!
+@Function       HeapCfgUsedByPVRLayer
+@Description    Checks if a physheap config must be handled by the PVR Layer
+@Input          psConfig PhysHeapConfig
+@Return         IMG_BOOL
+*/ /**************************************************************************/
+static IMG_BOOL HeapCfgUsedByPVRLayer(PHYS_HEAP_CONFIG *psConfig)
+{
+	PVRSRV_PHYS_HEAP eHeap;
+	IMG_BOOL bPVRHeap = IMG_FALSE;
+
+	/* Heaps are triaged for initialisation by either
+	 * the PVR Layer or the device-specific heap handler. */
+	for (eHeap = PVRSRV_PHYS_HEAP_DEFAULT;
+		 eHeap < PVRSRV_PHYS_HEAP_LAST;
+		 eHeap++)
+	{
+		if ((BIT_ISSET(psConfig->ui32UsageFlags, eHeap) &&
+		     PhysHeapCreatedByPVRLayer(eHeap)))
+		{
+			bPVRHeap = IMG_TRUE;
 			break;
 		}
+	}
 
-		psPhysHeap->psImplFuncs->pfnGetPMRFactoryMemStats(psPhysHeap->pvImplData,
-		                                                  &ui64TotalSize,
-		                                                  &ui64FreeSize);
+	return bPVRHeap;
+}
 
-		if (psPhysHeap->eType == PHYS_HEAP_TYPE_LMA)
+#if defined(PVRSRV_ENABLE_DYNAMIC_PHYSHEAPS)
+/*************************************************************************/ /*!
+@Function       PhysHeapCreateDLMIMAHeapsFromConfig
+@Description    Create new heaps for a device from DLM and IMA configs.
+                This function will both create and construct the link
+                between them.
+@Input          psDevNode      Pointer to device node struct
+@Input          pasConfigs     Pointer to array of Heap configurations.
+@Input          ui32NumConfigs Number of configurations in array.
+@Return         PVRSRV_ERROR PVRSRV_OK or error code
+*/ /**************************************************************************/
+static PVRSRV_ERROR
+PhysHeapCreateDLMIMAHeapsFromConfig(PVRSRV_DEVICE_NODE *psDevNode,
+                                    PHYS_HEAP_CONFIG *pasConfigs,
+                                    IMG_UINT32 ui32NumConfigs)
+{
+	/* The DLM heaps must be created before IMA heaps and the config order is not well-defined.
+	 * So for each DLM heap create it and then create the IMA heaps associated. */
+
+	PVRSRV_ERROR eError;
+	IMG_UINT32 uiDLMIdx, uiIMAIdx;
+	PHYS_HEAP_POLICY uiIMAPolicy = OSIsMapPhysNonContigSupported() ? PHYS_HEAP_POLICY_ALLOC_ALLOW_NONCONTIG : PHYS_HEAP_POLICY_DEFAULT;
+	PHYS_HEAP *psDLMHeap;
+
+	/* Iterate and create the DLM heaps */
+	for (uiDLMIdx = 0; uiDLMIdx < ui32NumConfigs; uiDLMIdx++)
+	{
+		if (pasConfigs[uiDLMIdx].eType == PHYS_HEAP_TYPE_DLM)
 		{
-			IMG_CPU_PHYADDR sCPUPAddr;
-			IMG_DEV_PHYADDR sGPUPAddr;
-			PVRSRV_ERROR eError;
+			IMG_UINT32 uiHeapCount = 0;
+			eError = PhysmemCreateHeapDLM(psDevNode,
+			                               PHYS_HEAP_POLICY_DEFAULT,
+			                               &pasConfigs[uiDLMIdx],
+			                               pasConfigs[uiDLMIdx].uConfig.sDLM.pszHeapName,
+			                               &psDLMHeap);
+			PVR_LOG_RETURN_IF_ERROR(eError, "PhysmemCreateHeapDLM");
 
-			PVR_ASSERT(psPhysHeap->psImplFuncs->pfnGetCPUPAddr != NULL);
-			PVR_ASSERT(psPhysHeap->psImplFuncs->pfnGetDevPAddr != NULL);
-
-			eError = psPhysHeap->psImplFuncs->pfnGetCPUPAddr(psPhysHeap->pvImplData,
-			                                                 &sCPUPAddr);
-			if (eError != PVRSRV_OK)
+			/* Then iterate and create the IMA heaps linked to this DLM heap */
+			for (uiIMAIdx = 0; uiIMAIdx < ui32NumConfigs; uiIMAIdx++)
 			{
-				PVR_LOG_ERROR(eError, "pfnGetCPUPAddr");
-				sCPUPAddr.uiAddr = IMG_CAST_TO_CPUPHYADDR_UINT(IMG_UINT64_MAX);
+				if (pasConfigs[uiIMAIdx].eType == PHYS_HEAP_TYPE_IMA &&
+				    pasConfigs[uiIMAIdx].uConfig.sIMA.uiDLMHeapIdx == uiDLMIdx)
+				{
+					PhysmemCreateHeapIMA(psDevNode,
+					                     uiIMAPolicy,
+					                     &pasConfigs[uiIMAIdx],
+					                     pasConfigs[uiIMAIdx].uConfig.sIMA.pszHeapName,
+					                     psDLMHeap,
+					                     pasConfigs[uiDLMIdx].uConfig.sDLM.ui32Log2PMBSize,
+					                     NULL);
+					PVR_LOG_RETURN_IF_ERROR(eError, "PhysmemCreateHeapIMA");
+					uiHeapCount++;
+				}
 			}
 
-			eError = psPhysHeap->psImplFuncs->pfnGetDevPAddr(psPhysHeap->pvImplData,
-			                                                 &sGPUPAddr);
-			if (eError != PVRSRV_OK)
+			if (uiHeapCount == 0)
 			{
-				PVR_LOG_ERROR(eError, "pfnGetDevPAddr");
-				sGPUPAddr.uiAddr = IMG_UINT64_MAX;
+				PVR_DPF((PVR_DBG_WARNING, "DLM phys heap config %d: No connected IMA heaps. Phys heap will go unused.", uiDLMIdx));
 			}
-
-			PVR_DUMPDEBUG_LOG("0x%p -> Name: %s, Type: %s, "
-
-			                  "CPU PA Base: " CPUPHYADDR_UINT_FMTSPEC", "
-			                  "GPU PA Base: 0x%08"IMG_UINT64_FMTSPECx", "
-			                  "Usage Flags: 0x%08x, Refs: %d, "
-			                  "Free Size: %"IMG_UINT64_FMTSPEC", "
-			                  "Total Size: %"IMG_UINT64_FMTSPEC,
-			                  psPhysHeap,
-			                  psPhysHeap->pszPDumpMemspaceName,
-			                  pszTypeStrings[psPhysHeap->eType],
-			                  CPUPHYADDR_FMTARG(sCPUPAddr.uiAddr),
-			                  sGPUPAddr.uiAddr,
-			                  psPhysHeap->ui32UsageFlags,
-			                  psPhysHeap->ui32RefCount,
-			                  ui64FreeSize,
-			                  ui64TotalSize);
 		}
-		else
+	}
+
+	return PVRSRV_OK;
+}
+
+static void
+PhysHeapDestroyDLMIMAHeaps(PVRSRV_DEVICE_NODE *psDevNode)
+{
+	PHYS_HEAP *psNode = psDevNode->psPhysHeapList;
+
+	/* We need to ensure IMA heaps are destroyed before DLM so that
+	 * we don't cause RA leaks by freeing the DLM first.
+	 */
+	while (psNode)
+	{
+		PHYS_HEAP *psTmp = psNode;
+
+		psNode = psNode->psNext;
+
+		if (psTmp->eType == PHYS_HEAP_TYPE_IMA)
 		{
-			PVR_DUMPDEBUG_LOG("0x%p -> Name: %s, Type: %s, "
-			                  "Usage Flags: 0x%08x, Refs: %d, "
-			                  "Free Size: %"IMG_UINT64_FMTSPEC", "
-			                  "Total Size: %"IMG_UINT64_FMTSPEC,
-			                  psPhysHeap,
-			                  psPhysHeap->pszPDumpMemspaceName,
-			                  pszTypeStrings[psPhysHeap->eType],
-			                  psPhysHeap->ui32UsageFlags,
-			                  psPhysHeap->ui32RefCount,
-			                  ui64FreeSize,
-			                  ui64TotalSize);
+			PhysHeapDestroy(psTmp);
+		}
+	}
+
+	/* Reset the loop */
+	psNode = psDevNode->psPhysHeapList;
+
+	while (psNode)
+	{
+		PHYS_HEAP *psTmp = psNode;
+
+		psNode = psNode->psNext;
+
+		if (psTmp->eType == PHYS_HEAP_TYPE_DLM)
+		{
+			PhysHeapDestroy(psTmp);
 		}
 	}
 }
+
+#endif
 
 /*************************************************************************/ /*!
 @Function       PhysHeapCreateDeviceHeapsFromConfigs
@@ -293,21 +664,33 @@ PhysHeapCreateDeviceHeapsFromConfigs(PPVRSRV_DEVICE_NODE psDevNode,
 	IMG_UINT32 i;
 	PVRSRV_ERROR eError;
 
-	/* Register the physical memory heaps */
-	psDevNode->papsRegisteredPhysHeaps =
-		OSAllocZMem(sizeof(*psDevNode->papsRegisteredPhysHeaps) * ui32NumConfigs);
-	PVR_LOG_RETURN_IF_NOMEM(psDevNode->papsRegisteredPhysHeaps, "OSAllocZMem");
+	psDevNode->psPhysHeapList = NULL;
 
-	psDevNode->ui32RegisteredPhysHeaps = 0;
+#if defined(PVRSRV_ENABLE_DYNAMIC_PHYSHEAPS)
+	/* DLM/IMA heaps must be constructed in a specific order */
+	eError = PhysHeapCreateDLMIMAHeapsFromConfig(psDevNode,
+	                                             pasConfigs,
+	                                             ui32NumConfigs);
+	PVR_LOG_RETURN_IF_ERROR(eError, "PhysHeapCreateDLMIMAHeapsFromConfig");
+#endif
+
 
 	for (i = 0; i < ui32NumConfigs; i++)
 	{
-		eError = PhysHeapCreateHeapFromConfig(psDevNode,
-											  pasConfigs + i,
-											  psDevNode->papsRegisteredPhysHeaps + i);
-		PVR_LOG_RETURN_IF_ERROR(eError, "PhysmemCreateHeap");
-
-		psDevNode->ui32RegisteredPhysHeaps++;
+		/* A PhysHeapConfig can have multiple usage flags. If any flag in a
+		 * heap's set points to a heap type that is handled by the PVR Layer
+		 * then we assume that a single heap is shared between multiple
+		 * allocators and it is safe to instantiate it here. If the heap
+		 * is not marked to be initialised by the PVR Layer, leave it
+		 * to the device specific handler.
+		 * DLM Heaps have usage flags but don't have element in the
+		 * fallback table, this check will prevent instantiate them twice.
+		 */
+		if (HeapCfgUsedByPVRLayer(&pasConfigs[i]))
+		{
+			eError = PhysHeapCreateHeapFromConfig(psDevNode, &pasConfigs[i], NULL);
+			PVR_LOG_RETURN_IF_ERROR(eError, "PhysmemCreateHeap");
+		}
 	}
 
 #if defined(SUPPORT_PHYSMEM_TEST)
@@ -318,7 +701,7 @@ PhysHeapCreateDeviceHeapsFromConfigs(PPVRSRV_DEVICE_NODE psDevNode,
 	{
 		eError = PVRSRVRegisterDeviceDbgRequestNotify(&psDevNode->hPhysHeapDbgReqNotify,
 		                                              psDevNode,
-		                                              _PhysHeapDebugRequest,
+		                                              PhysHeapDebugRequest,
 		                                              DEBUG_REQUEST_SYS,
 		                                              psDevNode);
 
@@ -340,25 +723,42 @@ PhysHeapCreateHeapFromConfig(PVRSRV_DEVICE_NODE *psDevNode,
 #endif
 		)
 	{
-		eResult = PhysHeapCreate(psDevNode, psConfig, NULL,
-								   &_sPHEAPImplFuncs, ppsPhysHeap);
+		eResult = PhysmemCreateHeapOSMEM(psDevNode,
+		                                 PHYS_HEAP_POLICY_ALLOC_ALLOW_NONCONTIG,
+		                                 psConfig,
+		                                 ppsPhysHeap);
 	}
-	else if (psConfig->eType == PHYS_HEAP_TYPE_LMA)
+	else if ((psConfig->eType == PHYS_HEAP_TYPE_LMA) ||
+	         (psConfig->eType == PHYS_HEAP_TYPE_DMA))
 	{
+		PHYS_HEAP_POLICY uiHeapPolicy;
+
+		if (psDevNode->pfnPhysHeapGetLMAPolicy != NULL)
+		{
+			uiHeapPolicy = psDevNode->pfnPhysHeapGetLMAPolicy(psConfig->ui32UsageFlags, psDevNode);
+		}
+		else
+		{
+			uiHeapPolicy = OSIsMapPhysNonContigSupported() ?
+			               PHYS_HEAP_POLICY_ALLOC_ALLOW_NONCONTIG :
+			               PHYS_HEAP_POLICY_DEFAULT;
+		}
+
 		eResult = PhysmemCreateHeapLMA(psDevNode,
-		                               OSIsMapPhysNonContigSupported() ? PHYSMEM_LMA_POLICY_ALLOC_ALLOW_NONCONTIG :
-		                                                             PHYSMEM_LMA_POLICY_DEFAULT,
+		                               uiHeapPolicy,
 		                               psConfig,
-		                               "GPU LMA (Sys)",
+		                               (psConfig->eType == PHYS_HEAP_TYPE_LMA) ?
+		                                "GPU LMA (Sys)" :
+		                                "GPU LMA DMA (Sys)",
 		                               ppsPhysHeap);
 	}
-	else if (psConfig->eType == PHYS_HEAP_TYPE_DMA)
+	else if ((psConfig->eType == PHYS_HEAP_TYPE_DLM) ||
+	         (psConfig->eType == PHYS_HEAP_TYPE_IMA))
 	{
-		eResult = PhysmemCreateHeapLMA(psDevNode,
-		                               PHYSMEM_LMA_POLICY_DEFAULT,
-		                               psConfig,
-		                               "GPU LMA DMA (Sys)",
-		                               ppsPhysHeap);
+		/* These heaps have already been instantiated in
+		 * PhysHeapCreateDLMIMAHeapsFromConfig
+		 */
+		eResult = PVRSRV_OK;
 	}
 	else
 	{
@@ -370,7 +770,7 @@ PhysHeapCreateHeapFromConfig(PVRSRV_DEVICE_NODE *psDevNode,
 	return eResult;
 }
 
-#define PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE (0x100000ULL * 32ULL) /* 32MB */
+#define PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE (IMG_UINT64_C(0x100000) * IMG_UINT64_C(32)) /* 32MB */
 
 static PVRSRV_ERROR PVRSRVValidatePhysHeapConfig(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
@@ -383,34 +783,112 @@ static PVRSRV_ERROR PVRSRVValidatePhysHeapConfig(PVRSRV_DEVICE_CONFIG *psDevConf
 
 	for (i = 0; i < psDevConfig->ui32PhysHeapCount; i++)
 	{
+		/* Flags that may be used by multiple heaps. */
+		const PHYS_HEAP_USAGE_FLAGS uiDuplicateFlags = PHYS_HEAP_USAGE_DLM;
 		PHYS_HEAP_CONFIG *psHeapConf = &psDevConfig->pasPhysHeaps[i];
 
 		PVR_LOG_RETURN_IF_FALSE_VA(psHeapConf->ui32UsageFlags != 0,
-								   PVRSRV_ERROR_PHYSHEAP_CONFIG,
-								   "Phys heap config %d: must specify usage flags.", i);
+		                           PVRSRV_ERROR_PHYSHEAP_CONFIG,
+		                           "Phys heap config %d: must specify usage flags.", i);
 
-		PVR_LOG_RETURN_IF_FALSE_VA((ui32FlagsAccumulate & psHeapConf->ui32UsageFlags) == 0,
-								PVRSRV_ERROR_PHYSHEAP_CONFIG,
-								"Phys heap config %d: duplicate usage flags.", i);
+		PVR_LOG_RETURN_IF_FALSE_VA(((ui32FlagsAccumulate & ~uiDuplicateFlags) & psHeapConf->ui32UsageFlags) == 0,
+		                             PVRSRV_ERROR_PHYSHEAP_CONFIG,
+		                             "Phys heap config %d: duplicate usage flags.", i);
 
 		ui32FlagsAccumulate |= psHeapConf->ui32UsageFlags;
 
-		/* Output message if default heap is LMA and smaller than recommended minimum */
-		if ((i == psDevConfig->eDefaultHeap) &&
-#if defined(__KERNEL__)
-		    ((psHeapConf->eType == PHYS_HEAP_TYPE_LMA) ||
-		     (psHeapConf->eType == PHYS_HEAP_TYPE_DMA)) &&
-#else
-		    (psHeapConf->eType == PHYS_HEAP_TYPE_LMA) &&
-#endif
-		    (psHeapConf->uiSize < PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE))
+		if (BITMASK_ANY((1U << psDevConfig->eDefaultHeap), PHYS_HEAP_USAGE_MASK) &&
+		    BITMASK_ANY((1U << psDevConfig->eDefaultHeap), psHeapConf->ui32UsageFlags))
 		{
-			PVR_DPF((PVR_DBG_ERROR, "%s: Size of default heap is 0x%" IMG_UINT64_FMTSPECX
-			         " (recommended minimum heap size is 0x%llx)",
-			         __func__, psHeapConf->uiSize,
-			         PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE));
+			switch (psHeapConf->eType)
+			{
+#if defined(__KERNEL__)
+				case PHYS_HEAP_TYPE_DMA:
+#endif
+				case PHYS_HEAP_TYPE_LMA:
+				{
+					if (psHeapConf->uConfig.sLMA.uiSize < PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE)
+					{
+						/* Output message if default heap is LMA and smaller than recommended minimum. */
+						PVR_DPF((PVR_DBG_ERROR, "%s: Size of default heap is 0x%" IMG_UINT64_FMTSPECX
+						         " (recommended minimum heap size is 0x%" IMG_UINT64_FMTSPECX ")",
+						         __func__, psHeapConf->uConfig.sLMA.uiSize,
+						         PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE));
+					}
+					break;
+				}
+				case PHYS_HEAP_TYPE_IMA:
+				{
+					/* Check if chained DLM has more than default LMA size.
+					 * This is not perfect as other connected IMAs could reserve all the memory. */
+					IMG_UINT64 uiSize = psDevConfig->pasPhysHeaps[psHeapConf->uConfig.sIMA.uiDLMHeapIdx].uConfig.sDLM.uiSize;
+
+					if (uiSize < PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE)
+					{
+						PVR_DPF((PVR_DBG_ERROR, "%s: Default heap has access to 0x%" IMG_UINT64_FMTSPECX
+						         " (recommended minimum heap size is 0x%" IMG_UINT64_FMTSPECX ")",
+						         __func__, uiSize,
+						         PVRSRV_MIN_DEFAULT_LMA_PHYS_HEAP_SIZE));
+					}
+					break;
+				}
+				case PHYS_HEAP_TYPE_DLM:
+				{
+					PVR_DPF((PVR_DBG_ERROR, "%s: Phys heap config %d: "
+					         "A DLM heap cannot be the default heap.",
+					         __func__, i));
+					return PVRSRV_ERROR_PHYSHEAP_CONFIG;
+				}
+				default:
+					break;
+			}
 		}
+
+#if !defined(PVRSRV_ENABLE_DYNAMIC_PHYSHEAPS)
+		if ((psHeapConf->eType == PHYS_HEAP_TYPE_IMA) || (psHeapConf->eType == PHYS_HEAP_TYPE_DLM))
+		{
+			PVR_DPF((PVR_DBG_ERROR, "%s: Phys heap config %d: "
+			         "Dynamic phys heaps are not supported! "
+			         "Please enable PVRSRV_ENABLE_DYNAMIC_PHYSHEAPS",
+			         __func__, i));
+			return PVRSRV_ERROR_PHYSHEAP_CONFIG;
+		}
+#else /* PVRSRV_ENABLE_DYNAMIC_PHYSHEAPS */
+		if (psHeapConf->eType == PHYS_HEAP_TYPE_DLM)
+		{
+			PVR_LOG_RETURN_IF_FALSE_VA((psHeapConf->ui32UsageFlags & PHYS_HEAP_USAGE_DLM) == PHYS_HEAP_USAGE_DLM,
+			                            PVRSRV_ERROR_PHYSHEAP_CONFIG,
+			                            "Phys heap config %d: DLM heap must specify the DLM usage flag.", i);
+
+			/* If a DLM heap has less space than a PMB, it cannot export a single PMB. The PMB size should be lowered. */
+			PVR_LOG_RETURN_IF_FALSE_VA(psHeapConf->uConfig.sDLM.uiSize >= psHeapConf->uConfig.sDLM.ui32Log2PMBSize,
+			                           PVRSRV_ERROR_PHYSHEAP_CONFIG,
+			                           "Phys heap config %d: Size of DLM heap is 0x%" IMG_UINT64_FMTSPECX
+			                           " but the PMB size is 0x%" IMG_UINT64_FMTSPECX
+			                           ". The total size must be greater than or equal to the PMB size.",
+			                           i, psHeapConf->uConfig.sDLM.uiSize,
+			                           IMG_UINT64_C(1) << psHeapConf->uConfig.sDLM.ui32Log2PMBSize);
+		}
+
+		/* IMA heaps must point to a DLM heap. */
+		if (psHeapConf->eType == PHYS_HEAP_TYPE_IMA)
+		{
+			PVR_LOG_RETURN_IF_FALSE_VA(psHeapConf->uConfig.sIMA.uiDLMHeapIdx < psDevConfig->ui32PhysHeapCount,
+			                           PVRSRV_ERROR_PHYSHEAP_CONFIG,
+			                           "Phys heap config %d: IMA heap is trying to link to a DLM heap out of bounds. "
+			                           "Requested Heap Index: %d, Heap Array Count: %d",
+			                           i, psHeapConf->uConfig.sIMA.uiDLMHeapIdx, psDevConfig->ui32PhysHeapCount);
+			PVR_LOG_RETURN_IF_FALSE_VA(psDevConfig->pasPhysHeaps[psHeapConf->uConfig.sIMA.uiDLMHeapIdx].eType == PHYS_HEAP_TYPE_DLM,
+			                           PVRSRV_ERROR_PHYSHEAP_CONFIG,
+			                           "Phys heap config %d: IMA heap is trying to link to a NON-DLM heap type. "
+			                           "Requested Heap Idx: %d, Heap Type: %d",
+			                           i, psHeapConf->uConfig.sIMA.uiDLMHeapIdx,
+			                           psDevConfig->pasPhysHeaps[psHeapConf->uConfig.sIMA.uiDLMHeapIdx].eType);
+		}
+#endif /* PVRSRV_ENABLE_DYNAMIC_PHYSHEAPS */
+
 	}
+
 
 	if (psDevConfig->eDefaultHeap == PVRSRV_PHYS_HEAP_GPU_LOCAL)
 	{
@@ -429,6 +907,8 @@ static PVRSRV_ERROR PVRSRVValidatePhysHeapConfig(PVRSRV_DEVICE_CONFIG *psDevConf
 }
 
 #if defined(SUPPORT_GPUVIRT_VALIDATION)
+static void DestroyGpuVirtValArenas(PVRSRV_DEVICE_NODE *psDeviceNode);
+
 /*************************************************************************/ /*!
 @Function       CreateGpuVirtValArenas
 @Description    Create virtualization validation arenas
@@ -441,107 +921,192 @@ static PVRSRV_ERROR CreateGpuVirtValArenas(PVRSRV_DEVICE_NODE *psDeviceNode)
 	   The values are different from base/size of arenas. */
 	IMG_UINT64 aui64OSidMin[GPUVIRT_VALIDATION_NUM_REGIONS][GPUVIRT_VALIDATION_NUM_OS];
 	IMG_UINT64 aui64OSidMax[GPUVIRT_VALIDATION_NUM_REGIONS][GPUVIRT_VALIDATION_NUM_OS];
-	PHYS_HEAP_CONFIG *psGPULocalHeap = FindPhysHeapConfig(psDeviceNode->psDevConfig, PHYS_HEAP_USAGE_GPU_LOCAL);
-	PHYS_HEAP_CONFIG *psDisplayHeap = FindPhysHeapConfig(psDeviceNode->psDevConfig, PHYS_HEAP_USAGE_DISPLAY);
-	IMG_UINT64 uBase;
-	IMG_UINT64 uSize;
-	IMG_UINT64 uBaseShared;
-	IMG_UINT64 uSizeShared;
-	IMG_UINT64 uSizeSharedReg;
+	PHYS_HEAP_CONFIG *psGPULocalHeap = PVRSRVFindPhysHeapConfig(psDeviceNode->psDevConfig, PHYS_HEAP_USAGE_GPU_LOCAL);
+	IMG_DEV_PHYADDR sGPULocalCardBase = PhysHeapConfigGetCardBase(psGPULocalHeap);
+	IMG_UINT64 uiGPULocalSize = PhysHeapConfigGetSize(psGPULocalHeap);
+	PHYS_HEAP_CONFIG *psDisplayHeap = PVRSRVFindPhysHeapConfig(psDeviceNode->psDevConfig, PHYS_HEAP_USAGE_DISPLAY);
+
+	IMG_UINT64 uPrivateRABase;
+	IMG_UINT64 uPrivateRASize;
+	IMG_UINT64 uSharedRABase;
+	IMG_UINT64 uSharedRASize;
+	IMG_UINT64 uSharedRegionBase;
+	IMG_UINT64 uSharedRegionSize;
 	IMG_UINT32 i;
 
+	//PVR_LOG_RETURN_IF_FALSE((psDeviceNode->psOSSharedArena == NULL), "Validation RAs already created.", PVRSRV_OK);
+
 	/* Shared region is fixed size, the remaining space is divided amongst OSes */
-	uSizeShared = PVR_ALIGN(GPUVIRT_SIZEOF_SHARED, (IMG_DEVMEM_SIZE_T)OSGetPageSize());
-	uSize = psGPULocalHeap->uiSize - uSizeShared;
-	uSize /= GPUVIRT_VALIDATION_NUM_OS;
-	uSize = uSize & ~((IMG_UINT64)OSGetPageSize() - 1ULL); /* Align, round down */
+	uPrivateRASize = uiGPULocalSize - PVR_ALIGN(GPUVIRT_SIZEOF_SHARED, (IMG_DEVMEM_SIZE_T)OSGetPageSize());
+	uPrivateRASize /= GPUVIRT_VALIDATION_NUM_OS;
+	uPrivateRASize = uPrivateRASize & ~((IMG_UINT64)OSGetPageSize() - 1ULL); /* Align, round down */
+	uSharedRASize = uiGPULocalSize - uPrivateRASize * GPUVIRT_VALIDATION_NUM_OS;
 
-	uBase = psGPULocalHeap->sCardBase.uiAddr;
-	uBaseShared = uBase + uSize * GPUVIRT_VALIDATION_NUM_OS;
-	uSizeShared = psGPULocalHeap->uiSize - (uBaseShared - uBase);
-
-	PVR_LOG(("GPUVIRT_VALIDATION split GPU_LOCAL base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ".",
-			 psGPULocalHeap->sCardBase.uiAddr,
-			 psGPULocalHeap->uiSize));
+	PVR_LOG(("GPUVIRT_VALIDATION: GPU_LOCAL heap base (base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ")"
+			 " split into %u private regions of size 0x%" IMG_UINT64_FMTSPECX " and one shared region of size 0x%" IMG_UINT64_FMTSPECX " ",
+			 sGPULocalCardBase.uiAddr, uiGPULocalSize, GPUVIRT_VALIDATION_NUM_OS, uPrivateRASize, uSharedRASize));
 
 	/* If a display heap config exists, include the display heap in the non-secure regions */
 	if (psDisplayHeap)
 	{
-		/* Only works when DISPLAY heap follows GPU_LOCAL heap. */
-		PVR_LOG(("GPUVIRT_VALIDATION include DISPLAY in shared, base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ".",
-				 psDisplayHeap->sCardBase.uiAddr,
-				 psDisplayHeap->uiSize));
+		IMG_DEV_PHYADDR sGPUDisplayCardBase = PhysHeapConfigGetCardBase(psDisplayHeap);
+		IMG_UINT64 uiGPUDisplaySize = PhysHeapConfigGetSize(psDisplayHeap);
 
-		uSizeSharedReg = uSizeShared + psDisplayHeap->uiSize;
+		PVR_LOG(("GPUVIRT_VALIDATION: DISPLAY heap (base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ") merged into shared region.",
+		         sGPUDisplayCardBase.uiAddr,
+		         uiGPUDisplaySize));
+
+		if (sGPUDisplayCardBase.uiAddr > sGPULocalCardBase.uiAddr)
+		{
+			/*
+			 * ---------------------------------------------------------------------------------------------------
+			 * |        .        .        .     GPU LOCAL HEAP       .        .        .        |  DISPLAY HEAP  |
+			 * ---------------------------------------------------------------------------------------------------
+			 *  \______/ \______/ \______/ \______/ \______/ \______/ \______/ \______/ \______/ \_______________/
+			 *   OSID 0   OSID 1   OSID 2   OSID 3   OSID 4   OSID 5   OSID 6   OSID 7   SHARED      DISPLAY
+			 *                                                                            \____SHARED REGION____/
+			 *  OSID 0 has full access over everything
+			 *  Shared RA of the GPU Local heap is accessible to all OSIDs for special purpose allocations.
+			 */
+			if ((sGPULocalCardBase.uiAddr + uiGPULocalSize) != sGPUDisplayCardBase.uiAddr)
+			{
+				PVR_DPF((PVR_DBG_ERROR, "%s: GPU Local heap and display heap must be adjacent in physical memory.", __func__));
+				return PVRSRV_ERROR_INVALID_PARAMS;
+			}
+
+			uPrivateRABase = sGPULocalCardBase.uiAddr;
+			uSharedRABase = sGPULocalCardBase.uiAddr + uiGPULocalSize - uSharedRASize;
+			uSharedRegionBase = uSharedRABase;
+		}
+		else
+		{
+			/*
+			 * ---------------------------------------------------------------------------------------------------
+			 * |  DISPLAY HEAP   |        .        .        .     GPU LOCAL HEAP       .        .        .       |
+			 * ---------------------------------------------------------------------------------------------------
+			 *  \_______________/ \______/ \______/ \______/ \______/ \______/ \______/ \______/ \______/ \______/
+			 *        DISPLAY      SHARED   OSID 0   OSID 1   OSID 2   OSID 3   OSID 4   OSID 5   OSID 6   OSID 7
+			 *   \____SHARED REGION____/
+			 *
+			 *  OSID 0 has full access over everything
+			 *  Shared RA of the GPU Local heap is accessible to all OSIDs for special purpose allocations.
+			 */
+			if ((sGPUDisplayCardBase.uiAddr + uiGPUDisplaySize) != sGPULocalCardBase.uiAddr)
+			{
+				PVR_DPF((PVR_DBG_ERROR, "%s: GPU Local heap and display heap must be adjacent in physical memory.", __func__));
+				return PVRSRV_ERROR_INVALID_PARAMS;
+			}
+
+			uSharedRABase = sGPULocalCardBase.uiAddr;
+			uPrivateRABase = sGPULocalCardBase.uiAddr + uSharedRASize;
+			uSharedRegionBase = sGPUDisplayCardBase.uiAddr;
+		}
+
+		uSharedRegionSize = uSharedRASize + uiGPUDisplaySize;
 	}
 	else
 	{
-		uSizeSharedReg = uSizeShared;
+		/*
+		 * ----------------------------------------------------------------------------------
+		 * |        .        .        .     GPU LOCAL HEAP       .        .        .        |
+		 * ----------------------------------------------------------------------------------
+		 *  \______/ \______/ \______/ \______/ \______/ \______/ \______/ \______/ \______/
+		 *   OSID 0   OSID 1   OSID 2   OSID 3   OSID 4   OSID 5   OSID 6   OSID 7   SHARED
+		 *
+		 *  OSID 0 has full access over everything
+		 *  Shared RA of the GPU Local heap is accessible to all OSIDs for special purpose allocations.
+		 */
+		uPrivateRABase = sGPULocalCardBase.uiAddr;
+		uSharedRABase = uPrivateRABase + uPrivateRASize * GPUVIRT_VALIDATION_NUM_OS;
+		uSharedRASize = uiGPULocalSize - (uSharedRABase - uPrivateRABase);
+		uSharedRegionSize = uSharedRASize;
+		uSharedRegionBase = uSharedRABase;
 	}
 
-	PVR_ASSERT(uSize >= GPUVIRT_MIN_SIZE);
-	PVR_ASSERT(uSizeSharedReg >= GPUVIRT_SIZEOF_SHARED);
+	if (uPrivateRASize < GPUVIRT_MIN_SIZE)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Per-OSID private memory regions are too small (current: 0x%" IMG_UINT64_FMTSPECX ""
+								" required: 0x%" IMG_UINT64_FMTSPECX "). Increase GPU Local heap size.",
+								__func__, uPrivateRASize, GPUVIRT_MIN_SIZE));
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
 
-	for (i = 0; i < GPUVIRT_VALIDATION_NUM_OS; i++)
+	if (uSharedRASize < GPUVIRT_SIZEOF_SHARED)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Memory region shared between all OSIDs is too small (current: 0x%" IMG_UINT64_FMTSPECX ""
+								" required: 0x%" IMG_UINT64_FMTSPECX "). Increase GPU Local heap size.",
+								__func__, uSharedRASize, GPUVIRT_SIZEOF_SHARED));
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	FOREACH_VALIDATION_OSID(i)
 	{
 		IMG_CHAR aszOSRAName[RA_MAX_NAME_LENGTH];
 
-		PVR_LOG(("GPUVIRT_VALIDATION create arena OS: %d, base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ".", i, uBase, uSize));
+		PVR_LOG(("GPUVIRT_VALIDATION: create arena Private OSID: %u, base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ".", i, uPrivateRABase, uPrivateRASize));
 
-		OSSNPrintf(aszOSRAName, RA_MAX_NAME_LENGTH, "GPUVIRT_OS%d", i);
+		OSSNPrintf(aszOSRAName, RA_MAX_NAME_LENGTH, "GPUVIRT_OS%u", i);
 
 		psDeviceNode->psOSidSubArena[i] = RA_Create_With_Span(aszOSRAName,
 		                                                      OSGetPageShift(),
 		                                                      0,
-		                                                      uBase,
-		                                                      uSize,
+		                                                      uPrivateRABase,
+		                                                      uPrivateRASize,
 		                                                      RA_POLICY_DEFAULT);
-		PVR_LOG_RETURN_IF_NOMEM(psDeviceNode->psOSidSubArena[i], "RA_Create_With_Span");
-
-		aui64OSidMin[GPUVIRT_VAL_REGION_SECURE][i] = uBase;
+		PVR_GOTO_IF_FALSE(psDeviceNode->psOSidSubArena[i] != NULL, FreeArenas);
+		aui64OSidMin[GPUVIRT_VAL_REGION_SECURE][i] = uPrivateRABase;
 
 		if (i == 0)
 		{
-			/* OSid0 has access to all regions */
-			aui64OSidMax[GPUVIRT_VAL_REGION_SECURE][i] = psGPULocalHeap->uiSize - 1ULL;
+			/* Host OSID0 has access to all regions */
+			aui64OSidMax[GPUVIRT_VAL_REGION_SECURE][i] = uiGPULocalSize - 1ULL;
 		}
 		else
 		{
-			aui64OSidMax[GPUVIRT_VAL_REGION_SECURE][i] = uBase + uSize - 1ULL;
+			/* Guest OSIDs are limited to their private range */
+			aui64OSidMax[GPUVIRT_VAL_REGION_SECURE][i] = uPrivateRABase + uPrivateRASize - 1ULL;
 		}
 
-		/* uSizeSharedReg includes display heap */
-		aui64OSidMin[GPUVIRT_VAL_REGION_SHARED][i] = uBaseShared;
-		aui64OSidMax[GPUVIRT_VAL_REGION_SHARED][i] = uBaseShared + uSizeSharedReg - 1ULL;
+		/* uSharedRegionSize includes display heap */
+		aui64OSidMin[GPUVIRT_VAL_REGION_SHARED][i] = uSharedRegionBase;
+		aui64OSidMax[GPUVIRT_VAL_REGION_SHARED][i] = uSharedRegionBase + uSharedRegionSize - 1ULL;
 
-		PVR_LOG(("GPUVIRT_VALIDATION HW reg regions %d: min[0]: 0x%" IMG_UINT64_FMTSPECX ", max[0]: 0x%" IMG_UINT64_FMTSPECX ", min[1]: 0x%" IMG_UINT64_FMTSPECX ", max[1]: 0x%" IMG_UINT64_FMTSPECX ",",
+		uPrivateRABase += uPrivateRASize;
+	}
+
+	PVR_LOG(("GPUVIRT_VALIDATION: create arena Shared, base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ".", uSharedRABase, uSharedRASize));
+
+	/* uSharedRASize does not include display heap */
+	psDeviceNode->psOSSharedArena = RA_Create_With_Span("GPUVIRT_SHARED",
+	                                                    OSGetPageShift(),
+	                                                    0,
+	                                                    uSharedRABase,
+	                                                    uSharedRASize,
+	                                                    RA_POLICY_DEFAULT);
+	PVR_GOTO_IF_FALSE(psDeviceNode->psOSSharedArena != NULL, FreeArenas);
+
+	FOREACH_VALIDATION_OSID(i)
+	{
+		PVR_LOG(("GPUVIRT_VALIDATION: HW regions OSID %u: Private Region = [0x%" IMG_UINT64_FMTSPECX "..0x%" IMG_UINT64_FMTSPECX "]"
+														" Shared Region = [0x%" IMG_UINT64_FMTSPECX "..0x%" IMG_UINT64_FMTSPECX "]",
 				 i,
 				 aui64OSidMin[GPUVIRT_VAL_REGION_SECURE][i],
 				 aui64OSidMax[GPUVIRT_VAL_REGION_SECURE][i],
 				 aui64OSidMin[GPUVIRT_VAL_REGION_SHARED][i],
 				 aui64OSidMax[GPUVIRT_VAL_REGION_SHARED][i]));
-		uBase += uSize;
 	}
 
-	PVR_LOG(("GPUVIRT_VALIDATION create arena Shared, base: 0x%" IMG_UINT64_FMTSPECX ", size: 0x%" IMG_UINT64_FMTSPECX ".", uBaseShared, uSizeShared));
-
-	PVR_ASSERT(uSizeShared >= GPUVIRT_SIZEOF_SHARED);
-
-	/* uSizeShared does not include  display heap */
-	psDeviceNode->psOSSharedArena = RA_Create_With_Span("GPUVIRT_SHARED",
-	                                                    OSGetPageShift(),
-	                                                    0,
-	                                                    uBaseShared,
-	                                                    uSizeShared,
-	                                                    RA_POLICY_DEFAULT);
-	PVR_LOG_RETURN_IF_NOMEM(psDeviceNode->psOSSharedArena, "RA_Create_With_Span");
-
-	if (psDeviceNode->psDevConfig->pfnSysDevVirtInit != NULL)
+	if (psDeviceNode->psDevConfig->pfnSysInitFirewall != NULL)
 	{
-		psDeviceNode->psDevConfig->pfnSysDevVirtInit(aui64OSidMin, aui64OSidMax);
+		psDeviceNode->psDevConfig->pfnSysInitFirewall(psDeviceNode->psDevConfig->hSysData, aui64OSidMin, aui64OSidMax);
 	}
 
 	return PVRSRV_OK;
+
+FreeArenas:
+	DestroyGpuVirtValArenas(psDeviceNode);
+
+	return PVRSRV_ERROR_OUT_OF_MEMORY;
 }
 
 /*
@@ -551,12 +1116,17 @@ static void DestroyGpuVirtValArenas(PVRSRV_DEVICE_NODE *psDeviceNode)
 {
 	IMG_UINT32	uiCounter = 0;
 
-	/*
-	 * NOTE: We overload psOSidSubArena[0] into the psLocalMemArena so we must
-	 * not free it here as it gets cleared later.
-	 */
-	for (uiCounter = 1; uiCounter < GPUVIRT_VALIDATION_NUM_OS; uiCounter++)
+	FOREACH_VALIDATION_OSID(uiCounter)
 	{
+		if (uiCounter == RGXFW_HOST_DRIVER_ID)
+		{
+			/*
+			 * NOTE: We overload psOSidSubArena[0] into the psLocalMemArena so we must
+			 * not free it here as it gets cleared later.
+			 */
+			continue;
+		}
+
 		if (psDeviceNode->psOSidSubArena[uiCounter] == NULL)
 		{
 			continue;
@@ -582,9 +1152,9 @@ static PVRSRV_ERROR PhysHeapMMUPxSetup(PPVRSRV_DEVICE_NODE psDeviceNode)
 	PHYS_HEAP_TYPE eHeapType;
 	PVRSRV_ERROR eError;
 
-	eError = PhysHeapAcquireByDevPhysHeap(psDeviceNode->psDevConfig->eDefaultHeap,
+	eError = PhysHeapAcquireByID(psDeviceNode->psDevConfig->eDefaultHeap,
 	                                      psDeviceNode, &psDeviceNode->psMMUPhysHeap);
-	PVR_LOG_GOTO_IF_ERROR(eError, "PhysHeapAcquireByDevPhysHeap", ErrorDeinit);
+	PVR_LOG_GOTO_IF_ERROR(eError, "PhysHeapAcquireByID", ErrorDeinit);
 
 	eHeapType = PhysHeapGetType(psDeviceNode->psMMUPhysHeap);
 
@@ -638,6 +1208,9 @@ PVRSRV_ERROR PhysHeapInitDeviceHeaps(PVRSRV_DEVICE_NODE *psDeviceNode, PVRSRV_DE
 	PVRSRV_ERROR eError;
 	PVRSRV_PHYS_HEAP ePhysHeap;
 
+	eError = OSLockCreate(&psDeviceNode->hPhysHeapLock);
+	PVR_LOG_RETURN_IF_ERROR(eError, "OSLockCreate");
+
 	eError = PVRSRVValidatePhysHeapConfig(psDevConfig);
 	PVR_LOG_RETURN_IF_ERROR(eError, "PVRSRVValidatePhysHeapConfig");
 
@@ -646,24 +1219,20 @@ PVRSRV_ERROR PhysHeapInitDeviceHeaps(PVRSRV_DEVICE_NODE *psDeviceNode, PVRSRV_DE
 	                                              psDevConfig->ui32PhysHeapCount);
 	PVR_LOG_GOTO_IF_ERROR(eError, "PhysHeapCreateDeviceHeapsFromConfigs", ErrorDeinit);
 
-	for (ePhysHeap = PVRSRV_PHYS_HEAP_DEFAULT+1;  ePhysHeap < PVRSRV_PHYS_HEAP_LAST; ePhysHeap++)
+	/* Must loop from the 2nd heap to the last */
+	PVR_ASSERT(PVRSRV_PHYS_HEAP_DEFAULT == 0);
+	for (ePhysHeap = (PVRSRV_PHYS_HEAP)(PVRSRV_PHYS_HEAP_DEFAULT+1); ePhysHeap < PVRSRV_PHYS_HEAP_LAST; ePhysHeap++)
 	{
-		if (PhysHeapPVRLayerAcquire(ePhysHeap))
+		if (PhysHeapAcquiredByPVRLayer(ePhysHeap))
 		{
-			eError = PhysHeapAcquireByDevPhysHeap(ePhysHeap, psDeviceNode, &psDeviceNode->apsPhysHeap[ePhysHeap]);
-			PVR_LOG_GOTO_IF_ERROR(eError, "PhysHeapAcquireByDevPhysHeap", ErrorDeinit);
-		}
-
-		/* Calculate the total number of user accessible physical heaps */
-		if (psDeviceNode->apsPhysHeap[ePhysHeap] && PhysHeapUserModeAlloc(ePhysHeap))
-		{
-			psDeviceNode->ui32UserAllocHeapCount++;
+			eError = PhysHeapAcquireByID(ePhysHeap, psDeviceNode, &psDeviceNode->apsPhysHeap[ePhysHeap]);
+			PVR_LOG_GOTO_IF_ERROR(eError, "PhysHeapAcquireByID", ErrorDeinit);
 		}
 	}
 
 	if (PhysHeapValidateDefaultHeapExists(psDeviceNode))
 	{
-		PVR_LOG_GOTO_IF_ERROR(eError, "PVRSRVPhysHeapCheckUsageFlags", ErrorDeinit);
+		PVR_LOG_GOTO_IF_ERROR(eError, "PhysHeapValidateDefaultHeapExists", ErrorDeinit);
 	}
 
 	eError = PhysHeapMMUPxSetup(psDeviceNode);
@@ -683,18 +1252,10 @@ void PhysHeapDeInitDeviceHeaps(PVRSRV_DEVICE_NODE *psDeviceNode)
 	PVRSRV_PHYS_HEAP ePhysHeapIdx;
 	IMG_UINT32 i;
 
-#if defined(SUPPORT_AUTOVZ)
-	if (psDeviceNode->psFwMMUReservedPhysHeap)
-	{
-		PhysHeapDestroy(psDeviceNode->psFwMMUReservedPhysHeap);
-		psDeviceNode->psFwMMUReservedPhysHeap = NULL;
-	}
-#endif
-
 	PhysHeapMMUPxDeInit(psDeviceNode);
 
 	/* Release heaps */
-	for (ePhysHeapIdx = 0;
+	for (ePhysHeapIdx = PVRSRV_PHYS_HEAP_DEFAULT;
 		 ePhysHeapIdx < ARRAY_SIZE(psDeviceNode->apsPhysHeap);
 		 ePhysHeapIdx++)
 	{
@@ -704,19 +1265,7 @@ void PhysHeapDeInitDeviceHeaps(PVRSRV_DEVICE_NODE *psDeviceNode)
 		}
 	}
 
-	if (psDeviceNode->psFWMainPhysHeap)
-	{
-		PhysHeapDestroy(psDeviceNode->psFWMainPhysHeap);
-		psDeviceNode->psFWMainPhysHeap = NULL;
-	}
-
-	if (psDeviceNode->psFWCfgPhysHeap)
-	{
-		PhysHeapDestroy(psDeviceNode->psFWCfgPhysHeap);
-		psDeviceNode->psFWCfgPhysHeap = NULL;
-	}
-
-	for (i = 0; i < RGX_NUM_OS_SUPPORTED; i++)
+	FOREACH_SUPPORTED_DRIVER(i)
 	{
 		if (psDeviceNode->apsFWPremapPhysHeap[i])
 		{
@@ -726,10 +1275,100 @@ void PhysHeapDeInitDeviceHeaps(PVRSRV_DEVICE_NODE *psDeviceNode)
 	}
 
 	PhysHeapDestroyDeviceHeaps(psDeviceNode);
+
+	OSLockDestroy(psDeviceNode->hPhysHeapLock);
 }
+
+#if defined(PVRSRV_ENABLE_XD_MEM)
+static void PhysHeapSpasRegionLock(PHYS_HEAP_SPAS_REGION *psSpasRegion)
+{
+	while (OSAtomicCompareExchange(&psSpasRegion->ui32Lock, 0, 1) != 0);
+	OSMemoryBarrier(NULL);
+}
+static void PhysHeapSpasRegionUnlock(PHYS_HEAP_SPAS_REGION *psSpasRegion)
+{
+	OSMemoryBarrier(NULL);
+	OSAtomicWrite(&psSpasRegion->ui32Lock, 0);
+}
+
+/* Insert the physheap into a given SPAS. */
+static void PhysHeapSpasInsert(PHYS_HEAP* psPhysHeap, PHYS_HEAP_SPAS_REGION *psSpasRegion)
+{
+	if (psSpasRegion == NULL)
+		return; /* Not in a SPAS region. */
+	/* A physheap may only be a part of a single SPAS region. */
+	PVR_ASSERT(psPhysHeap->psSpasRegion == NULL);
+
+	psPhysHeap->psSpasRegion = psSpasRegion;
+
+	PhysHeapSpasRegionLock(psSpasRegion);
+	dllist_add_to_head(&psSpasRegion->sListHead, &psPhysHeap->sSpasSibling);
+	PhysHeapSpasRegionUnlock(psSpasRegion);
+}
+
+/* Remove the PhysHeap from its SPAS region if it is in one. */
+static void PhysHeapSpasRemove(PHYS_HEAP *psPhysHeap)
+{
+	PHYS_HEAP_SPAS_REGION *psSpasRegion = psPhysHeap->psSpasRegion;
+
+	if (psSpasRegion == NULL)
+		return; /* Not in a region. */
+
+	PhysHeapSpasRegionLock(psSpasRegion);
+	psPhysHeap->psSpasRegion = NULL;
+	dllist_remove_node(&psPhysHeap->sSpasSibling);
+	PhysHeapSpasRegionUnlock(psSpasRegion);
+
+	psPhysHeap->psSpasRegion = NULL;
+}
+
+PVRSRV_ERROR PhysHeapSpasWithDevice(PHYS_HEAP* psFromPhysHeap,
+                                    PPVRSRV_DEVICE_NODE psToDevNode)
+{
+	PVRSRV_ERROR eError = PVRSRV_ERROR_NOT_FOUND;
+	PDLLIST_NODE psNode, psNextNode;
+
+	if (psFromPhysHeap->psSpasRegion == NULL)
+		return eError;
+
+	PhysHeapSpasRegionLock(psFromPhysHeap->psSpasRegion);
+	dllist_foreach_node(&psFromPhysHeap->psSpasRegion->sListHead, psNode, psNextNode)
+	{
+		PHYS_HEAP *psPhysHeapCursor = IMG_CONTAINER_OF(psNode, PHYS_HEAP, sSpasSibling);
+		if (psPhysHeapCursor->psDevNode == psToDevNode)
+		{
+			PVR_GOTO_WITH_ERROR(eError, PVRSRV_OK, exit_unlock_);
+		}
+	}
+exit_unlock_:
+	PhysHeapSpasRegionUnlock(psFromPhysHeap->psSpasRegion);
+	return eError;
+}
+
+static IMG_UINT64 PhysHeapSpasDeviceBitmap(PHYS_HEAP* psPhysHeap)
+{
+	PDLLIST_NODE psNode, psNextNode;
+	IMG_UINT64 uiDevices = 0;
+
+	static_assert((sizeof(IMG_UINT64) * 8) >= PVRSRV_MAX_DEVICES, "PhysHeapSpasDeviceBitmap() requires updating");
+
+	if (psPhysHeap->psSpasRegion == NULL)
+		return uiDevices;
+
+	PhysHeapSpasRegionLock(psPhysHeap->psSpasRegion);
+	dllist_foreach_node(&psPhysHeap->psSpasRegion->sListHead, psNode, psNextNode)
+	{
+		PHYS_HEAP *psPhysHeapCursor = IMG_CONTAINER_OF(psNode, PHYS_HEAP, sSpasSibling);
+		uiDevices |= IMG_UINT64_C(1) << psPhysHeapCursor->psDevNode->sDevId.ui32InternalID;
+	}
+	PhysHeapSpasRegionUnlock(psPhysHeap->psSpasRegion);
+	return uiDevices;
+}
+#endif
 
 PVRSRV_ERROR PhysHeapCreate(PPVRSRV_DEVICE_NODE psDevNode,
 							  PHYS_HEAP_CONFIG *psConfig,
+							  PHYS_HEAP_POLICY uiPolicy,
 							  PHEAP_IMPL_DATA pvImplData,
 							  PHEAP_IMPL_FUNCS *psImplFuncs,
 							  PHYS_HEAP **ppsPhysHeap)
@@ -746,50 +1385,158 @@ PVRSRV_ERROR PhysHeapCreate(PPVRSRV_DEVICE_NODE psDevNode,
 	}
 
 	PVR_LOG_RETURN_IF_INVALID_PARAM(psImplFuncs != NULL, "psImplFuncs");
-	PVR_LOG_RETURN_IF_INVALID_PARAM(psImplFuncs->pfnCreatePMR != NULL, "psImplFuncs->pfnCreatePMR");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psImplFuncs->pfnCreatePMR != NULL ||
+	                                psImplFuncs->pfnCreatePMB,
+	                                "psImplFuncs->pfnCreatePMR || psImplFuncs->pfnCreatePMB");
 
 	psNew = OSAllocMem(sizeof(PHYS_HEAP));
 	PVR_RETURN_IF_NOMEM(psNew);
-	psNew->psDevNode = psDevNode;
-	psNew->eType = psConfig->eType;
-	psNew->psMemFuncs = psConfig->psMemFuncs;
-	psNew->hPrivData = psConfig->hPrivData;
-	psNew->ui32RefCount = 0;
-	psNew->pszPDumpMemspaceName = psConfig->pszPDumpMemspaceName;
-	psNew->ui32UsageFlags = psConfig->ui32UsageFlags;
 
+#if defined(PVRSRV_ENABLE_XD_MEM)
+	psNew->psSpasRegion = NULL;
+#endif
+
+	switch (psConfig->eType)
+	{
+	case PHYS_HEAP_TYPE_LMA:
+		psNew->psMemFuncs = psConfig->uConfig.sLMA.psMemFuncs;
+		psNew->hPrivData = psConfig->uConfig.sLMA.hPrivData;
+		psNew->pszPDumpMemspaceName = psConfig->uConfig.sLMA.pszPDumpMemspaceName;
+		OSStringSafeCopy(psNew->aszName,
+		                 (psConfig->uConfig.sLMA.pszHeapName) ? psConfig->uConfig.sLMA.pszHeapName :
+		                                                        "Unknown PhysHeap",
+		                 PHYS_HEAP_NAME_SIZE);
+#if defined(PVRSRV_ENABLE_XD_MEM)
+		PhysHeapSpasInsert(psNew, psConfig->uConfig.sLMA.psSpasRegion);
+#endif
+		break;
+	case PHYS_HEAP_TYPE_IMA:
+		psNew->psMemFuncs = psConfig->uConfig.sIMA.psMemFuncs;
+		psNew->hPrivData = psConfig->uConfig.sIMA.hPrivData;
+		psNew->pszPDumpMemspaceName = psConfig->uConfig.sIMA.pszPDumpMemspaceName;
+		OSStringSafeCopy(psNew->aszName,
+		                 (psConfig->uConfig.sIMA.pszHeapName) ? psConfig->uConfig.sIMA.pszHeapName :
+		                                                        "Unknown PhysHeap",
+		                 PHYS_HEAP_NAME_SIZE);
+		break;
+	case PHYS_HEAP_TYPE_DMA:
+		psNew->psMemFuncs = psConfig->uConfig.sDMA.psMemFuncs;
+		psNew->hPrivData = psConfig->uConfig.sDMA.hPrivData;
+		psNew->pszPDumpMemspaceName = psConfig->uConfig.sDMA.pszPDumpMemspaceName;
+		OSStringSafeCopy(psNew->aszName,
+		                 (psConfig->uConfig.sDMA.pszHeapName) ? psConfig->uConfig.sDMA.pszHeapName :
+		                                                        "Unknown PhysHeap",
+		                 PHYS_HEAP_NAME_SIZE);
+		break;
+	case PHYS_HEAP_TYPE_UMA:
+		psNew->psMemFuncs = psConfig->uConfig.sUMA.psMemFuncs;
+		psNew->hPrivData = psConfig->uConfig.sUMA.hPrivData;
+		psNew->pszPDumpMemspaceName = psConfig->uConfig.sUMA.pszPDumpMemspaceName;
+		OSStringSafeCopy(psNew->aszName,
+		                 (psConfig->uConfig.sUMA.pszHeapName) ? psConfig->uConfig.sUMA.pszHeapName :
+		                                                        "Unknown PhysHeap",
+		                 PHYS_HEAP_NAME_SIZE);
+#if defined(PVRSRV_ENABLE_XD_MEM)
+		PhysHeapSpasInsert(psNew, psConfig->uConfig.sUMA.psSpasRegion);
+#endif
+		break;
+	case PHYS_HEAP_TYPE_DLM:
+		psNew->psMemFuncs = psConfig->uConfig.sDLM.psMemFuncs;
+		psNew->hPrivData = psConfig->uConfig.sDLM.hPrivData;
+		psNew->pszPDumpMemspaceName = "None";
+		OSStringSafeCopy(psNew->aszName,
+		                 (psConfig->uConfig.sDLM.pszHeapName) ? psConfig->uConfig.sDLM.pszHeapName :
+		                                                        "Unknown PhysHeap",
+		                 PHYS_HEAP_NAME_SIZE);
+		break;
+#if defined(SUPPORT_WRAP_EXTMEMOBJECT)
+	case PHYS_HEAP_TYPE_WRAP:
+		psNew->psMemFuncs = psConfig->uConfig.sWRAP.psMemFuncs;
+		psNew->hPrivData = psConfig->uConfig.sWRAP.hPrivData;
+		psNew->pszPDumpMemspaceName = psConfig->uConfig.sWRAP.pszPDumpMemspaceName;
+		OSStringSafeCopy(psNew->aszName,
+		                 (psConfig->uConfig.sWRAP.pszHeapName) ? psConfig->uConfig.sWRAP.pszHeapName :
+		                                                        "Unknown PhysHeap",
+		                 PHYS_HEAP_NAME_SIZE);
+		break;
+#endif
+	default:
+		PVR_LOG_ERROR(PVRSRV_ERROR_NOT_IMPLEMENTED, "psConfig->eType not implemented");
+	}
+
+	psNew->eType = psConfig->eType;
+	psNew->ui32UsageFlags = psConfig->ui32UsageFlags;
+	psNew->uiPolicy = uiPolicy;
+	psNew->ui32RefCount = 0;
+	psNew->psDevNode = psDevNode;
+#if !defined(PVRSRV_PHYSHEAP_DISABLE_OOM_DEMOTION)
+	OSAtomicWrite(&psNew->sOOMDetected, IMG_FALSE);
+#endif
 	psNew->pvImplData = pvImplData;
 	psNew->psImplFuncs = psImplFuncs;
 
-	psNew->psNext = g_psPhysHeapList;
-	g_psPhysHeapList = psNew;
+#if defined(SUPPORT_STATIC_IPA)
+	{
+		IMG_UINT8  ui8Val;
 
-	*ppsPhysHeap = psNew;
+		/* Ensure we do not cause an address fault by accessing beyond
+		 * the end of the psConfig->sIPAConfig structure.
+		 */
+		ui8Val = psConfig->sIPAConfig.ui8IPAPolicyDefault;
+		psNew->ui32IPAPolicyValue = (IMG_UINT32)ui8Val;
 
-	PVR_DPF_RETURN_RC1(PVRSRV_OK, *ppsPhysHeap);
+		ui8Val = psConfig->sIPAConfig.ui8IPAPolicyMask;
+		psNew->ui32IPAClearMask = (IMG_UINT32)ui8Val;
+
+		ui8Val = psConfig->sIPAConfig.ui8IPAPolicyShift;
+		psNew->ui32IPAShift = (IMG_UINT32)ui8Val;
+		PVR_LOG_VA(PVR_DBG_MESSAGE, "%s: Physheap <%p> ['%s'] Config @ <%p> IPA = [0x%x, 0x%x, 0x%x]",
+		           __func__, psNew, psNew->aszName,
+		           psConfig, psNew->ui32IPAPolicyValue,
+		           psNew->ui32IPAClearMask, psNew->ui32IPAShift);
+	}
+#endif
+
+	if (ppsPhysHeap != NULL)
+	{
+		*ppsPhysHeap = psNew;
+	}
+
+	psNew->psNext = psDevNode->psPhysHeapList;
+	psDevNode->psPhysHeapList = psNew;
+
+	PVR_DPF_RETURN_RC1(PVRSRV_OK, psNew);
 }
 
 void PhysHeapDestroyDeviceHeaps(PPVRSRV_DEVICE_NODE psDevNode)
 {
-	IMG_UINT32 i;
+	PHYS_HEAP *psNode;
 
 	if (psDevNode->hPhysHeapDbgReqNotify)
 	{
 		PVRSRVUnregisterDeviceDbgRequestNotify(psDevNode->hPhysHeapDbgReqNotify);
 	}
 
-	/* Unregister heaps */
-	for (i = 0; i < psDevNode->ui32RegisteredPhysHeaps; i++)
-	{
-		PhysHeapDestroy(psDevNode->papsRegisteredPhysHeaps[i]);
-	}
+#if defined(PVRSRV_ENABLE_DYNAMIC_PHYSHEAPS)
+	/* DLM/IMA heaps must be destroyed in a specific order */
+	PhysHeapDestroyDLMIMAHeaps(psDevNode);
+#endif
 
-	OSFreeMem(psDevNode->papsRegisteredPhysHeaps);
+	psNode = psDevNode->psPhysHeapList;
+
+	while (psNode)
+	{
+		PHYS_HEAP *psTmp = psNode;
+
+		psNode = psNode->psNext;
+		PhysHeapDestroy(psTmp);
+	}
 }
 
 void PhysHeapDestroy(PHYS_HEAP *psPhysHeap)
 {
 	PHEAP_IMPL_FUNCS *psImplFuncs = psPhysHeap->psImplFuncs;
+	PPVRSRV_DEVICE_NODE psDevNode = psPhysHeap->psDevNode;
 
 	PVR_DPF_ENTERED1(psPhysHeap);
 
@@ -800,13 +1547,17 @@ void PhysHeapDestroy(PHYS_HEAP *psPhysHeap)
 		PVR_ASSERT(psPhysHeap->ui32RefCount == 0);
 	}
 
-	if (g_psPhysHeapList == psPhysHeap)
+#if defined(PVRSRV_ENABLE_XD_MEM)
+	PhysHeapSpasRemove(psPhysHeap);
+#endif
+
+	if (psDevNode->psPhysHeapList == psPhysHeap)
 	{
-		g_psPhysHeapList = psPhysHeap->psNext;
+		psDevNode->psPhysHeapList = psPhysHeap->psNext;
 	}
 	else
 	{
-		PHYS_HEAP *psTmp = g_psPhysHeapList;
+		PHYS_HEAP *psTmp = psDevNode->psPhysHeapList;
 
 		while (psTmp->psNext != psPhysHeap)
 		{
@@ -825,75 +1576,63 @@ void PhysHeapDestroy(PHYS_HEAP *psPhysHeap)
 	PVR_DPF_RETURN;
 }
 
+static void _PhysHeapCountUserModeHeaps(PPVRSRV_DEVICE_NODE psDevNode,
+										PHYS_HEAP_USAGE_FLAGS ui32UsageFlags)
+{
+	PVRSRV_PHYS_HEAP eHeap;
+
+	for (eHeap = PVRSRV_PHYS_HEAP_DEFAULT;
+		 eHeap <= PVRSRV_PHYS_HEAP_LAST;
+		 eHeap++)
+	{
+		if (BIT_ISSET(ui32UsageFlags, eHeap) &&
+			PhysHeapUserModeAlloc(eHeap))
+		{
+			psDevNode->ui32UserAllocHeapCount++;
+			break;
+		}
+	}
+}
+
 PVRSRV_ERROR PhysHeapAcquire(PHYS_HEAP *psPhysHeap)
 {
 	PVR_LOG_RETURN_IF_INVALID_PARAM(psPhysHeap != NULL, "psPhysHeap");
 
 	psPhysHeap->ui32RefCount++;
 
+	/* When acquiring a heap for the 1st time, perform a check and
+	 * calculate the total number of user accessible physical heaps */
+	if (psPhysHeap->ui32RefCount == 1)
+	{
+		_PhysHeapCountUserModeHeaps(psPhysHeap->psDevNode,
+									psPhysHeap->ui32UsageFlags);
+	}
+
 	return PVRSRV_OK;
 }
 
-PVRSRV_ERROR PhysHeapAcquireByUsage(PHYS_HEAP_USAGE_FLAGS ui32UsageFlag,
-									PPVRSRV_DEVICE_NODE psDevNode,
-									PHYS_HEAP **ppsPhysHeap)
-{
-	PHYS_HEAP *psNode = g_psPhysHeapList;
-	PVRSRV_ERROR eError = PVRSRV_OK;
-
-	PVR_LOG_RETURN_IF_INVALID_PARAM(ui32UsageFlag != 0, "ui32UsageFlag");
-	PVR_LOG_RETURN_IF_INVALID_PARAM(psDevNode != NULL, "psDevNode");
-
-	PVR_DPF_ENTERED1(ui32UsageFlag);
-
-	OSLockAcquire(g_hPhysHeapLock);
-
-	while (psNode)
-	{
-		if (psNode->psDevNode != psDevNode)
-		{
-			psNode = psNode->psNext;
-			continue;
-		}
-		if (BITMASK_ANY(psNode->ui32UsageFlags, ui32UsageFlag))
-		{
-			break;
-		}
-		psNode = psNode->psNext;
-	}
-
-	if (psNode == NULL)
-	{
-		eError = PVRSRV_ERROR_PHYSHEAP_ID_INVALID;
-	}
-	else
-	{
-		psNode->ui32RefCount++;
-		PHYSHEAP_REFCOUNT_PRINT("%s: Heap %p, refcount = %d",
-								__func__, psNode, psNode->ui32RefCount);
-	}
-
-	OSLockRelease(g_hPhysHeapLock);
-
-	*ppsPhysHeap = psNode;
-	PVR_DPF_RETURN_RC1(eError, *ppsPhysHeap);
-}
-
-static PHYS_HEAP * _PhysHeapFindHeap(PVRSRV_PHYS_HEAP ePhysHeap,
+static PHYS_HEAP * _PhysHeapFindHeapOrFallback(PVRSRV_PHYS_HEAP ePhysHeap,
 								   PPVRSRV_DEVICE_NODE psDevNode)
 {
-	PHYS_HEAP *psPhysHeapNode = g_psPhysHeapList;
+	PHYS_HEAP *psPhysHeapNode = psDevNode->psPhysHeapList;
 	PVRSRV_PHYS_HEAP eFallback;
 
+	/* Swap the default heap alias for the system's real default PhysHeap */
 	if (ePhysHeap == PVRSRV_PHYS_HEAP_DEFAULT)
 	{
 		ePhysHeap = psDevNode->psDevConfig->eDefaultHeap;
 	}
 
+	/* Check cache of PhysHeaps to see if it has been resolved before */
+	if (psDevNode->apsPhysHeap[ePhysHeap] != NULL)
+	{
+		return psDevNode->apsPhysHeap[ePhysHeap];
+	}
+
+	/* Cache not ready, carry out search with fallback */
 	while (psPhysHeapNode)
 	{
-		if ((psPhysHeapNode->psDevNode == psDevNode) &&
-			BIT_ISSET(psPhysHeapNode->ui32UsageFlags, ePhysHeap))
+		if (BIT_ISSET(psPhysHeapNode->ui32UsageFlags, ePhysHeap))
 		{
 			return psPhysHeapNode;
 		}
@@ -901,47 +1640,88 @@ static PHYS_HEAP * _PhysHeapFindHeap(PVRSRV_PHYS_HEAP ePhysHeap,
 		psPhysHeapNode = psPhysHeapNode->psNext;
 	}
 
+	/* Find fallback PhysHeap */
 	eFallback = gasHeapProperties[ePhysHeap].eFallbackHeap;
-
 	if (ePhysHeap == eFallback)
 	{
 		return NULL;
 	}
 	else
 	{
-		return _PhysHeapFindHeap(eFallback, psDevNode);
+		return _PhysHeapFindHeapOrFallback(eFallback, psDevNode);
 	}
 }
 
-PVRSRV_ERROR PhysHeapAcquireByDevPhysHeap(PVRSRV_PHYS_HEAP eDevPhysHeap,
-										  PPVRSRV_DEVICE_NODE psDevNode,
-										  PHYS_HEAP **ppsPhysHeap)
+/*
+ * Acquire heap, no fallback, no recursion: single loop acquisition
+ */
+static PHYS_HEAP* _PhysHeapFindRealHeapNoFallback(PVRSRV_PHYS_HEAP ePhysHeap,
+                                          PPVRSRV_DEVICE_NODE psDevNode)
+{
+	PHYS_HEAP *psPhysHeapNode = psDevNode->psPhysHeapList;
+
+	/* Swap the default heap alias for the system's real default PhysHeap */
+	if (ePhysHeap == PVRSRV_PHYS_HEAP_DEFAULT)
+	{
+		ePhysHeap = psDevNode->psDevConfig->eDefaultHeap;
+	}
+
+	/* Check cache of PhysHeaps to see if it has been resolved before.
+	 * The physheap must initialised to access its cache. */
+	if (psDevNode->apsPhysHeap[ePhysHeap] != NULL &&
+	    BIT_ISSET(psDevNode->apsPhysHeap[ePhysHeap]->ui32UsageFlags, ePhysHeap))
+	{
+		return psDevNode->apsPhysHeap[ePhysHeap];
+	}
+
+	/* Cache not ready, carry out search for real PhysHeap, no fallback */
+	while (psPhysHeapNode)
+	{
+		if (BIT_ISSET(psPhysHeapNode->ui32UsageFlags, ePhysHeap))
+		{
+			return psPhysHeapNode;
+		}
+
+		psPhysHeapNode = psPhysHeapNode->psNext;
+	}
+	return NULL;
+}
+
+PVRSRV_ERROR PhysHeapAcquireByID(PVRSRV_PHYS_HEAP eDevPhysHeap,
+								 PPVRSRV_DEVICE_NODE psDevNode,
+								 PHYS_HEAP **ppsPhysHeap)
 {
 	PHYS_HEAP *psPhysHeap;
 	PVRSRV_ERROR eError = PVRSRV_OK;
 
-	PVR_LOG_RETURN_IF_INVALID_PARAM(eDevPhysHeap != PVRSRV_PHYS_HEAP_DEFAULT, "eDevPhysHeap");
 	PVR_LOG_RETURN_IF_INVALID_PARAM(eDevPhysHeap < PVRSRV_PHYS_HEAP_LAST, "eDevPhysHeap");
 	PVR_LOG_RETURN_IF_INVALID_PARAM(psDevNode != NULL, "psDevNode");
 
 	PVR_DPF_ENTERED1(ui32Flags);
 
-	OSLockAcquire(g_hPhysHeapLock);
+	OSLockAcquire(psDevNode->hPhysHeapLock);
 
-	psPhysHeap = _PhysHeapFindHeap(eDevPhysHeap, psDevNode);
+	psPhysHeap = _PhysHeapFindHeapOrFallback(eDevPhysHeap, psDevNode);
 
 	if (psPhysHeap != NULL)
 	{
 		psPhysHeap->ui32RefCount++;
 		PHYSHEAP_REFCOUNT_PRINT("%s: Heap %p, refcount = %d",
 								__func__, psPhysHeap, psPhysHeap->ui32RefCount);
+
+		/* When acquiring a heap for the 1st time, perform a check and
+		 * calculate the total number of user accessible physical heaps */
+		if (psPhysHeap->ui32RefCount == 1)
+		{
+			_PhysHeapCountUserModeHeaps(psDevNode, BIT(eDevPhysHeap));
+		}
 	}
 	else
 	{
 		eError = PVRSRV_ERROR_PHYSHEAP_ID_INVALID;
 	}
 
-	OSLockRelease(g_hPhysHeapLock);
+	OSLockRelease(psDevNode->hPhysHeapLock);
 
 	*ppsPhysHeap = psPhysHeap;
 	PVR_DPF_RETURN_RC1(eError, *ppsPhysHeap);
@@ -951,11 +1731,11 @@ void PhysHeapRelease(PHYS_HEAP *psPhysHeap)
 {
 	PVR_DPF_ENTERED1(psPhysHeap);
 
-	OSLockAcquire(g_hPhysHeapLock);
+	OSLockAcquire(psPhysHeap->psDevNode->hPhysHeapLock);
 	psPhysHeap->ui32RefCount--;
 	PHYSHEAP_REFCOUNT_PRINT("%s: Heap %p, refcount = %d",
 							__func__, psPhysHeap, psPhysHeap->ui32RefCount);
-	OSLockRelease(g_hPhysHeapLock);
+	OSLockRelease(psPhysHeap->psDevNode->hPhysHeapLock);
 
 	PVR_DPF_RETURN;
 }
@@ -971,28 +1751,46 @@ PHYS_HEAP_TYPE PhysHeapGetType(PHYS_HEAP *psPhysHeap)
 	return psPhysHeap->eType;
 }
 
+PHYS_HEAP_POLICY PhysHeapGetPolicy(PHYS_HEAP *psPhysHeap)
+{
+	return psPhysHeap->uiPolicy;
+}
+
 PHYS_HEAP_USAGE_FLAGS PhysHeapGetFlags(PHYS_HEAP *psPhysHeap)
 {
 	return psPhysHeap->ui32UsageFlags;
 }
 
-IMG_BOOL PhysHeapValidateDefaultHeapExists(PPVRSRV_DEVICE_NODE psDevNode)
+const IMG_CHAR *PhysHeapName(PHYS_HEAP *psPhysHeap)
 {
-	PHYS_HEAP *psDefaultHeap;
-	IMG_BOOL bDefaultHeapFound;
-	PhysHeapAcquireByUsage(1<<(psDevNode->psDevConfig->eDefaultHeap), psDevNode, &psDefaultHeap);
-	if (psDefaultHeap == NULL)
-	{
-		bDefaultHeapFound = IMG_FALSE;
-	}
-	else
-	{
-		PhysHeapRelease(psDefaultHeap);
-		bDefaultHeapFound = IMG_TRUE;
-	}
-	return bDefaultHeapFound;
+	return psPhysHeap->aszName;
 }
 
+IMG_BOOL PhysHeapValidateDefaultHeapExists(PPVRSRV_DEVICE_NODE psDevNode)
+{
+	PVRSRV_PHYS_HEAP eDefaultHeap = psDevNode->psDevConfig->eDefaultHeap;
+
+	return ((psDevNode->apsPhysHeap[PVRSRV_PHYS_HEAP_DEFAULT] != NULL) &&
+			((psDevNode->apsPhysHeap[PVRSRV_PHYS_HEAP_DEFAULT] ==
+			  psDevNode->apsPhysHeap[eDefaultHeap])));
+}
+
+#if defined(SUPPORT_STATIC_IPA)
+IMG_UINT32 PhysHeapGetIPAValue(PHYS_HEAP *psPhysHeap)
+{
+	return psPhysHeap->ui32IPAPolicyValue;
+}
+
+IMG_UINT32 PhysHeapGetIPAMask(PHYS_HEAP *psPhysHeap)
+{
+	return psPhysHeap->ui32IPAClearMask;
+}
+
+IMG_UINT32 PhysHeapGetIPAShift(PHYS_HEAP *psPhysHeap)
+{
+	return psPhysHeap->ui32IPAShift;
+}
+#endif
 
 /*
  * This function will set the psDevPAddr to whatever the system layer
@@ -1049,16 +1847,64 @@ PVRSRV_ERROR PhysHeapGetSize(PHYS_HEAP *psPhysHeap,
 	return eResult;
 }
 
+/* Used to add the total and free sizes of an IMA heap and the backing
+ * DLM heap
+ */
+static void PhysHeapIMAGetMemInfo(PHYS_HEAP *psPhysHeap,
+                                  IMG_UINT64 *puiTotalSize,
+                                  IMG_UINT64 *puiFreeSize)
+{
+	PHYS_HEAP *psDLMHeap;
+	IMG_UINT64 ui64TotalSize;
+	IMG_UINT64 ui64FreeSize;
+	IMG_UINT64 ui64DLMTotalSize;
+	IMG_UINT64 ui64DLMFreeSize;
+
+	PVR_LOG_RETURN_VOID_IF_FALSE(
+		psPhysHeap->eType == PHYS_HEAP_TYPE_IMA,
+		"Physheap type not IMA");
+
+	/* Obtain the DLM heap chained to this IMA heap */
+	PVR_ASSERT(psPhysHeap->psImplFuncs->pfnGetHeapDLMBacking);
+	psPhysHeap->psImplFuncs->pfnGetHeapDLMBacking(psPhysHeap->pvImplData,
+	                                              &psDLMHeap);
+	PVR_LOG_RETURN_VOID_IF_FALSE(psDLMHeap != NULL, "pfnGetHeapDLMBacking");
+
+	/* Obtain the memstats for the current IMA heap */
+	PVR_ASSERT(psPhysHeap->psImplFuncs->pfnGetFactoryMemStats);
+	psPhysHeap->psImplFuncs->pfnGetFactoryMemStats(psPhysHeap->pvImplData,
+	                                               &ui64TotalSize,
+	                                               &ui64FreeSize);
+
+	/* Obtain the memstats for the chained DLM heap */
+	PVR_ASSERT(psDLMHeap->psImplFuncs->pfnGetFactoryMemStats);
+	psDLMHeap->psImplFuncs->pfnGetFactoryMemStats(psDLMHeap->pvImplData,
+	                                              &ui64DLMTotalSize,
+	                                              &ui64DLMFreeSize);
+
+	/* Total size is just the DLM heap size as the IMA heap imports a
+	 * subset of that total size.
+	 * Free size is a combination of the two because DLM heap may
+	 * have spare PMBs to provide and the IMA heap may have space
+	 * in an imported PMB.
+	 */
+	*puiTotalSize = ui64DLMTotalSize;
+	*puiFreeSize = ui64FreeSize + ui64DLMFreeSize;
+}
+
 PVRSRV_ERROR
 PhysHeapGetMemInfo(PVRSRV_DEVICE_NODE *psDevNode,
-              IMG_UINT32 ui32PhysHeapCount,
-			  PVRSRV_PHYS_HEAP *paePhysHeapID,
-			  PHYS_HEAP_MEM_STATS_PTR paPhysHeapMemStats)
+                   IMG_UINT32 ui32PhysHeapCount,
+                   PVRSRV_PHYS_HEAP *paePhysHeapID,
+                   PHYS_HEAP_MEM_STATS_PTR paPhysHeapMemStats)
 {
 	IMG_UINT32 i = 0;
 	PHYS_HEAP *psPhysHeap;
 
-	PVR_ASSERT(ui32PhysHeapCount <= PVRSRV_PHYS_HEAP_LAST);
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psDevNode != NULL, "psDevNode invalid");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(ui32PhysHeapCount <= MAX_USER_MODE_ALLOC_PHYS_HEAPS, "ui32PhysHeapCount invalid");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(paePhysHeapID != NULL, "paePhysHeapID invalid");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(paPhysHeapMemStats != NULL, "paPhysHeapMemStats invalid");
 
 	for (i = 0; i < ui32PhysHeapCount; i++)
 	{
@@ -1067,50 +1913,46 @@ PhysHeapGetMemInfo(PVRSRV_DEVICE_NODE *psDevNode,
 			return PVRSRV_ERROR_PHYSHEAP_ID_INVALID;
 		}
 
-		if (paePhysHeapID[i] == PVRSRV_PHYS_HEAP_DEFAULT)
-		{
-			return PVRSRV_ERROR_INVALID_PARAMS;
-		}
-
-		psPhysHeap = _PhysHeapFindHeap(paePhysHeapID[i], psDevNode);
+		psPhysHeap = _PhysHeapFindRealHeapNoFallback(paePhysHeapID[i], psDevNode);
 
 		paPhysHeapMemStats[i].ui32PhysHeapFlags = 0;
+		paPhysHeapMemStats[i].ui64DevicesInSPAS = 0;
 
 		if (psPhysHeap && PhysHeapUserModeAlloc(paePhysHeapID[i])
-				&& psPhysHeap->psImplFuncs->pfnGetPMRFactoryMemStats)
+				&& psPhysHeap->psImplFuncs->pfnGetFactoryMemStats)
 		{
-			psPhysHeap->psImplFuncs->pfnGetPMRFactoryMemStats(psPhysHeap->pvImplData,
-					&paPhysHeapMemStats[i].ui64TotalSize,
-					&paPhysHeapMemStats[i].ui64FreeSize);
-			paPhysHeapMemStats[i].ui32PhysHeapFlags |= PhysHeapGetType(psPhysHeap);
+			if (psPhysHeap->eType == PHYS_HEAP_TYPE_IMA)
+			{
+				PhysHeapIMAGetMemInfo(psPhysHeap,
+				                      &paPhysHeapMemStats[i].ui64TotalSize,
+				                      &paPhysHeapMemStats[i].ui64FreeSize);
+			}
+			else
+			{
+				psPhysHeap->psImplFuncs->pfnGetFactoryMemStats(psPhysHeap->pvImplData,
+				                                               &paPhysHeapMemStats[i].ui64TotalSize,
+				                                               &paPhysHeapMemStats[i].ui64FreeSize);
+			}
 
 			if (paePhysHeapID[i] == psDevNode->psDevConfig->eDefaultHeap)
 			{
 				paPhysHeapMemStats[i].ui32PhysHeapFlags |= PVRSRV_PHYS_HEAP_FLAGS_IS_DEFAULT;
 			}
+#if defined(PVRSRV_ENABLE_XD_MEM)
+			paPhysHeapMemStats[i].ui64DevicesInSPAS = PhysHeapSpasDeviceBitmap(psPhysHeap);
+#endif /* defined(PVRSRV_ENABLE_XD_MEM) */
+
+			paPhysHeapMemStats[i].ePhysHeapType = psPhysHeap->eType;
 		}
 		else
 		{
 			paPhysHeapMemStats[i].ui64TotalSize = 0;
 			paPhysHeapMemStats[i].ui64FreeSize = 0;
+			paPhysHeapMemStats[i].ePhysHeapType = PHYS_HEAP_TYPE_UNKNOWN;
 		}
 	}
 
 	return PVRSRV_OK;
-}
-
-void PhysheapGetPhysMemUsage(PHYS_HEAP *psPhysHeap, IMG_UINT64 *pui64TotalSize, IMG_UINT64 *pui64FreeSize)
-{
-	if (psPhysHeap && psPhysHeap->psImplFuncs->pfnGetPMRFactoryMemStats)
-	{
-		psPhysHeap->psImplFuncs->pfnGetPMRFactoryMemStats(psPhysHeap->pvImplData,
-				pui64TotalSize,
-				pui64FreeSize);
-	}
-	else
-	{
-		*pui64TotalSize = *pui64FreeSize = 0;
-	}
 }
 
 void PhysHeapCpuPAddrToDevPAddr(PHYS_HEAP *psPhysHeap,
@@ -1140,6 +1982,22 @@ IMG_CHAR *PhysHeapPDumpMemspaceName(PHYS_HEAP *psPhysHeap)
 	return psPhysHeap->pszPDumpMemspaceName;
 }
 
+#if !defined(PVRSRV_PHYSHEAP_DISABLE_OOM_DEMOTION)
+static inline void _LogOOMDetection(IMG_BOOL isOOMDetected, PHYS_HEAP *psPhysHeap, PVRSRV_MEMALLOCFLAGS_T uiFlags)
+{
+	IMG_BOOL bExistingVal = OSAtomicExchange(&psPhysHeap->sOOMDetected, isOOMDetected);
+	PVRSRV_PHYS_HEAP ePhysIdx = PVRSRV_GET_PHYS_HEAP_HINT(uiFlags);
+
+	if (bExistingVal != isOOMDetected)
+	{
+		PVR_LOG(("Device: %d Physheap: %s OOM: %s",
+				(psPhysHeap->psDevNode->sDevId.ui32InternalID),
+				g_asPhysHeapUsageFlagStrings[ePhysIdx-1].pszLabel,
+				(isOOMDetected) ? "Detected" : "Resolved"));
+	}
+}
+#endif
+
 PVRSRV_ERROR PhysHeapCreatePMR(PHYS_HEAP *psPhysHeap,
 							   struct _CONNECTION_DATA_ *psConnection,
 							   IMG_DEVMEM_SIZE_T uiSize,
@@ -1151,11 +2009,19 @@ PVRSRV_ERROR PhysHeapCreatePMR(PHYS_HEAP *psPhysHeap,
 							   const IMG_CHAR *pszAnnotation,
 							   IMG_PID uiPid,
 							   PMR **ppsPMRPtr,
-							   IMG_UINT32 ui32PDumpFlags)
+							   IMG_UINT32 ui32PDumpFlags,
+							   PVRSRV_MEMALLOCFLAGS_T *puiOutFlags)
 {
+	PVRSRV_ERROR eError;
 	PHEAP_IMPL_FUNCS *psImplFuncs = psPhysHeap->psImplFuncs;
-
-	return psImplFuncs->pfnCreatePMR(psPhysHeap,
+#if !defined(PVRSRV_PHYSHEAP_DISABLE_OOM_DEMOTION)
+	IMG_UINT64 uiFreeBytes;
+	PVRSRV_PHYS_HEAP eDemotionPhysIdx;
+	PVRSRV_MEMALLOCFLAGS_T uiDemotionFlags = uiFlags;
+	PVRSRV_PHYS_HEAP ePhysIdx = PVRSRV_GET_PHYS_HEAP_HINT(uiFlags);
+	PHYS_HEAP *psDemotionHeap = NULL;
+#endif
+	eError = psImplFuncs->pfnCreatePMR(psPhysHeap,
 									 psConnection,
 									 uiSize,
 									 ui32NumPhysChunks,
@@ -1167,25 +2033,127 @@ PVRSRV_ERROR PhysHeapCreatePMR(PHYS_HEAP *psPhysHeap,
 									 uiPid,
 									 ppsPMRPtr,
 									 ui32PDumpFlags);
+
+#if !defined(PVRSRV_PHYSHEAP_DISABLE_OOM_DEMOTION)
+	/* Check for OOM error, return if otherwise */
+	_LogOOMDetection(((IsOOMError(eError)) ? IMG_TRUE : IMG_FALSE), psPhysHeap, uiFlags);
+	if (eError == PVRSRV_OK)
+	{
+		if (puiOutFlags)
+		{
+			*puiOutFlags = uiFlags;
+		}
+		return eError;
+	}
+	PVR_LOG_RETURN_IF_FALSE((IsOOMError(eError)), "Failed to allocate PMR", eError);
+
+	/* Skip logic and return if mandate flag is set */
+	if (PVRSRV_CHECK_MANDATED_PHYSHEAP(uiFlags))
+	{
+		return eError;
+	}
+
+	/* Demotion only occurs on CPU_LOCAL,GPU_LOCAL,GPU_PRIVATE */
+	if (ePhysIdx > PVRSRV_PHYS_HEAP_GPU_PRIVATE)
+	{
+		return eError;
+	}
+
+	eError = PVRSRV_ERROR_OUT_OF_MEMORY;
+	for (eDemotionPhysIdx = (PVRSRV_PHYS_HEAP)(ePhysIdx-1); eDemotionPhysIdx != PVRSRV_PHYS_HEAP_DEFAULT; eDemotionPhysIdx--)
+	{
+		PVRSRV_CHANGE_PHYS_HEAP_HINT(eDemotionPhysIdx, uiDemotionFlags);
+		PVR_LOG_IF_FALSE_VA(PVR_DBG_MESSAGE, (ePhysIdx-eDemotionPhysIdx < 2), "Demoted from %s to CPU_LOCAL. "
+						"Expect Performance to be affected!", g_asPhysHeapUsageFlagStrings[ePhysIdx-1].pszLabel);
+		psDemotionHeap = _PhysHeapFindRealHeapNoFallback(eDemotionPhysIdx, psPhysHeap->psDevNode);
+
+		/* Either no alternative available, or allocation already failed on selected heap */
+		if (psDemotionHeap == NULL || psPhysHeap == psDemotionHeap)
+		{
+			continue;
+		}
+
+		if (PhysHeapFreeMemCheck(psDemotionHeap, uiSize, &uiFreeBytes) != PVRSRV_OK)
+		{
+			_LogOOMDetection(IMG_TRUE, psDemotionHeap, uiDemotionFlags);
+			continue;
+		}
+
+		psImplFuncs = psDemotionHeap->psImplFuncs;
+		eError = psImplFuncs->pfnCreatePMR(psDemotionHeap,
+						 psConnection,
+						 uiSize,
+						 ui32NumPhysChunks,
+						 ui32NumVirtChunks,
+						 pui32MappingTable,
+						 uiLog2PageSize,
+						 uiDemotionFlags,
+						 pszAnnotation,
+						 uiPid,
+						 ppsPMRPtr,
+						 ui32PDumpFlags);
+		_LogOOMDetection(((IsOOMError(eError)) ? IMG_TRUE : IMG_FALSE), psDemotionHeap, uiDemotionFlags);
+
+		if (eError == PVRSRV_OK)
+		{
+			if (puiOutFlags)
+			{
+				*puiOutFlags = uiDemotionFlags;
+			}
+			break;
+		}
+	}
+	if (eError == PVRSRV_OK)
+	{
+		/* Success demotion worked error Ok - emit warning. */
+		PVR_LOG_VA(PVR_DBG_WARNING, "PhysHeap(%s) failed to allocate PMR. Demoted to %s" ,
+						g_asPhysHeapUsageFlagStrings[ePhysIdx-1].pszLabel,
+						g_asPhysHeapUsageFlagStrings[eDemotionPhysIdx-1].pszLabel);
+	}
+	else
+	{
+		/* Unable to create PMR (Heap not found or CreatePMR failed) - emit Error */
+		PVR_LOG_VA(PVR_DBG_ERROR, "Error raised %s : Unable to %s." ,
+		                          PVRSRVGETERRORSTRING(eError),
+		                          (psDemotionHeap == NULL) ?  "find heaps for demotion" :
+		                                                      "allocate PMR via Demotion heap");
+#if defined(SUPPORT_PMR_DEFERRED_FREE)
+		{
+			PPVRSRV_DEVICE_NODE psDevNode = PhysHeapDeviceNode(psPhysHeap);
+			OSLockAcquire(psDevNode->hPMRZombieListLock);
+			PVR_LOG_VA(PVR_DBG_ERROR, "PMR Zombie Count: %u, PMR Zombie Count In Cleanup: %u",
+			                          psDevNode->uiPMRZombieCount,
+			                          psDevNode->uiPMRZombieCountInCleanup);
+			OSLockRelease(psDevNode->hPMRZombieListLock);
+		}
+#endif
+	}
+#endif
+	return eError;
 }
 
-PVRSRV_ERROR PhysHeapInit(void)
+PVRSRV_ERROR PhysHeapCreatePMB(PHYS_HEAP *psPhysHeap,
+                               IMG_DEVMEM_SIZE_T uiSize,
+                               const IMG_CHAR *pszAnnotation,
+                               PMB **ppsPMRPtr,
+                               RA_BASE_T *puiBase,
+                               RA_LENGTH_T *puiSize)
 {
-	PVRSRV_ERROR eError;
+	PHEAP_IMPL_FUNCS *psImplFuncs = psPhysHeap->psImplFuncs;
 
-	g_psPhysHeapList = NULL;
+	PVR_LOG_RETURN_IF_FALSE(
+		psPhysHeap->eType == PHYS_HEAP_TYPE_DLM,
+		"Physheap type not DLM",
+		PVRSRV_ERROR_INVALID_PARAMS);
 
-	eError = OSLockCreate(&g_hPhysHeapLock);
-	PVR_LOG_RETURN_IF_ERROR(eError, "OSLockCreate");
+	PVR_ASSERT(psImplFuncs->pfnCreatePMB);
 
-	return PVRSRV_OK;
-}
-
-void PhysHeapDeinit(void)
-{
-	PVR_ASSERT(g_psPhysHeapList == NULL);
-
-	OSLockDestroy(g_hPhysHeapLock);
+	return psImplFuncs->pfnCreatePMB(psPhysHeap,
+	                                 uiSize,
+	                                 pszAnnotation,
+	                                 ppsPMRPtr,
+	                                 puiBase,
+	                                 puiSize);
 }
 
 PPVRSRV_DEVICE_NODE PhysHeapDeviceNode(PHYS_HEAP *psPhysHeap)
@@ -1195,11 +2163,18 @@ PPVRSRV_DEVICE_NODE PhysHeapDeviceNode(PHYS_HEAP *psPhysHeap)
 	return psPhysHeap->psDevNode;
 }
 
-IMG_BOOL PhysHeapPVRLayerAcquire(PVRSRV_PHYS_HEAP ePhysHeap)
+static IMG_BOOL PhysHeapCreatedByPVRLayer(PVRSRV_PHYS_HEAP ePhysHeap)
 {
 	PVR_ASSERT(ePhysHeap < PVRSRV_PHYS_HEAP_LAST);
 
-	return gasHeapProperties[ePhysHeap].bPVRLayerAcquire;
+	return (gasHeapProperties[ePhysHeap].ePVRLayerAction != PVR_LAYER_HEAP_ACTION_IGNORE);
+}
+
+static IMG_BOOL PhysHeapAcquiredByPVRLayer(PVRSRV_PHYS_HEAP ePhysHeap)
+{
+	PVR_ASSERT(ePhysHeap < PVRSRV_PHYS_HEAP_LAST);
+
+	return (gasHeapProperties[ePhysHeap].ePVRLayerAction == PVR_LAYER_HEAP_ACTION_INITIALISE);
 }
 
 IMG_BOOL PhysHeapUserModeAlloc(PVRSRV_PHYS_HEAP ePhysHeap)
@@ -1316,3 +2291,41 @@ IMG_UINT32 PhysHeapGetPageShift(PHYS_HEAP *psPhysHeap)
 
 	return ui32PageShift;
 }
+
+PVRSRV_ERROR PhysHeapFreeMemCheck(PHYS_HEAP *psPhysHeap,
+                                  IMG_UINT64 ui64MinRequiredMem,
+                                  IMG_UINT64 *pui64FreeMem)
+{
+	IMG_UINT64 ui64TotalSize;
+	IMG_UINT64 ui64FreeSize;
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psPhysHeap != NULL, "psPhysHeap");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(pui64FreeMem != NULL, "pui64FreeMem");
+
+
+	if (psPhysHeap->eType == PHYS_HEAP_TYPE_IMA)
+	{
+		PhysHeapIMAGetMemInfo(psPhysHeap->pvImplData,
+		                            &ui64TotalSize,
+		                            &ui64FreeSize);
+	}
+	else
+	{
+		psPhysHeap->psImplFuncs->pfnGetFactoryMemStats(psPhysHeap->pvImplData,
+		                                               &ui64TotalSize,
+		                                               &ui64FreeSize);
+	}
+
+	*pui64FreeMem = ui64FreeSize;
+	if (ui64MinRequiredMem >= *pui64FreeMem)
+	{
+		eError = PVRSRV_ERROR_INSUFFICIENT_PHYS_HEAP_MEMORY;
+	}
+
+	return eError;
+}
+
+/******************************************************************************
+ End of file (physheap.c)
+******************************************************************************/

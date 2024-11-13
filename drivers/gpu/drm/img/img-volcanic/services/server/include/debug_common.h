@@ -49,7 +49,23 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 PVRSRV_ERROR DebugCommonInitDriver(void);
 void DebugCommonDeInitDriver(void);
 
+const IMG_CHAR *PVRSRVGetDebugDevStateString(PVRSRV_DEVICE_STATE eDevState);
+const IMG_CHAR *PVRSRVGetDebugHealthStatusString(PVRSRV_DEVICE_HEALTH_STATUS eHealthStatus);
+const IMG_CHAR *PVRSRVGetDebugHealthReasonString(PVRSRV_DEVICE_HEALTH_REASON eHealthReason);
+
 PVRSRV_ERROR DebugCommonInitDevice(PVRSRV_DEVICE_NODE *psDeviceNode);
 void DebugCommonDeInitDevice(PVRSRV_DEVICE_NODE *psDeviceNode);
+
+typedef struct _IMG_FLAGS2DESC_
+{
+	IMG_UINT32		uiFlag;
+	const IMG_CHAR	*pszLabel;
+} IMG_FLAGS2DESC;
+
+void DebugCommonFlagStrings(IMG_CHAR *psDesc,
+							IMG_UINT32 ui32DescSize,
+							const IMG_FLAGS2DESC *psConvTable,
+							IMG_UINT32 ui32TableSize,
+							IMG_UINT32 ui32Flags);
 
 #endif /* DEBUG_COMMON_H */

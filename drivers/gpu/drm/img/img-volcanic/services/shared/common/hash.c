@@ -696,6 +696,19 @@ HASH_Iterate(HASH_TABLE *pHash, HASH_pfnCallback pfnCallback, void* args)
 	return PVRSRV_OK;
 }
 
+/*************************************************************************/ /*!
+@Function       HASH_Count
+@Description    Retrieve the number of entries in the hash table.
+@Input          pHash        The hash table.
+@Return         The number of entries.
+*/ /**************************************************************************/
+IMG_INTERNAL IMG_UINT32
+HASH_Count(HASH_TABLE *pHash)
+{
+	return pHash->uCount;
+}
+
+
 #ifdef HASH_TRACE
 /*************************************************************************/ /*!
 @Function       HASH_Dump

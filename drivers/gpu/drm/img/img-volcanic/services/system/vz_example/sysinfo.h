@@ -49,6 +49,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define DEVICES_WATCHDOG_POWER_ON_SLEEP_TIMEOUT  (10000)
 #define DEVICES_WATCHDOG_POWER_OFF_SLEEP_TIMEOUT (3600000)
 #define WAIT_TRY_COUNT                           (10000)
+#define EVENT_OBJECT_TIMEOUT_US                  (100000)
 
 #if defined(__linux__)
 #define SYS_RGX_DEV_NAME                         "powervr-vz-example"

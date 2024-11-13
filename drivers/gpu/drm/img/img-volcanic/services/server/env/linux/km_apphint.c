@@ -46,7 +46,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <linux/moduleparam.h>
 #include <linux/workqueue.h>
 #include <linux/string.h>
-//#include <stdbool.h>
 
 /* Common and SO layer */
 #include "img_defs.h"
@@ -93,8 +92,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * function. And less than 1024 to keep the stack frame size within bounds.
  */
 #define APPHINT_BUFFER_SIZE 512
-
-#define APPHINT_DEVICES_MAX 16
 
 /* Apphint Debug output level */
 #define APPHINT_DPF_LEVEL PVR_DBG_VERBOSE
@@ -304,22 +301,22 @@ static const struct apphint_class_state class_state[] = {
 static struct apphint_state
 {
 	struct workqueue_struct *workqueue;
-	DI_GROUP *debuginfo_device_rootdir[APPHINT_DEVICES_MAX];
-	DI_ENTRY *debuginfo_device_entry[APPHINT_DEVICES_MAX][APPHINT_DEBUGINFO_DEVICE_ID_MAX];
+	DI_GROUP *debuginfo_device_rootdir[PVRSRV_MAX_DEVICES];
+	DI_ENTRY *debuginfo_device_entry[PVRSRV_MAX_DEVICES][APPHINT_DEBUGINFO_DEVICE_ID_MAX];
 	DI_GROUP *debuginfo_rootdir;
 	DI_ENTRY *debuginfo_entry[APPHINT_DEBUGINFO_ID_MAX];
 	DI_GROUP *buildvar_rootdir;
 	DI_ENTRY *buildvar_entry[APPHINT_BUILDVAR_ID_MAX];
 
 	unsigned int num_devices;
-	PVRSRV_DEVICE_NODE *devices[APPHINT_DEVICES_MAX];
+	PVRSRV_DEVICE_NODE *devices[PVRSRV_MAX_DEVICES];
 	unsigned int initialized;
 
 	/* Array contains value space for 1 copy of all apphint values defined
 	 * (for device 1) and N copies of device specific apphint values for
 	 * multi-device platforms.
 	 */
-	struct apphint_action val[APPHINT_ID_MAX + ((APPHINT_DEVICES_MAX-1)*APPHINT_DEBUGINFO_DEVICE_ID_MAX)];
+	struct apphint_action val[APPHINT_ID_MAX + ((PVRSRV_MAX_DEVICES-1)*APPHINT_DEBUGINFO_DEVICE_ID_MAX)];
 
 } apphint = {
 /* statically initialise default values to ensure that any module_params
@@ -385,11 +382,11 @@ get_value_offset_from_device(const PVRSRV_DEVICE_NODE * const device,
 		return;
 	}
 
-	for (i = 0; device && i < APPHINT_DEVICES_MAX; i++) {
+	for (i = 0; device && i < PVRSRV_MAX_DEVICES; i++) {
 		if (apphint.devices[i] == device)
 			break;
 	}
-	if (APPHINT_DEVICES_MAX == i) {
+	if (PVRSRV_MAX_DEVICES == i) {
 		PVR_DPF((PVR_DBG_WARNING, "%s: Unregistered device", __func__));
 		i = 0;
 	}
@@ -638,7 +635,7 @@ static int apphint_read(char *buffer, size_t count, APPHINT_ID ue,
 			goto err_exit;
 		}
 
-		OSStringLCopy(value->STRING, string, len);
+		OSStringSafeCopy(value->STRING, string, len);
 		break;
 	}
 	default:
@@ -685,6 +682,9 @@ static PVRSRV_ERROR get_apphint_value_from_action(const struct apphint_action * 
 		}
 	} else {
 		if (action->device == APPHINT_OF_DRIVER_NO_DEVICE) {
+			if (psDevNode != action->device) {
+				return PVRSRV_ERROR_INVALID_DEVICE;
+			}
 			psDevice = psDevNode;
 		} else {
 			psDevice = action->device;
@@ -734,7 +734,7 @@ static PVRSRV_ERROR get_apphint_value_from_action(const struct apphint_action * 
 	return result;
 }
 
-/**
+/*
  * apphint_write - write the current AppHint data to a buffer
  *
  * Returns length written or -errno
@@ -844,7 +844,7 @@ err_exit:
 *******************************************************************************
  Module parameters initialization - different from debuginfo
 ******************************************************************************/
-/**
+/*
  * apphint_kparam_set - Handle an update of a module parameter
  *
  * Returns 0, or -errno.  arg is in kp->arg.
@@ -854,28 +854,36 @@ static int apphint_kparam_set(const char *val, const struct kernel_param *kp)
 	char val_copy[APPHINT_BUFFER_SIZE];
 	APPHINT_ID id;
 	union apphint_value value;
-	int result;
+	ssize_t result = OSStringSafeCopy(val_copy, val, APPHINT_BUFFER_SIZE);
 
-	/* need to discard const in case of string comparison */
-	result = strlcpy(val_copy, val, APPHINT_BUFFER_SIZE);
+	/* Document the assumption - we can safely store the result of
+	 * apphint_read() in a ssize_t variable, no need for a separate one */
+#ifndef SSIZE_MAX
+#define SSIZE_MAX ((~(size_t)0) >> 1)
+#endif
+	BUILD_BUG_ON(INT_MAX > SSIZE_MAX);
+
+	if (result < 0) {
+		PVR_DPF((PVR_DBG_ERROR, "%s: String too long", __func__));
+		return (int)result;
+	}
 
 	get_apphint_id_from_action_addr(kp->arg, &id);
-	if (result < APPHINT_BUFFER_SIZE) {
-		result = apphint_read(val_copy, result, id, &value);
-		if (result >= 0) {
-			((struct apphint_action *)kp->arg)->stored = value;
-			((struct apphint_action *)kp->arg)->initialised = true;
-			if (param_lookup[id].data_type == APPHINT_DATA_TYPE_STRING) {
-				((struct apphint_action *)kp->arg)->free = true;
-			}
-		}
-	} else {
-		PVR_DPF((PVR_DBG_ERROR, "%s: String too long", __func__));
+	result = apphint_read(val_copy, result, id, &value);
+	if (result < 0) {
+		return (int)result;
 	}
-	return (result > 0) ? 0 : result;
+
+	((struct apphint_action *)kp->arg)->stored = value;
+	((struct apphint_action *)kp->arg)->initialised = true;
+	if (param_lookup[id].data_type == APPHINT_DATA_TYPE_STRING) {
+		((struct apphint_action *)kp->arg)->free = true;
+	}
+
+	return 0;
 }
 
-/**
+/*
  * apphint_kparam_get - handle a read of a module parameter
  *
  * Returns length written or -errno.  Buffer is 4k (ie. be short!)
@@ -932,7 +940,7 @@ static void *apphint_di_next(OSDI_IMPL_ENTRY *s, void *v, IMG_UINT64 *pos)
 {
 	PVR_UNREFERENCED_PARAMETER(s);
 	PVR_UNREFERENCED_PARAMETER(v);
-	PVR_UNREFERENCED_PARAMETER(pos);
+	(*pos)++;
 	return NULL;
 }
 
@@ -964,7 +972,7 @@ static int apphint_di_show(OSDI_IMPL_ENTRY *s, void *v)
  Debug Info supporting functions
 ******************************************************************************/
 
-/**
+/*
  * apphint_set - Handle a DI value update
  */
 static IMG_INT64 apphint_set(const IMG_CHAR *buffer, IMG_UINT64 count,
@@ -1003,7 +1011,7 @@ err_exit:
 	return result;
 }
 
-/**
+/*
  * apphint_debuginfo_init - Create the specified debuginfo entries
  */
 static int apphint_debuginfo_init(const char *sub_dir,
@@ -1022,8 +1030,9 @@ static int apphint_debuginfo_init(const char *sub_dir,
 		.pfnNext  = apphint_di_next,  .pfnShow = apphint_di_show,
 		.pfnWrite = apphint_set,      .ui32WriteLenMax = APPHINT_BUFFER_SIZE
 	};
+
 	/* Determine if we're booted as a GUEST VZ OS */
-	IMG_BOOL bIsGUEST = PVRSRV_VZ_MODE_IS(GUEST);
+	IMG_BOOL bIsGUEST = PVRSRV_VZ_MODE_IS(GUEST, DEVID, device_num);
 
 	if (*rootdir) {
 		PVR_DPF((PVR_DBG_WARNING,
@@ -1070,7 +1079,7 @@ err_exit:
 	return result;
 }
 
-/**
+/*
  * apphint_debuginfo_deinit- destroy the debuginfo entries
  */
 static void apphint_debuginfo_deinit(unsigned int num_entries,
@@ -1184,7 +1193,7 @@ static void apphint_dump_values(const char *group_name,
 	}
 }
 
-/**
+/*
  * Callback for debug dump
  */
 static void apphint_dump_state(PVRSRV_DBGREQ_HANDLE hDebugRequestHandle,
@@ -1211,7 +1220,7 @@ static void apphint_dump_state(PVRSRV_DBGREQ_HANDLE hDebugRequestHandle,
 			init_data_debuginfo, ARRAY_SIZE(init_data_debuginfo),
 			pfnDumpDebugPrintf, pvDumpDebugFile, false, device);
 
-		for (i = 0; i < APPHINT_DEVICES_MAX; i++) {
+		for (i = 0; i < PVRSRV_MAX_DEVICES; i++) {
 			if (!apphint.devices[i]
 			    || (device && device != apphint.devices[i]))
 				continue;
@@ -1246,7 +1255,7 @@ int pvr_apphint_init(void)
 		goto err_out;
 	}
 
-	for (i = 0; i < APPHINT_DEVICES_MAX; i++)
+	for (i = 0; i < PVRSRV_MAX_DEVICES; i++)
 		apphint.devices[i] = NULL;
 
 	/* create workqueue with strict execution ordering to ensure no
@@ -1288,7 +1297,7 @@ int pvr_apphint_device_register(PVRSRV_DEVICE_NODE *device)
 		goto err_out;
 	}
 
-	if (apphint.num_devices+1 > APPHINT_DEVICES_MAX) {
+	if (apphint.num_devices+1 > PVRSRV_MAX_DEVICES) {
 		result = -EMFILE;
 		goto err_out;
 	}
@@ -1317,16 +1326,16 @@ int pvr_apphint_device_register(PVRSRV_DEVICE_NODE *device)
 		}
 	}
 
-	result = apphint_debuginfo_init("apphint", apphint.num_devices,
+	result = apphint_debuginfo_init("apphint", device->sDevId.ui32InternalID,
 	                              ARRAY_SIZE(init_data_debuginfo_device),
 	                              init_data_debuginfo_device,
 	                              device->sDebugInfo.psGroup,
-	                              &apphint.debuginfo_device_rootdir[apphint.num_devices],
-	                              apphint.debuginfo_device_entry[apphint.num_devices]);
+	                              &apphint.debuginfo_device_rootdir[device->sDevId.ui32InternalID],
+	                              apphint.debuginfo_device_entry[device->sDevId.ui32InternalID]);
 	if (0 != result)
 		goto err_out;
 
-	apphint.devices[apphint.num_devices] = device;
+	apphint.devices[device->sDevId.ui32InternalID] = device;
 	apphint.num_devices++;
 
 	(void)SOPvrDbgRequestNotifyRegister(
@@ -1348,12 +1357,12 @@ void pvr_apphint_device_unregister(PVRSRV_DEVICE_NODE *device)
 		return;
 
 	/* find the device */
-	for (i = 0; i < APPHINT_DEVICES_MAX; i++) {
+	for (i = 0; i < PVRSRV_MAX_DEVICES; i++) {
 		if (apphint.devices[i] == device)
 			break;
 	}
 
-	if (APPHINT_DEVICES_MAX == i)
+	if (PVRSRV_MAX_DEVICES == i)
 		return;
 
 	if (device->hAppHintDbgReqNotify) {
@@ -1380,7 +1389,7 @@ void pvr_apphint_deinit(void)
 		return;
 
 	/* remove any remaining device data */
-	for (i = 0; apphint.num_devices && i < APPHINT_DEVICES_MAX; i++) {
+	for (i = 0; apphint.num_devices && i < PVRSRV_MAX_DEVICES; i++) {
 		if (apphint.devices[i])
 			pvr_apphint_device_unregister(apphint.devices[i]);
 	}
@@ -1492,13 +1501,13 @@ int pvr_apphint_get_string(PVRSRV_DEVICE_NODE *device, APPHINT_ID ue, IMG_CHAR *
 	if (ue < APPHINT_ID_MAX && apphint.val[ue].stored.STRING) {
 		if ((int)ue > APPHINT_DEBUGINFO_DEVICE_ID_OFFSET) // From this point, we're in the device apphints
 		{
-			if (OSStringLCopy(pBuffer, apphint.val[ue + device_offset].stored.STRING, size) < size) {
+			if (OSStringSafeCopy(pBuffer, apphint.val[ue + device_offset].stored.STRING, size) >= 0) {
 				error = 0;
 			}
 		}
 		else
 		{
-			if (OSStringLCopy(pBuffer, apphint.val[ue].stored.STRING, size) < size) {
+			if (OSStringSafeCopy(pBuffer, apphint.val[ue].stored.STRING, size) >= 0) {
 				error = 0;
 			}
 		}
@@ -1585,10 +1594,8 @@ int pvr_apphint_set_string(PVRSRV_DEVICE_NODE *device, APPHINT_ID ue, IMG_CHAR *
 			error = apphint.val[ue + device_offset].set.STRING(apphint.val[ue + device_offset].device,
 															 apphint.val[ue + device_offset].private_data,
 															 pBuffer);
-		} else {
-			if (strlcpy(apphint.val[ue + device_offset].stored.STRING, pBuffer, size) < size) {
-				error = 0;
-			}
+		} else if (OSStringSafeCopy(apphint.val[ue + device_offset].stored.STRING, pBuffer, size) >= 0) {
+			error = 0;
 		}
 		apphint.val[ue].device = device;
 	}

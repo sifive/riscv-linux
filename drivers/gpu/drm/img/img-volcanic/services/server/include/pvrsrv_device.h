@@ -46,7 +46,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "physheap_config.h"
 #include "pvrsrv_error.h"
 #include "pvrsrv_memalloc_physheap.h"
-#include "pvrsrv_firmware_boot.h"
+#include "rgx_firmware_boot.h"
 #include "rgx_fwif_km.h"
 #include "servicesext.h"
 #include "cache_ops.h"
@@ -66,9 +66,10 @@ typedef enum _DRIVER_MODE_
 /* Do not use these enumerations directly, to query the
    current driver mode, use the PVRSRV_VZ_MODE_IS()
    macro */
-	DRIVER_MODE_NATIVE	= -1,
-	DRIVER_MODE_HOST	=  0,
-	DRIVER_MODE_GUEST
+	DRIVER_MODE_NATIVE	= 0,
+	DRIVER_MODE_HOST	= 1,
+	DRIVER_MODE_GUEST	= 2,
+	DRIVER_MODE_DEFAULT	= 3,
 } PVRSRV_DRIVER_MODE;
 
 typedef enum
@@ -170,18 +171,24 @@ typedef void
 							   IMG_BOOL);
 
 
-#if defined(SUPPORT_TRUSTED_DEVICE)
-
-typedef struct _PVRSRV_TD_FW_PARAMS_
+typedef struct _PVRSRV_FW_PARAMS_
 {
 	const void *pvFirmware;
 	IMG_UINT32 ui32FirmwareSize;
+	const void *pvSignature;
+	IMG_UINT32 ui32SignatureSize;
 	PVRSRV_FW_BOOT_PARAMS uFWP;
-} PVRSRV_TD_FW_PARAMS;
+} PVRSRV_FW_PARAMS;
+
+typedef PVRSRV_ERROR
+(*PFN_PREPARE_FW_IMAGE)(IMG_HANDLE hSysData,
+						PVRSRV_FW_PARAMS *psFWParams);
+
+#if defined(SUPPORT_TRUSTED_DEVICE)
 
 typedef PVRSRV_ERROR
 (*PFN_TD_SEND_FW_IMAGE)(IMG_HANDLE hSysData,
-						PVRSRV_TD_FW_PARAMS *psTDFWParams);
+						PVRSRV_FW_PARAMS *psTDFWParams);
 
 typedef struct _PVRSRV_TD_POWER_PARAMS_
 {
@@ -207,7 +214,9 @@ typedef PVRSRV_ERROR
 #endif /* defined(SUPPORT_TRUSTED_DEVICE) */
 
 #if defined(SUPPORT_GPUVIRT_VALIDATION)
-typedef void (*PFN_SYS_DEV_VIRT_INIT)(IMG_UINT64[GPUVIRT_VALIDATION_NUM_REGIONS][GPUVIRT_VALIDATION_NUM_OS], IMG_UINT64[GPUVIRT_VALIDATION_NUM_REGIONS][GPUVIRT_VALIDATION_NUM_OS]);
+typedef void (*PFN_SYS_INIT_FIREWALL)(IMG_HANDLE hSysData,
+                                      IMG_UINT64[GPUVIRT_VALIDATION_NUM_REGIONS][GPUVIRT_VALIDATION_NUM_OS],
+                                      IMG_UINT64[GPUVIRT_VALIDATION_NUM_REGIONS][GPUVIRT_VALIDATION_NUM_OS]);
 #endif /* defined(SUPPORT_GPUVIRT_VALIDATION) */
 
 typedef struct _PVRSRV_ROBUSTNESS_ERR_DATA_HOST_WDG_
@@ -307,17 +316,19 @@ struct _PVRSRV_DEVICE_CONFIG_
 #endif
 
 	/*!
-	 *! Callback to handle memory budgeting. Can be used to reject allocations
-	 *! over a certain size (optional).
-	 */
-	PFN_SYS_DEV_CHECK_MEM_ALLOC_SIZE pfnCheckMemAllocSize;
-
-	/*!
 	 *! Callback to perform host CPU cache maintenance. Might be needed for
 	 *! architectures which allow extensions such as RISC-V (optional).
 	 */
 	PFN_SYS_DEV_HOST_CACHE_MAINTENANCE pfnHostCacheMaintenance;
 	IMG_BOOL bHasPhysicalCacheMaintenance;
+
+	/*!
+	 *! Callback to prepare FW image after it has been loaded.  This may
+	 *! be used to separate a signature/header from the firmware proper,
+	 *! potentially modifying pvFirmware and ui32FirmwareSize to point to the
+	 *! actual firmware to be loaded.
+	 */
+	PFN_PREPARE_FW_IMAGE pfnPrepareFWImage;
 
 #if defined(SUPPORT_TRUSTED_DEVICE)
 	/*!
@@ -360,13 +371,13 @@ struct _PVRSRV_DEVICE_CONFIG_
 	 */
 	IMG_BOOL bDevicePA0IsValid;
 
-	/*!
-	 *! Function to initialize System-specific virtualization. If not supported
-	 *! this should be a NULL reference. Only present if
-	 *! SUPPORT_GPUVIRT_VALIDATION is defined.
-	 */
 #if defined(SUPPORT_GPUVIRT_VALIDATION)
-	PFN_SYS_DEV_VIRT_INIT		pfnSysDevVirtInit;
+	/*!
+	 *! System-specific function to initialise firewall mechanism needed to
+	 *! validate the correctness of memory accesses tagged with OSIDs.
+	 *! Used for hardware validation of virtualization features only.
+	 */
+	PFN_SYS_INIT_FIREWALL		pfnSysInitFirewall;
 #endif
 
 	/*!
@@ -403,16 +414,21 @@ struct _PVRSRV_DEVICE_CONFIG_
 	IMG_BOOL bHasDma;
 
 	/*!
-	 *!  Device clock&reset
+	 *!  ES770x clk&reset required
 	 */
-	struct clk *aclk;
-	struct clk *gray_clk;
-	struct clk *cfg_clk;
-	struct reset_control	*rstc_axi;
-	struct reset_control	*rstc_cfg;
-	struct reset_control	*rstc_gray;
-	struct reset_control	*rstc_jones;
-	struct reset_control	*rstc_spu;
+    struct clk *aclk;
+    struct clk *gray_clk;
+    struct clk *cfg_clk;
+    struct reset_control    *rstc_axi;
+    struct reset_control    *rstc_cfg;
+    struct reset_control    *rstc_gray;
+    struct reset_control    *rstc_jones;
+    struct reset_control    *rstc_spu;
+
+	/*!
+	 *!  DriverMode required
+	 */
+	PVRSRV_DRIVER_MODE eDriverMode;
 };
 
 #endif /* PVRSRV_DEVICE_H*/

@@ -46,16 +46,30 @@
 
 struct file;
 
-/* Functions provided by pvr_sync_ioctl_common */
+/* Functions provided by pvr_sync_ioctl_common.c */
 
 int pvr_sync_open_common(void *connection_data, void *file_handle);
 int pvr_sync_close_common(void *connection_data);
-int pvr_sync_ioctl_common(struct file *file, unsigned int cmd, void *arg);
 void *pvr_sync_get_api_priv_common(struct file *file);
+
+#if defined(USE_PVRSYNC_DEVNODE)
+#define PVR_SYNC_IOCTL_DISPATCH_DECL(name) \
+	int pvr_sync_ioctl_common_ ## name(struct file *file, void __user *user_data)
+#else /* defined(USE_PVRSYNC_DEVNODE) */
+#define PVR_SYNC_IOCTL_DISPATCH_DECL(name) \
+	int pvr_sync_ioctl_common_ ## name(struct file *file, void *user_data)
+#endif /* defined(USE_PVRSYNC_DEVNODE) */
+
+PVR_SYNC_IOCTL_DISPATCH_DECL(rename);
+PVR_SYNC_IOCTL_DISPATCH_DECL(force_sw_only);
+PVR_SYNC_IOCTL_DISPATCH_DECL(force_exp_only);
+PVR_SYNC_IOCTL_DISPATCH_DECL(sw_create_fence);
+PVR_SYNC_IOCTL_DISPATCH_DECL(create_export_fence);
+PVR_SYNC_IOCTL_DISPATCH_DECL(sw_inc);
 
 struct pvr_sync_file_data;
 
-/* Functions required by pvr_sync_ioctl_common */
+/* Functions required by pvr_sync_ioctl_common.c */
 
 bool pvr_sync_set_private_data(void *connection_data,
 			       struct pvr_sync_file_data *fdata);

@@ -68,12 +68,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 /* Bridge in structure for RGXSetBreakpoint */
 typedef struct PVRSRV_BRIDGE_IN_RGXSETBREAKPOINT_TAG
 {
+	IMG_UINT64 ui64TempSpillingAddr;
 	IMG_HANDLE hPrivData;
 	IMG_UINT32 eFWDataMaster;
 	IMG_UINT32 ui32BreakpointAddr;
 	IMG_UINT32 ui32DM;
 	IMG_UINT32 ui32HandlerAddr;
-	IMG_UINT32 ui32TempSpillingAddr;
 } __packed PVRSRV_BRIDGE_IN_RGXSETBREAKPOINT;
 
 /* Bridge out structure for RGXSetBreakpoint */

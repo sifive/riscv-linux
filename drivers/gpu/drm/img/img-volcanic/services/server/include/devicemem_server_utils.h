@@ -47,8 +47,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvrsrv_memallocflags.h"
 #include "pvrsrv.h"
 
-static INLINE PVRSRV_ERROR DevmemCPUCacheMode(PVRSRV_DEVICE_NODE *psDeviceNode,
-											  PVRSRV_MEMALLOCFLAGS_T ulFlags,
+static INLINE PVRSRV_ERROR DevmemCPUCacheMode(PVRSRV_MEMALLOCFLAGS_T ulFlags,
 											  IMG_UINT32 *pui32Ret)
 {
 	IMG_UINT32 ui32CPUCacheMode = PVRSRV_CPU_CACHE_MODE(ulFlags);
@@ -79,8 +78,7 @@ static INLINE PVRSRV_ERROR DevmemCPUCacheMode(PVRSRV_DEVICE_NODE *psDeviceNode,
 			 * This avoids errors on arm64 when uncached is turned into ordered device memory
 			 * and suffers from problems with unaligned access.
 			 */
-			if ( (PVRSRV_GPU_CACHE_MODE(ulFlags) == PVRSRV_MEMALLOCFLAG_GPU_CACHE_COHERENT) &&
-				!(PVRSRVSystemSnoopingOfCPUCache(psDeviceNode->psDevConfig) && PVRSRVSystemSnoopingOfDeviceCache(psDeviceNode->psDevConfig)) )
+			if (PVRSRV_GPU_CACHE_MODE(ulFlags) == PVRSRV_MEMALLOCFLAG_GPU_CACHE_COHERENT)
 			{
 				ui32Ret = PVRSRV_MEMALLOCFLAG_CPU_UNCACHED_WC;
 			}
@@ -107,8 +105,7 @@ static INLINE PVRSRV_ERROR DevmemCPUCacheMode(PVRSRV_DEVICE_NODE *psDeviceNode,
 	return eError;
 }
 
-static INLINE PVRSRV_ERROR DevmemDeviceCacheMode(PVRSRV_DEVICE_NODE *psDeviceNode,
-												 PVRSRV_MEMALLOCFLAGS_T ulFlags,
+static INLINE PVRSRV_ERROR DevmemDeviceCacheMode(PVRSRV_MEMALLOCFLAGS_T ulFlags,
 												 IMG_UINT32 *pui32Ret)
 {
 	IMG_UINT32 ui32DeviceCacheMode = PVRSRV_GPU_CACHE_MODE(ulFlags);
@@ -139,8 +136,7 @@ static INLINE PVRSRV_ERROR DevmemDeviceCacheMode(PVRSRV_DEVICE_NODE *psDeviceNod
 			 * This avoids errors on arm64 when uncached is turned into ordered device memory
 			 * and suffers from problems with unaligned access.
 			 */
-			if ( (PVRSRV_CPU_CACHE_MODE(ulFlags) == PVRSRV_MEMALLOCFLAG_CPU_CACHE_COHERENT) &&
-				!(PVRSRVSystemSnoopingOfCPUCache(psDeviceNode->psDevConfig) && PVRSRVSystemSnoopingOfDeviceCache(psDeviceNode->psDevConfig)) )
+			if (PVRSRV_CPU_CACHE_MODE(ulFlags) == PVRSRV_MEMALLOCFLAG_CPU_CACHE_COHERENT)
 			{
 				ui32Ret = PVRSRV_MEMALLOCFLAG_GPU_UNCACHED_WC;
 			}
@@ -165,21 +161,6 @@ static INLINE PVRSRV_ERROR DevmemDeviceCacheMode(PVRSRV_DEVICE_NODE *psDeviceNod
 	*pui32Ret = ui32Ret;
 
 	return eError;
-}
-
-static INLINE IMG_BOOL DevmemCPUCacheCoherency(PVRSRV_DEVICE_NODE *psDeviceNode,
-											   PVRSRV_MEMALLOCFLAGS_T ulFlags)
-{
-	IMG_UINT32 ui32CPUCacheMode = PVRSRV_CPU_CACHE_MODE(ulFlags);
-	IMG_BOOL bRet = IMG_FALSE;
-
-	PVR_ASSERT(ui32CPUCacheMode == PVRSRV_CPU_CACHE_MODE(ulFlags));
-
-	if (ui32CPUCacheMode == PVRSRV_MEMALLOCFLAG_CPU_CACHE_COHERENT)
-	{
-		bRet = PVRSRVSystemSnoopingOfDeviceCache(psDeviceNode->psDevConfig);
-	}
-	return bRet;
 }
 
 static INLINE IMG_BOOL DevmemDeviceCacheCoherency(PVRSRV_DEVICE_NODE *psDeviceNode,

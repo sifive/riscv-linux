@@ -139,14 +139,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGXMIPSFW_REMAP_RANGE_ADDR_OUT_ALIGNSHIFT (12)
 #define RGXMIPSFW_ADDR_TO_RR_ADDR_OUT_RSHIFT     (RGXMIPSFW_REMAP_RANGE_ADDR_OUT_ALIGNSHIFT - \
                                                   RGXMIPSFW_REMAP_RANGE_ADDR_OUT_SHIFT)
-
-#if defined(SECURE_FW_CODE_OSID) && (SECURE_FW_CODE_OSID + 1 > 2)
-#define MIPS_FW_CODE_OSID                        (SECURE_FW_CODE_OSID)
-#elif defined(SECURE_FW_CODE_OSID)
-#define MIPS_FW_CODE_OSID                        (1U)
-#endif
-
-
 /*
  * Pages to trampoline problematic physical addresses:
  *   - RGXMIPSFW_BOOT_REMAP_PHYS_ADDR_IN : 0x1FC0_0000
@@ -167,7 +159,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #define RGXMIPSFW_SENSITIVE_ADDR(a)              (RGXMIPSFW_BOOT_REMAP_PHYS_ADDR_IN == (~((1UL << RGXMIPSFW_TRAMPOLINE_LOG2_SEGMENT_SIZE)-1U) & a))
 
-#if defined(ENABLE_SECURE_MIPS_DEBUG_WA)
 #define RGXMIPSFW_C0_PAGEMASK_4K                 (0x00001800)
 #define RGXMIPSFW_C0_PAGEMASK_16K                (0x00007800)
 #define RGXMIPSFW_C0_PAGEMASK_64K                (0x0001F800)
@@ -184,22 +175,20 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGXMIPSFW_C0_PAGEMASK_REGISTERS                    (RGXMIPSFW_C0_PAGEMASK_4MB)
 #define RGXMIPSFW_REGISTERS_PAGE_SIZE                      (RGXMIPSFW_PAGE_SIZE_4MB)
 #define RGXMIPSFW_REGISTERS_REMAP_RANGE_CONFIG_REGION_SIZE (RGX_CR_MIPS_ADDR_REMAP_RANGE_CONFIG_REGION_SIZE_4MB)
-#elif (RGX_NUM_OS_SUPPORTED == 1)
+#elif (RGX_NUM_DRIVERS_SUPPORTED == 1)
 #define RGXMIPSFW_C0_PAGEMASK_REGISTERS                    (RGXMIPSFW_C0_PAGEMASK_64K)
 #define RGXMIPSFW_REGISTERS_PAGE_SIZE                      (RGXMIPSFW_PAGE_SIZE_64K)
 #define RGXMIPSFW_REGISTERS_REMAP_RANGE_CONFIG_REGION_SIZE (RGX_CR_MIPS_ADDR_REMAP_RANGE_CONFIG_REGION_SIZE_64KB)
-#elif (RGX_NUM_OS_SUPPORTED <= 4)
+#elif (RGX_NUM_DRIVERS_SUPPORTED <= 4)
 #define RGXMIPSFW_C0_PAGEMASK_REGISTERS                    (RGXMIPSFW_C0_PAGEMASK_256K)
 #define RGXMIPSFW_REGISTERS_PAGE_SIZE                      (RGXMIPSFW_PAGE_SIZE_256K)
 #define RGXMIPSFW_REGISTERS_REMAP_RANGE_CONFIG_REGION_SIZE (RGX_CR_MIPS_ADDR_REMAP_RANGE_CONFIG_REGION_SIZE_256KB)
-#elif (RGX_NUM_OS_SUPPORTED <= 8)
+#elif (RGX_NUM_DRIVERS_SUPPORTED <= 8)
 #define RGXMIPSFW_C0_PAGEMASK_REGISTERS                    (RGXMIPSFW_C0_PAGEMASK_1MB)
 #define RGXMIPSFW_REGISTERS_PAGE_SIZE                      (RGXMIPSFW_PAGE_SIZE_1MB)
 #define RGXMIPSFW_REGISTERS_REMAP_RANGE_CONFIG_REGION_SIZE (RGX_CR_MIPS_ADDR_REMAP_RANGE_CONFIG_REGION_SIZE_1MB)
 #else
 #error "MIPS TLB invalid params"
-#endif
-
 #endif
 
 #define RGXMIPSFW_DECODE_REMAP_CONFIG_REGION_SIZE(r)       ((1U << (((r >> 7) + 1U) << 1U))*0x400)
@@ -245,8 +234,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /* Offset inside the bootloader data page where the general_exception handler saves the error state.
  * The error value is then copied by the NMI handler to the MipsState struct in shared memory.
- * This is done because it's difficult to obain the address of MipsState inside the general exception
- * handler. */
+ * This is done because it's difficult to obtain the address of MipsState inside the general
+ * exception handler. */
 #define RGXMIPSFW_ERROR_STATE_BASE                        (0x100)
 
 /*
@@ -255,19 +244,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 /* Bootloader configuration offset (where RGXMIPSFW_BOOT_DATA lives)
  * within the bootloader/NMI data page */
 #define RGXMIPSFW_BOOTLDR_CONF_OFFSET                         (0x0U)
-
-
-/*
- * NMI shared data
- */
-/* Base address of the shared data within the bootloader/NMI data page */
-#define RGXMIPSFW_NMI_SHARED_DATA_BASE                        (0x100)
-/* Size used by Debug dump data */
-#define RGXMIPSFW_NMI_SHARED_SIZE                             (0x2B0)
-/* Offsets in the NMI shared area in 32-bit words */
-#define RGXMIPSFW_NMI_SYNC_FLAG_OFFSET                        (0x0)
-#define RGXMIPSFW_NMI_STATE_OFFSET                            (0x1)
-#define RGXMIPSFW_NMI_ERROR_STATE_SET                         (0x1)
 
 /*
  * MIPS boot stage
@@ -398,9 +374,7 @@ typedef struct {
 
 typedef struct {
 	IMG_UINT32 ui32ErrorState; /* This must come first in the structure */
-#if defined(ENABLE_SECURE_MIPS_DEBUG_WA)
 	IMG_UINT32 ui32Sync;
-#endif
 	IMG_UINT32 ui32ErrorEPC;
 	IMG_UINT32 ui32StatusRegister;
 	IMG_UINT32 ui32CauseRegister;
@@ -412,24 +386,18 @@ typedef struct {
 	IMG_UINT32 ui32BadInstr;
 	IMG_UINT32 ui32UnmappedAddress;
 	RGX_MIPS_TLB_ENTRY asTLB[RGXMIPSFW_NUMBER_OF_TLB_ENTRIES];
-#if defined(ENABLE_SECURE_MIPS_DEBUG_WA)
 	IMG_UINT64 aui64Remap[RGXMIPSFW_NUMBER_OF_REMAP_ENTRIES];
-#else
-	RGX_MIPS_REMAP_ENTRY asRemap[RGXMIPSFW_NUMBER_OF_REMAP_ENTRIES];
-#endif
 } RGX_MIPS_STATE;
 
 static_assert(offsetof(RGX_MIPS_STATE, ui32ErrorState) == 0,
 				"ui32ErrorState is not the first member of the RGX_MIPS_STATE struct");
 
-#if defined(ENABLE_SECURE_MIPS_DEBUG_WA)
 #if defined(SUPPORT_MIPS_64K_PAGE_SIZE)
 static_assert(RGXMIPSFW_REGISTERS_PAGE_SIZE >= RGXMIPSFW_PAGE_SIZE_64K,
 				"Register page size must be greater or equal to MIPS page size");
 #else
 static_assert(RGXMIPSFW_REGISTERS_PAGE_SIZE >= RGXMIPSFW_PAGE_SIZE_4K,
 				"Register page size must be greater or equal to MIPS page size");
-#endif
 #endif
 
 

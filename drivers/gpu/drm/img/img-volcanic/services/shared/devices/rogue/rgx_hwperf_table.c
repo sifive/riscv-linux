@@ -83,15 +83,12 @@ static bool rgxfw_hwperf_pow_st_direct(RGX_HWPERF_CNTBLK_ID eBlkType, IMG_UINT8 
 	PVR_UNREFERENCED_PARAMETER(eBlkType);
 	PVR_UNREFERENCED_PARAMETER(ui8UnitId);
 
-#if defined(RGX_FEATURE_S7_TOP_INFRASTRUCTURE)
-	/* S7XT: JONES */
-	return (eBlkType == RGX_CNTBLK_ID_JONES);
-#elif defined(RGX_FEATURE_XT_TOP_INFRASTRUCTURE)
+#if defined(RGX_FEATURE_XT_TOP_INFRASTRUCTURE)
 	/* S6XT: TA, TORNADO */
 	return true;
 #else
 	/* S6  : TA, HUB, RASTER (RASCAL) */
-	return (gsPowCtl.eUnitsPowState & RGXFW_POW_ST_RD_ON) != 0U;
+	return rgxfw_pow_is_rd_on();
 #endif
 }
 
@@ -102,8 +99,7 @@ static bool rgxfw_hwperf_pow_st_indirect(RGX_HWPERF_CNTBLK_ID eBlkType, IMG_UINT
 {
 	IMG_UINT32 ui32NumDustsEnabled = rgxfw_pow_get_enabled_units();
 
-	if (((gsPowCtl.eUnitsPowState & RGXFW_POW_ST_RD_ON) != 0U) &&
-			(ui32NumDustsEnabled > 0U))
+	if (rgxfw_pow_is_rd_on() && (ui32NumDustsEnabled > 0U))
 	{
 #if defined(RGX_FEATURE_DYNAMIC_DUST_POWER)
 		IMG_UINT32 ui32NumUscEnabled = ui32NumDustsEnabled*2U;
@@ -111,9 +107,6 @@ static bool rgxfw_hwperf_pow_st_indirect(RGX_HWPERF_CNTBLK_ID eBlkType, IMG_UINT
 		switch (eBlkType)
 		{
 		case RGX_CNTBLK_ID_TPU_MCU0:                   /* S6 and S6XT */
-#if defined(RGX_FEATURE_S7_TOP_INFRASTRUCTURE)
-		case RGX_CNTBLK_ID_TEXAS0:                     /* S7 */
-#endif
 			if (ui8UnitId >= ui32NumDustsEnabled)
 			{
 				return false;
@@ -156,8 +149,8 @@ static bool rgxfw_hwperf_pow_st_indirect(RGX_HWPERF_CNTBLK_ID eBlkType, IMG_UINT
 
 #else /* !defined(RGX_FIRMWARE) || !defined(RGX_FEATURE_PERFBUS) */
 
-# define rgxfw_hwperf_pow_st_direct   ((void*)NULL)
-# define rgxfw_hwperf_pow_st_indirect ((void*)NULL)
+# define rgxfw_hwperf_pow_st_direct   ((PFN_RGXFW_HWPERF_CNTBLK_POWERED)NULL)
+# define rgxfw_hwperf_pow_st_indirect ((PFN_RGXFW_HWPERF_CNTBLK_POWERED)NULL)
 
 #endif /* !defined(RGX_FIRMWARE) || !defined(RGX_FEATURE_PERFBUS) */
 
@@ -309,7 +302,7 @@ static IMG_BOOL rgx_hwperf_blk_present_xttop(const RGXFW_HWPERF_CNTBLK_TYPE_MODE
 	return IMG_FALSE;
 }
 
-/* Used for block types: JONES, TPU_MCU, TEXAS, BLACKPERL, PBE */
+/* Used for block types: JONES, TPU_MCU, TEXAS, BLACKPEARL, PBE */
 static IMG_BOOL rgx_hwperf_blk_present_s7top(const RGXFW_HWPERF_CNTBLK_TYPE_MODEL* psBlkTypeDesc, const void *pvDev_km, void *pvRtInfo)
 {
 	DBG_ASSERT(psBlkTypeDesc != NULL);
@@ -320,6 +313,7 @@ static IMG_BOOL rgx_hwperf_blk_present_s7top(const RGXFW_HWPERF_CNTBLK_TYPE_MODE
 			(psBlkTypeDesc->ui32CntBlkIdBase == RGX_CNTBLK_ID_PBE0));
 
 #if defined(__KERNEL__) /* Server context */
+#if defined(RGX_FEATURE_S7_TOP_INFRASTRUCTURE_IDX)
 	PVR_ASSERT(pvDev_km != NULL);
 	PVR_ASSERT(pvRtInfo != NULL);
 	{
@@ -359,6 +353,7 @@ static IMG_BOOL rgx_hwperf_blk_present_s7top(const RGXFW_HWPERF_CNTBLK_TYPE_MODE
 			}
 		}
 	}
+#endif
 #else /* FW context */
 	PVR_UNREFERENCED_PARAMETER(pvDev_km);
 	PVR_UNREFERENCED_PARAMETER(psBlkTypeDesc);
@@ -385,8 +380,7 @@ static IMG_BOOL rgx_hwperf_blk_present_not_s7top(const RGXFW_HWPERF_CNTBLK_TYPE_
 	{
 		RGX_HWPERF_CNTBLK_RT_INFO *psRtInfo = (RGX_HWPERF_CNTBLK_RT_INFO *) pvRtInfo;
 		const PVRSRV_RGXDEV_INFO *psDevInfo = (const PVRSRV_RGXDEV_INFO *)pvDev_km;
-		if (!RGX_IS_FEATURE_SUPPORTED(psDevInfo, S7_TOP_INFRASTRUCTURE) &&
-				RGX_IS_FEATURE_SUPPORTED(psDevInfo, PERFBUS))
+		if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, PERFBUS))
 		{
 			if (psBlkTypeDesc->ui32CntBlkIdBase == RGX_CNTBLK_ID_TA)
 			{

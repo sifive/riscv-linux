@@ -47,6 +47,9 @@
 #include "pvr_sync_api.h"
 #include "pvr_sync_ioctl_common.h"
 
+#include "pvr_debug.h"
+#include "pvr_uaccess.h"
+
 /*
  * The PVR Sync API is unusual in that some operations configure the
  * timeline for use, and are no longer allowed once the timeline is
@@ -74,6 +77,7 @@ struct pvr_sync_file_data {
 	atomic_t in_use;
 	void *api_private;
 	bool is_sw;
+	bool is_export;
 };
 
 static bool pvr_sync_set_in_use(struct pvr_sync_file_data *fdata)
@@ -174,22 +178,25 @@ int pvr_sync_close_common(void *connection_data)
 	return 0;
 }
 
-static inline int pvr_sync_ioctl_rename(void *api_priv, void *arg)
-{
-	struct pvr_sync_rename_ioctl_data *data = arg;
+#define PVR_SYNC_IOCTL_DISPATCH_INTERNAL_DECL(name, type) \
+static inline int pvr_sync_ioctl_common_internal_ ## name(struct pvr_sync_file_data *fdata, type data)
 
-	return pvr_sync_api_rename(api_priv, data);
+PVR_SYNC_IOCTL_DISPATCH_INTERNAL_DECL(rename, struct pvr_sync_rename_ioctl_data *)
+{
+	return pvr_sync_api_rename(fdata->api_private, data);
 }
 
-static inline int pvr_sync_ioctl_force_sw_only(struct pvr_sync_file_data *fdata)
+PVR_SYNC_IOCTL_DISPATCH_INTERNAL_DECL(force_sw_only, void*)
 {
-	void *data = fdata->api_private;
+	void *new_api_private = fdata->api_private;
 	int err;
 
-	err = pvr_sync_api_force_sw_only(fdata->api_private, &data);
+	PVR_UNREFERENCED_PARAMETER(data);
+
+	err = pvr_sync_api_force_sw_only(fdata->api_private, &new_api_private);
 	if (!err) {
-		if (data != fdata->api_private)
-			fdata->api_private = data;
+		if (new_api_private != fdata->api_private)
+			fdata->api_private = new_api_private;
 
 		fdata->is_sw = true;
 	}
@@ -197,81 +204,202 @@ static inline int pvr_sync_ioctl_force_sw_only(struct pvr_sync_file_data *fdata)
 	return err;
 }
 
-static inline int pvr_sync_ioctl_sw_create_fence(void *api_priv, void *arg)
+PVR_SYNC_IOCTL_DISPATCH_INTERNAL_DECL(force_exp_only, void*)
 {
-	struct pvr_sw_sync_create_fence_data *data = arg;
+	int err;
+	PVR_UNREFERENCED_PARAMETER(data);
 
-	return pvr_sync_api_sw_create_fence(api_priv, data);
-}
-
-static inline int pvr_sync_ioctl_sw_inc(void *api_priv, void *arg)
-{
-	struct pvr_sw_timeline_advance_data *data = arg;
-
-	return pvr_sync_api_sw_inc(api_priv, data);
-}
-
-int pvr_sync_ioctl_common(struct file *file, unsigned int cmd, void *arg)
-{
-	int err = -ENOTTY;
-	struct pvr_sync_file_data *fdata;
-	bool in_setup;
-
-	fdata = pvr_sync_get_private_data(file);
-	if (!fdata)
-		return -EINVAL;
-
-	switch (cmd) {
-	case DRM_PVR_SYNC_RENAME_CMD:
-	case DRM_PVR_SYNC_FORCE_SW_ONLY_CMD:
-		if (!pvr_sync_set_in_setup(fdata))
-			return -EBUSY;
-
-		in_setup = true;
-		break;
-	default:
-		if (!pvr_sync_set_in_use(fdata))
-			return -EBUSY;
-
-		in_setup = false;
-		break;
-	}
-
-	if (in_setup) {
-		if (fdata->is_sw)
-			err = -ENOTTY;
-		else
-			switch (cmd) {
-			case DRM_PVR_SYNC_RENAME_CMD:
-				err = pvr_sync_ioctl_rename(fdata->api_private,
-							    arg);
-				break;
-			case DRM_PVR_SYNC_FORCE_SW_ONLY_CMD:
-				err = pvr_sync_ioctl_force_sw_only(fdata);
-				break;
-			default:
-				break;
-			}
-	} else {
-		if (!fdata->is_sw)
-			err = -ENOTTY;
-		else
-			switch (cmd) {
-			case DRM_PVR_SW_SYNC_CREATE_FENCE_CMD:
-				err = pvr_sync_ioctl_sw_create_fence(fdata->api_private,
-								     arg);
-				break;
-			case DRM_PVR_SW_SYNC_INC_CMD:
-				err = pvr_sync_ioctl_sw_inc(fdata->api_private,
-							    arg);
-				break;
-			default:
-				break;
-			}
-	}
-
-	if (in_setup)
-		pvr_sync_reset_in_setup(fdata);
+	err = pvr_sync_api_force_exp_only(fdata->api_private, data);
+	if (!err)
+		fdata->is_export = true;
 
 	return err;
 }
+
+PVR_SYNC_IOCTL_DISPATCH_INTERNAL_DECL(create_export_fence, void*)
+{
+	return pvr_sync_api_create_export_fence(fdata->api_private, data);
+}
+
+PVR_SYNC_IOCTL_DISPATCH_INTERNAL_DECL(sw_create_fence, struct pvr_sw_sync_create_fence_data *)
+{
+	return pvr_sync_api_sw_create_fence(fdata->api_private, data);
+}
+
+PVR_SYNC_IOCTL_DISPATCH_INTERNAL_DECL(sw_inc, struct pvr_sw_timeline_advance_data *)
+{
+	return pvr_sync_api_sw_inc(fdata->api_private, data);
+}
+
+/*
+ * enum pvr_sync_ioctl_dispatch_type
+ * @pvr_sync_ioctl_dispatch_type_setup: The command may only be used during the setup phase
+ * @pvr_sync_ioctl_dispatch_type_export: The command may only be used with an export only timeline.
+ * @pvr_sync_ioctl_dispatch_type_software: The command may only be used with a software only timeline.
+ */
+enum pvr_sync_ioctl_dispatch_type {
+	pvr_sync_ioctl_dispatch_type_setup,
+	pvr_sync_ioctl_dispatch_type_export,
+	pvr_sync_ioctl_dispatch_type_software,
+};
+
+/* Generates a function `from` which performs validation on the data before passing it to `into` */
+#define PVR_SYNC_IOCTL_DISPATCH_VALIDATE(name, structure, type)                                                                        \
+PVR_SYNC_IOCTL_DISPATCH_DECL(name)                                                                                                     \
+{                                                                                                                                      \
+	int err = -ENOTTY;                                                                                                                 \
+	structure server_data;                                                                                                             \
+                                                                                                                                       \
+	struct pvr_sync_file_data *fdata = pvr_sync_get_private_data(file);                                                                \
+	if (unlikely(!fdata))                                                                                                              \
+		return -EINVAL;                                                                                                                \
+                                                                                                                                       \
+	/* Check if the device is busy and the operation is valid for the timelines current state */                                       \
+	if (type == pvr_sync_ioctl_dispatch_type_setup)                                                                                    \
+	{                                                                                                                                  \
+		if (!pvr_sync_set_in_setup(fdata))                                                                                             \
+			return -EBUSY;                                                                                                             \
+		if (fdata->is_sw || fdata->is_export)                                                                                          \
+			goto return_;                                                                                                              \
+	}                                                                                                                                  \
+	else                                                                                                                               \
+	{                                                                                                                                  \
+		if (!pvr_sync_set_in_use(fdata))                                                                                               \
+			return -EBUSY;                                                                                                             \
+                                                                                                                                       \
+		switch (type)                                                                                                                  \
+		{                                                                                                                              \
+		case pvr_sync_ioctl_dispatch_type_software: {                                                                                  \
+			if (!fdata->is_sw) /* Not a software timeline, software operations cannot be used */                                       \
+				goto return_;                                                                                                          \
+		}                                                                                                                              \
+		break;                                                                                                                         \
+		case pvr_sync_ioctl_dispatch_type_export: {                                                                                    \
+			if (!fdata->is_export) /* Not an export timeline, export operations cannot be used */                                      \
+				goto return_;                                                                                                          \
+		}                                                                                                                              \
+		break;                                                                                                                         \
+		default:                                                                                                                       \
+			goto return_; /* Invalid Type */                                                                                           \
+		}                                                                                                                              \
+	}                                                                                                                                  \
+                                                                                                                                       \
+	/* copy_from_user */                                                                                                               \
+	err = pvr_sync_ioctl_dispatch_copy_in__##name((structure __user *)user_data, &server_data);                                        \
+	if (unlikely(err))                                                                                                                 \
+		goto return_;                                                                                                                  \
+                                                                                                                                       \
+	/* Continue into api */                                                                                                            \
+	err = pvr_sync_ioctl_common_internal_ ## name(fdata, (structure __force *) PVR_SYNC_IOCTL_DISPATCH_DATA(user_data, &server_data)); \
+                                                                                                                                       \
+	if (likely(!err))                                                                                                                  \
+	{                                                                                                                                  \
+		/* copy_to_user */                                                                                                             \
+		err = pvr_sync_ioctl_dispatch_copy_out__##name((structure __user *)user_data, &server_data);                                   \
+	}                                                                                                                                  \
+                                                                                                                                       \
+return_:                                                                                                                               \
+	if (type == pvr_sync_ioctl_dispatch_type_setup)                                                                                    \
+		pvr_sync_reset_in_setup(fdata);                                                                                                \
+	return err;                                                                                                                        \
+}
+
+#if !defined(USE_PVRSYNC_DEVNODE)
+/* drm_ioctl() already copies the data over, see comment on drm_ioctl_t */
+#define PVR_SYNC_IOCTL_DISPATCH_DATA(pUM, pKM) pUM
+#define PVR_SYNC_IOCTL_DISPATCH_COPY_WRAPPER(dir, name, structure, copy) \
+INLINE static int pvr_sync_ioctl_dispatch_copy_ ## dir ## __ ## name (structure __user *pUM, structure *pKM) \
+{ return 0; }
+#else /* !defined(USE_PVRSYNC_DEVNODE) */
+/* Generates a function to copy over the arguments to/from user-mode */
+#define PVR_SYNC_IOCTL_DISPATCH_DATA(pUM, pKM) pKM
+#define PVR_SYNC_IOCTL_DISPATCH_COPY_WRAPPER(dir, name, structure, copy)                                     \
+INLINE static int pvr_sync_ioctl_dispatch_copy_ ## dir ## __ ## name (structure __user *pUM, structure *pKM) \
+{                                                                                                            \
+	/* May be unused if there are no in/out args */                                                          \
+	PVR_UNREFERENCED_PARAMETER(pUM);                                                                         \
+	PVR_UNREFERENCED_PARAMETER(pKM);                                                                         \
+	/* Copy over the data */                                                                                 \
+	{ copy }                                                                                                 \
+	return 0;                                                                                                \
+}
+#endif /* !defined(USE_PVRSYNC_DEVNODE) */
+
+/*************************************************************************/ /*!
+@Function       PVR_SYNC_IOCTL_DISPATCH_COPY
+@Description    Generates the code to copy from/to user mode depending on @dir.
+@Input          dir  Either `from` or `to` corresponding to `copy_from_user`
+                    and `copy_to_user` respectively.
+@Input          to   Pointer for the dest.
+@Input          from Pointer for the src.
+*/ /**************************************************************************/
+#define PVR_SYNC_IOCTL_DISPATCH_COPY(dir, to, from)        \
+if (pvr_copy_##dir##_user(to, from, sizeof(*pKM)))         \
+{                                                          \
+	PVR_DPF((PVR_DBG_ERROR, "Failed copy " #dir " user")); \
+	return -EFAULT;                                        \
+}
+
+/* Copy data from user */
+#define PVR_SYNC_IOCTL_DISPATCH_COPY_IN \
+PVR_SYNC_IOCTL_DISPATCH_COPY(from, pKM, pUM)
+
+/* Copy data to user */
+#define PVR_SYNC_IOCTL_DISPATCH_COPY_OUT \
+PVR_SYNC_IOCTL_DISPATCH_COPY(to, pUM, pKM)
+
+/* Copy no data */
+#define PVR_SYNC_IOCTL_DISPATCH_COPY_NONE
+
+/*************************************************************************/ /*!
+@Function       PVR_SYNC_IOCTL_DISPATCH_FUNCTION
+@Description    Generates a dispatch function which validates the ioctl command
+                and dispatches it to the internal an function.
+                Generates a dispatch function
+                `pvr_sync_ioctl_common_##name(struct file*, void*)`
+                which validates the ioctl command and dispatches it to
+                an internal function
+                `pvr_sync_ioctl_common_internal_##name(struct pvr_sync_file_data*, structure*)`
+@Input          name      A name for the dispatch functions, must be unique.
+@Input          structure The type of the user_data.
+@Input          type      The type specifies when the ioctls are allowed or
+                          if the ioctl is allowed on the current
+                          timeline configuration.
+@Input          copy_in   Either `COPY_IN` or `COPY_NONE`
+@Input          copy_out  Either `COPY_OUT` or `COPY_NONE`
+*/ /**************************************************************************/
+#define PVR_SYNC_IOCTL_DISPATCH_FUNCTION(name, structure, type, copy_in, copy_out) \
+	PVR_SYNC_IOCTL_DISPATCH_COPY_WRAPPER(in, name, structure, PVR_SYNC_IOCTL_DISPATCH_ ## copy_in) \
+	PVR_SYNC_IOCTL_DISPATCH_COPY_WRAPPER(out, name, structure, PVR_SYNC_IOCTL_DISPATCH_ ## copy_out) \
+	PVR_SYNC_IOCTL_DISPATCH_VALIDATE(name, structure, pvr_sync_ioctl_dispatch_type_ ## type)
+
+
+PVR_SYNC_IOCTL_DISPATCH_FUNCTION(rename, struct pvr_sync_rename_ioctl_data,
+                                 setup,
+                                 COPY_IN,
+                                 COPY_NONE);
+
+PVR_SYNC_IOCTL_DISPATCH_FUNCTION(force_sw_only, void*,
+                                 setup,
+                                 COPY_NONE,
+                                 COPY_NONE);
+
+PVR_SYNC_IOCTL_DISPATCH_FUNCTION(force_exp_only, void*,
+                                 setup,
+                                 COPY_NONE,
+                                 COPY_NONE);
+
+PVR_SYNC_IOCTL_DISPATCH_FUNCTION(sw_create_fence, struct pvr_sw_sync_create_fence_data,
+                                 software,
+                                 COPY_IN,
+                                 COPY_OUT);
+
+PVR_SYNC_IOCTL_DISPATCH_FUNCTION(create_export_fence, pvr_exp_sync_create_fence_data_t,
+                                 export,
+                                 COPY_IN,
+                                 COPY_OUT);
+
+PVR_SYNC_IOCTL_DISPATCH_FUNCTION(sw_inc, struct pvr_sw_timeline_advance_data,
+                                 software,
+                                 COPY_NONE,
+                                 COPY_OUT);

@@ -43,7 +43,18 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef PHYSMEM_OSMEM_LINUX_H
 #define PHYSMEM_OSMEM_LINUX_H
 
-void LinuxInitPhysmem(void);
+PVRSRV_ERROR LinuxInitPhysmem(void);
 void LinuxDeinitPhysmem(void);
+
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+
+DLLIST_NODE *
+LinuxOSGetCPUMappingPrivateDataList(PMR *psPMR);
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+int LinuxRegisterMigrateCallbacks(struct file* filp);
+void LinuxDeregisterMigrateCallbacks(struct file* filp);
+#endif
+#endif
 
 #endif /* PHYSMEM_OSMEM_LINUX_H */

@@ -49,9 +49,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "allocmem.h"
 #include "pvr_debug.h"
 #include "process_stats.h"
-#if defined(DEBUG) && defined(SUPPORT_VALIDATION)
-#include "pvrsrv.h"
-#endif
 #include "osfunc.h"
 
 
@@ -85,10 +82,6 @@ static IMG_UINT32 g_ui32kmallocThreshold = PVR_LINUX_KMALLOC_ALLOCATION_THRESHOL
 /* Spinlock used so that the global variables above may not be modified by more than 1 thread at a time */
 static DEFINE_SPINLOCK(kmalloc_lock);
 
-#if defined(DEBUG) && defined(SUPPORT_VALIDATION)
-static DEFINE_SPINLOCK(kmalloc_leak_lock);
-static IMG_UINT32 g_ui32kmallocLeakCounter = 0;
-#endif
 
 static inline void OSTryDecreaseKmallocThreshold(void)
 {
@@ -181,12 +174,12 @@ static inline void *_pvr_alloc_stats_add(void *pvAddr, IMG_UINT32 ui32Size DEBUG
 		PVRSRVStatsAddMemAllocRecord(PVRSRV_MEM_ALLOC_TYPE_VMALLOC,
 									  pvAddr,
 									  sCpuPAddr,
-									  ((ui32Size + PAGE_SIZE-1) & ~(PAGE_SIZE-1)),
+									  PVR_ALIGN(ui32Size, PAGE_SIZE),
 									  OSGetCurrentClientProcessIDKM()
 									  DEBUG_MEMSTATS_ARGS);
 #else
 		PVRSRVStatsIncrMemAllocStatAndTrack(PVRSRV_MEM_ALLOC_TYPE_VMALLOC,
-		                                    ((ui32Size + PAGE_SIZE-1) & ~(PAGE_SIZE-1)),
+		                                    PVR_ALIGN(ui32Size, PAGE_SIZE),
 		                                    (IMG_UINT64)(uintptr_t) pvAddr,
 		                                    OSGetCurrentClientProcessIDKM());
 #endif /* defined(PVRSRV_ENABLE_MEMORY_STATS) */
@@ -299,32 +292,6 @@ void *(OSAllocZMem)(IMG_UINT32 ui32Size DEBUG_MEMSTATS_PARAMS)
  */
 void (OSFreeMem)(void *pvMem)
 {
-#if defined(DEBUG) && defined(SUPPORT_VALIDATION)
-	unsigned long flags;
-	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
-
-	if (psPVRSRVData)
-	{
-		IMG_UINT32 ui32kmallocLeakMax = psPVRSRVData->sMemLeakIntervals.ui32OSAlloc;
-
-		spin_lock_irqsave(&kmalloc_leak_lock, flags);
-
-		g_ui32kmallocLeakCounter++;
-		if (ui32kmallocLeakMax && (g_ui32kmallocLeakCounter >= ui32kmallocLeakMax))
-		{
-			g_ui32kmallocLeakCounter = 0;
-			spin_unlock_irqrestore(&kmalloc_leak_lock, flags);
-
-			PVR_DPF((PVR_DBG_WARNING,
-			         "%s: Skipped freeing of pointer 0x%p to trigger memory leak.",
-			         __func__,
-			         pvMem));
-			return;
-		}
-
-		spin_unlock_irqrestore(&kmalloc_leak_lock, flags);
-	}
-#endif
 	if (pvMem != NULL)
 	{
 		pvMem = _pvr_alloc_stats_remove(pvMem);
@@ -396,32 +363,6 @@ void *OSAllocZMemNoStats(IMG_UINT32 ui32Size)
  */
 void (OSFreeMemNoStats)(void *pvMem)
 {
-#if defined(DEBUG) && defined(SUPPORT_VALIDATION)
-	unsigned long flags;
-	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
-
-	if (psPVRSRVData)
-	{
-		IMG_UINT32 ui32kmallocLeakMax = psPVRSRVData->sMemLeakIntervals.ui32OSAlloc;
-
-		spin_lock_irqsave(&kmalloc_leak_lock, flags);
-
-		g_ui32kmallocLeakCounter++;
-		if (ui32kmallocLeakMax && (g_ui32kmallocLeakCounter >= ui32kmallocLeakMax))
-		{
-			g_ui32kmallocLeakCounter = 0;
-			spin_unlock_irqrestore(&kmalloc_leak_lock, flags);
-
-			PVR_DPF((PVR_DBG_WARNING,
-			         "%s: Skipped freeing of pointer 0x%p to trigger memory leak.",
-			         __func__,
-			         pvMem));
-			return;
-		}
-
-		spin_unlock_irqrestore(&kmalloc_leak_lock, flags);
-	}
-#endif
 	if (pvMem != NULL)
 	{
 		if (!is_vmalloc_addr(pvMem))

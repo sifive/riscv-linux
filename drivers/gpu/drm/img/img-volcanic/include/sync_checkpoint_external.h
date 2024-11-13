@@ -79,5 +79,10 @@ typedef IMG_UINT32 PVRSRV_SYNC_CHECKPOINT_STATE;
  * represents a foreign sync point or collection of foreign sync points.
  */
 #define SYNC_CHECKPOINT_FOREIGN_CHECKPOINT ((PVRSRV_TIMELINE) - 2U)
+/*!
+ * Define to be used with SyncCheckpointAlloc() to indicate a checkpoint which
+ * represents a mirrored cross-device foreign sync point
+ */
+#define SYNC_CHECKPOINT_MIRRORED_CHECKPOINT ((PVRSRV_TIMELINE) - 3U)
 
 #endif /* SYNC_CHECKPOINT_EXTERNAL_H */

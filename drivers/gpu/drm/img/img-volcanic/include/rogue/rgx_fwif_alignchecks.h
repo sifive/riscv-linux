@@ -159,7 +159,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 		offsetof(RGXFWIF_SYSINIT, sFaultPhysAddr),                   \
 		offsetof(RGXFWIF_SYSINIT, sPDSExecBase),                     \
 		offsetof(RGXFWIF_SYSINIT, sUSCExecBase),                     \
-		offsetof(RGXFWIF_SYSINIT, asSigBufCtl),                      \
+		offsetof(RGXFWIF_SYSINIT, aui32TPUTrilinearFracMask),        \
 		offsetof(RGXFWIF_SYSINIT, sTraceBufCtl),                     \
 		offsetof(RGXFWIF_SYSINIT, sFwSysData),                       \
 		(IMG_UINT32)sizeof(RGXFWIF_OSINIT),                                      \

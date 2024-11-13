@@ -52,9 +52,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "interrupt_support.h"
 #include "sysconfig.h"
 
-#if defined(SUPPORT_GPUVIRT_VALIDATION)
-#include "vz_validation.h"
-#endif
+#define VZ_EXAMPLE_SYSTEM_NAME "vz_example"
 
 static void SysCpuPAToDevPA(IMG_HANDLE hPrivData, IMG_UINT32 ui32NumOfAddr,
                             IMG_DEV_PHYADDR *psDevPA, IMG_CPU_PHYADDR *psCpuPA);
@@ -66,27 +64,18 @@ typedef struct _SYS_DATA_
 	IMG_HANDLE hSysLISRData;
 	PFN_LISR pfnDeviceLISR;
 	void *pvDeviceLISRData;
+	PVRSRV_DRIVER_MODE eDriverMode;
 } SYS_DATA;
 
 typedef enum _PHYS_HEAP_IDX_
 {
 	PHYS_HEAP_IDX_SYSMEM,
 	PHYS_HEAP_IDX_FIRMWARE,
+#if defined(RGX_PREMAP_FW_HEAPS)
+	PHYS_HEAP_IDX_FW_PT,
+#endif
 	PHYS_HEAP_IDX_COUNT,
 } PHYS_HEAP_IDX;
-
-static PHYS_HEAP_CONFIG         gsPhysHeapConfig[PHYS_HEAP_IDX_COUNT];
-static PVRSRV_DEVICE_CONFIG     gsDevCfg;
-static SYS_DATA                 gsSysData = {NULL, NULL, NULL};
-
-static RGX_TIMING_INFORMATION   gsTimingInfo = {
-	DEFAULT_CLOCK_RATE,     /* ui32CoreClockSpeed */
-	IMG_FALSE,              /* bEnableActivePM */
-	IMG_FALSE,              /* bEnableRDPowIsland */
-	0                       /* ui32ActivePMLatencyms */
-};
-
-static RGX_DATA                 gsRGXData = {&gsTimingInfo};
 
 static PHYS_HEAP_FUNCTIONS      gsPhysHeapFuncs = {
 	SysCpuPAToDevPA,        /* pfnCpuPAddrToDevPAddr */
@@ -141,6 +130,29 @@ static IMG_BOOL SystemISRHandler(void *pvData)
 	IMG_BOOL bHandled;
 
 	/* Any special system interrupt handling goes here */
+
+#if defined(RGX_SINGLE_IRQ_WORKAROUND)
+	if (psSysData->eDriverMode == DRIVER_MODE_HOST)
+	{
+		PVRSRV_DEVICE_NODE *psDeviceNode = psSysData->pvDeviceLISRData;
+		PVRSRV_RGXDEV_INFO *psDevInfo = psDeviceNode->pvDevice;
+		IMG_UINT32 ui32DriverID;
+
+		/* When hardware support for multiple IRQs is not implemented, the virtualized GPU
+		 * cannot notify drivers of events using dedicated interrupt lines. The single line
+		 * available is routed to Host driver, which in turn broadcasts the IRQ to all other
+		 * active Drivers currently connected to the Firmware. */
+		FOREACH_ACTIVE_DRIVER(psDevInfo, ui32DriverID)
+		{
+			/* the customer must implement a method which allows the Host driver to trigger
+			 * an interrupt signal into each operating system running a Guest GPU driver.
+			 * This method is platform specific. */
+
+			/* INJECT_IRQ_INTO_VM(ui32DriverID); */
+		}
+		END_FOREACH_ACTIVE_DRIVER
+	}
+#endif
 
 	bHandled = psSysData->pfnDeviceLISR(psSysData->pvDeviceLISRData);
 	return bHandled;
@@ -207,10 +219,15 @@ static PVRSRV_ERROR SysPrePower(IMG_HANDLE hSysData,
                                 PVRSRV_SYS_POWER_STATE eCurrentPowerState,
                                 PVRSRV_POWER_FLAGS ePwrFlags)
 {
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_OK);
+	SYS_DATA *psSysData = (SYS_DATA *)hSysData;
+
+	if (psSysData->eDriverMode == DRIVER_MODE_GUEST)
+	{
+		return PVRSRV_OK;
+	}
+
 	PVR_LOG_RETURN_IF_FALSE((eNewPowerState != eCurrentPowerState), "no power change", PVRSRV_OK);
 
-	PVR_UNREFERENCED_PARAMETER(hSysData);
 	PVR_UNREFERENCED_PARAMETER(ePwrFlags);
 
 	/* on powering down */
@@ -234,10 +251,15 @@ static PVRSRV_ERROR SysPostPower(IMG_HANDLE hSysData,
                                  PVRSRV_SYS_POWER_STATE eCurrentPowerState,
                                  PVRSRV_POWER_FLAGS ePwrFlags)
 {
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_OK);
+	SYS_DATA *psSysData = (SYS_DATA *)hSysData;
+
+	if (psSysData->eDriverMode == DRIVER_MODE_GUEST)
+	{
+		return PVRSRV_OK;
+	}
+
 	PVR_LOG_RETURN_IF_FALSE((eNewPowerState != eCurrentPowerState), "no power change", PVRSRV_OK);
 
-	PVR_UNREFERENCED_PARAMETER(hSysData);
 	PVR_UNREFERENCED_PARAMETER(ePwrFlags);
 
 	/* on powering up */
@@ -284,7 +306,7 @@ static PVRSRV_DRIVER_MODE GetDriverMode(struct platform_device *psDev)
 {
 	PVRSRV_DRIVER_MODE eDriverMode;
 
-#if (RGX_NUM_OS_SUPPORTED > 1)
+#if (RGX_NUM_DRIVERS_SUPPORTED > 1)
 	if (of_property_read_u32(psDev->dev.of_node, "vz-mode", (IMG_UINT32*) &eDriverMode))
 	{
 		PVR_DPF((PVR_DBG_WARNING, "%s: Cannot retrieve driver mode from Device Tree. "
@@ -299,76 +321,116 @@ static PVRSRV_DRIVER_MODE GetDriverMode(struct platform_device *psDev)
 }
 
 static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice,
-									   PVRSRV_DEVICE_CONFIG *psDevCfg)
+									   PVRSRV_DEVICE_CONFIG **ppsDevConfig)
 {
 	PVRSRV_ERROR eError = PVRSRV_OK;
 	struct platform_device *psDev;
 	struct resource *dev_res = NULL;
 	int dev_irq;
 	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
+	PVRSRV_DEVICE_CONFIG *psDevConfig;
+	RGX_DATA *psRGXData;
+	RGX_TIMING_INFORMATION *psRGXTimingInfo;
+	SYS_DATA *psSysData;
+	PHYS_HEAP_CONFIG *psPhysHeapConfig;
+	IMG_UINT32 ui32DeviceID;
+
+	psDevConfig = OSAllocZMem(sizeof(*psDevConfig) +
+							  sizeof(*psRGXData) +
+							  sizeof(*psRGXTimingInfo) +
+							  sizeof(*psSysData) +
+							  sizeof(*psPhysHeapConfig) * PHYS_HEAP_IDX_COUNT);
+
+	PVR_LOG_GOTO_IF_NOMEM(psDevConfig, eError, err_sys);
+
+	psRGXData = (RGX_DATA *)((IMG_CHAR *)psDevConfig + sizeof(*psDevConfig));
+	psRGXTimingInfo = (RGX_TIMING_INFORMATION *)((IMG_CHAR *)psRGXData + sizeof(*psRGXData));
+	psSysData = (SYS_DATA *)((IMG_CHAR *)psRGXTimingInfo + sizeof(*psRGXTimingInfo));
+	psPhysHeapConfig = (PHYS_HEAP_CONFIG *)((IMG_CHAR *)psSysData + sizeof(*psSysData));
 
 	psDev = to_platform_device((struct device *)pvOSDevice);
 
 	dma_set_mask(pvOSDevice, DMA_BIT_MASK(40));
 
+	/*
+	 * Drivers with virtualization support should check if the mode in which the
+	 * driver must control a device has been explicitly specified at load time
+	 * through module parameters.
+	 * Multi-device platforms must find the internal ID of the device currently
+	 * being created when checking for its associated DriverMode parameter.
+	 */
+	eError = PVRSRVAcquireInternalID(&ui32DeviceID);
+	PVR_LOG_GOTO_IF_ERROR(eError, "PVRSRVAcquireInternalID", err_sys);
+
+	if (psPVRSRVData->aeModuleParamDriverMode[ui32DeviceID] == DRIVER_MODE_DEFAULT)
+	{
+		psDevConfig->eDriverMode = GetDriverMode(psDev);
+	}
+	else
+	{
+		psDevConfig->eDriverMode = psPVRSRVData->aeModuleParamDriverMode[ui32DeviceID];
+	}
+
 	dev_irq = platform_get_irq(psDev, 0);
 	if (dev_irq < 0)
 	{
-		PVR_DPF((PVR_DBG_ERROR, "%s: platform_get_irq failed (%d)", __func__, -dev_irq));
-		eError = PVRSRV_ERROR_INVALID_DEVICE;
-		return eError;
+		PVR_LOG_GOTO_WITH_ERROR("platform_get_irq", eError, PVRSRV_ERROR_INVALID_DEVICE, err_sys);
 	}
 
 	dev_res = platform_get_resource(psDev, IORESOURCE_MEM, 0);
 	if (dev_res == NULL)
 	{
-		PVR_DPF((PVR_DBG_ERROR, "%s: platform_get_resource failed", __func__));
-		eError =  PVRSRV_ERROR_INVALID_DEVICE;
-		return eError;
+		PVR_LOG_GOTO_WITH_ERROR("platform_get_resource", eError, PVRSRV_ERROR_INVALID_DEVICE, err_sys);
 	}
 
 	/* Device Setup */
-	psDevCfg->pvOSDevice              = pvOSDevice;
-	psDevCfg->pszName                 = "pvrsrvkm";
-	psDevCfg->pszVersion              = NULL;
+	psDevConfig->pvOSDevice              = pvOSDevice;
+	psDevConfig->pszName                 = VZ_EXAMPLE_SYSTEM_NAME;
+	psDevConfig->pszVersion              = NULL;
 
 	/* Device setup information */
-	psDevCfg->sRegsCpuPBase.uiAddr    = dev_res->start;
-	psDevCfg->ui32RegsSize            = (unsigned int)(dev_res->end - dev_res->start);
-	psDevCfg->ui32IRQ                 = dev_irq;
+	psDevConfig->sRegsCpuPBase.uiAddr    = dev_res->start;
+	psDevConfig->ui32IRQ                 = dev_irq;
+
+	psDevConfig->ui32RegsSize            = (unsigned int)(dev_res->end - dev_res->start);
+
+	PVR_ASSERT(psDevConfig->ui32RegsSize >= RGX_VIRTUALISATION_REG_SIZE_PER_OS);
 
 	/* Power management */
-	psDevCfg->pfnPrePowerState        = SysPrePower;
-	psDevCfg->pfnPostPowerState       = SysPostPower;
-	psDevCfg->pfnGpuDomainPower       = PVRSRV_VZ_MODE_IS(GUEST) ? NULL : RGXGpuDomainPower;
+	psDevConfig->pfnPrePowerState        = SysPrePower;
+	psDevConfig->pfnPostPowerState       = SysPostPower;
+	psDevConfig->pfnGpuDomainPower       = PVRSRV_VZ_MODE_IS(GUEST, DEVCFG, psDevConfig) ? NULL : RGXGpuDomainPower;
+
+	/* Setup RGX specific timing data */
+	psRGXTimingInfo->ui32CoreClockSpeed        = DEFAULT_CLOCK_RATE;
+	psRGXTimingInfo->bEnableActivePM           = IMG_FALSE;
+	psRGXTimingInfo->bEnableRDPowIsland        = IMG_FALSE;
+	psRGXTimingInfo->ui32ActivePMLatencyms     = 0;
+
+	/* Setup RGX specific data */
+	psRGXData->psRGXTimingInfo = psRGXTimingInfo;
 
 	/* Minimal configuration */
-	psDevCfg->pfnClockFreqGet         = NULL;
-	psDevCfg->hDevData                = &gsRGXData;
-	psDevCfg->hSysData                = &gsSysData;
-	psDevCfg->pfnSysDevFeatureDepInit = SysDevFeatureDepInit;
-	psDevCfg->bHasFBCDCVersion31      = IMG_FALSE;
+	psDevConfig->pfnClockFreqGet         = NULL;
+	psDevConfig->hDevData                = psRGXData;
+	psDevConfig->hSysData                = psSysData;
+	psDevConfig->pfnSysDevFeatureDepInit = SysDevFeatureDepInit;
+	psDevConfig->bHasFBCDCVersion31      = IMG_FALSE;
 
-	/* If driver mode is not overridden by the apphint, set it here */
-	if (!psPVRSRVData->bForceApphintDriverMode)
-	{
-		psPVRSRVData->eDriverMode = GetDriverMode(psDev);
-	}
+	psDevConfig->pasPhysHeaps = psPhysHeapConfig;
 
-#if defined(SUPPORT_GPUVIRT_VALIDATION)
-	psDevCfg->pfnSysDevVirtInit = SysInitValidation;
+	return eError;
 
-	CreateMPUWatchdogThread();
-#endif
-
+err_sys:
+	OSFreeMem(psDevConfig);
 	return eError;
 }
 
 #if defined(RGX_VZ_STATIC_CARVEOUT_FW_HEAPS)
 /* Obtain the IPA of the carveout range reserved for this VM */
-static IMG_UINT64 GetCarveoutBase(PVRSRV_DEVICE_CONFIG *psDevCfg)
+static IMG_UINT64 GetFwCarveoutBase(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
-	struct platform_device *psDev = to_platform_device((struct device *)psDevCfg->pvOSDevice);
+	struct platform_device *psDev = to_platform_device((struct device *)psDevConfig->pvOSDevice);
 	IMG_UINT64 ui64BaseAddress;
 
 	if (of_property_read_u64(psDev->dev.of_node, "fw-carveout", &ui64BaseAddress))
@@ -381,27 +443,41 @@ static IMG_UINT64 GetCarveoutBase(PVRSRV_DEVICE_CONFIG *psDevCfg)
 
 	return ui64BaseAddress;
 }
+
+#if defined(RGX_PREMAP_FW_HEAPS)
+static IMG_UINT64 GetFwPageTableCarveoutBase(PVRSRV_DEVICE_CONFIG *psDevConfig)
+{
+	struct platform_device *psDev = to_platform_device((struct device *)psDevConfig->pvOSDevice);
+	IMG_UINT64 ui64BaseAddress;
+
+	if (of_property_read_u64(psDev->dev.of_node, "fw-pt-carveout", &ui64BaseAddress))
+	{
+		PVR_DPF((PVR_DBG_WARNING, "%s: Cannot retrieve firmware page table carveout address"
+								  " from Device Tree. Using default Base Address: 0x%llX",
+								  __func__, FW_PT_CARVEOUT_IPA_BASE));
+		ui64BaseAddress = FW_PT_CARVEOUT_IPA_BASE;
+	}
+
+	return ui64BaseAddress;
+}
+#endif
 #endif
 
-static PVRSRV_ERROR PhysHeapCfgCreate(PVRSRV_DEVICE_CONFIG *psDevCfg)
+static PVRSRV_ERROR PhysHeapCfgCreate(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
 	IMG_CPU_PHYADDR sCpuBase;
 	IMG_DEV_PHYADDR sDeviceBase;
+	PHYS_HEAP_CONFIG *psPhysHeapConfig = psDevConfig->pasPhysHeaps;
 	PVRSRV_ERROR eError = PVRSRV_OK;
 
+	/* Virtualization driver */
 	/* Heap configuration for general use */
-	gsPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].pszPDumpMemspaceName = "SYSMEM";
-	gsPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].eType = PHYS_HEAP_TYPE_UMA;
-	gsPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].psMemFuncs = &gsPhysHeapFuncs;
-	gsPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].hPrivData = NULL;
-	gsPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].ui32UsageFlags = PHYS_HEAP_USAGE_GPU_LOCAL;
-
-	/* Heap configuration for memory shared with the firmware */
-	gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].pszPDumpMemspaceName = "SYSMEM_FW";
-	gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].psMemFuncs = &gsPhysHeapFuncs;
-	gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].hPrivData = NULL;
-	gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].ui32UsageFlags = PHYS_HEAP_USAGE_FW_MAIN;
-	gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uiSize = RGX_FIRMWARE_RAW_HEAP_SIZE;
+	psPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].eType = PHYS_HEAP_TYPE_UMA;
+	psPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].ui32UsageFlags = PHYS_HEAP_USAGE_GPU_LOCAL;
+	psPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].uConfig.sUMA.pszPDumpMemspaceName = "SYSMEM";
+	psPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].uConfig.sUMA.psMemFuncs = &gsPhysHeapFuncs;
+	psPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].uConfig.sUMA.pszHeapName = "uma_gpu_local";
+	psPhysHeapConfig[PHYS_HEAP_IDX_SYSMEM].uConfig.sUMA.hPrivData = NULL;
 
 #if defined(RGX_VZ_STATIC_CARVEOUT_FW_HEAPS)
 	{
@@ -424,16 +500,22 @@ static PVRSRV_ERROR PhysHeapCfgCreate(PVRSRV_DEVICE_CONFIG *psDevCfg)
 		 *  - Host driver sets up the Firmware before Guests submits work
 		 */
 
-		sCpuBase.uiAddr = GetCarveoutBase(psDevCfg);
+		sCpuBase.uiAddr = GetFwCarveoutBase(psDevConfig);
 		SysCpuPAToDevPA(NULL, 1, &sDeviceBase, &sCpuBase);
 
-		gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].eType = PHYS_HEAP_TYPE_LMA;
-		gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].sStartAddr = sCpuBase;
-		gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].sCardBase = sDeviceBase;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].eType = PHYS_HEAP_TYPE_LMA;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].ui32UsageFlags = PHYS_HEAP_USAGE_FW_SHARED;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sLMA.pszPDumpMemspaceName = "SYSMEM_FW";
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sLMA.psMemFuncs = &gsPhysHeapFuncs;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sLMA.pszHeapName = "lma_fw_shared";
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sLMA.sStartAddr = sCpuBase;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sLMA.sCardBase = sDeviceBase;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sLMA.uiSize = RGX_FIRMWARE_RAW_HEAP_SIZE;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sLMA.hPrivData = NULL;
 	}
 #else
 	/* Dynamic Firmware heap allocation */
-	if (PVRSRV_VZ_MODE_IS(GUEST))
+	if (PVRSRV_VZ_MODE_IS(GUEST, DEVCFG, psDevConfig))
 	{
 		/*
 		 * Guest drivers must provide a physically contiguous memory
@@ -448,7 +530,7 @@ static PVRSRV_ERROR PhysHeapCfgCreate(PVRSRV_DEVICE_CONFIG *psDevCfg)
 		eError = (psDmaAlloc == NULL) ? PVRSRV_ERROR_OUT_OF_MEMORY : PVRSRV_OK;
 		if (eError == PVRSRV_OK)
 		{
-			psDmaAlloc->pvOSDevice = psDevCfg->pvOSDevice;
+			psDmaAlloc->pvOSDevice = psDevConfig->pvOSDevice;
 			psDmaAlloc->ui64Size = RGX_FIRMWARE_RAW_HEAP_SIZE;
 
 			eError = SysDmaAllocMem(psDmaAlloc);
@@ -461,10 +543,15 @@ static PVRSRV_ERROR PhysHeapCfgCreate(PVRSRV_DEVICE_CONFIG *psDevCfg)
 					sCpuBase.uiAddr = psDmaAlloc->sBusAddr.uiAddr;
 					SysCpuPAToDevPA(NULL, 1, &sDeviceBase, &sCpuBase);
 
-					gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].eType = PHYS_HEAP_TYPE_DMA;
-					gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].hPrivData = psDmaAlloc;
-					gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].sStartAddr = sCpuBase;
-					gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].sCardBase = sDeviceBase;
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].eType = PHYS_HEAP_TYPE_DMA;
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].ui32UsageFlags = PHYS_HEAP_USAGE_FW_SHARED;
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.pszPDumpMemspaceName = "SYSMEM_FW";
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.psMemFuncs = &gsPhysHeapFuncs;
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.pszHeapName = "dma_fw_shared";
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.sStartAddr = sCpuBase;
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.sCardBase = sDeviceBase;
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.uiSize = RGX_FIRMWARE_RAW_HEAP_SIZE;
+					psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.hPrivData = psDmaAlloc;
 				}
 				else
 				{
@@ -485,45 +572,69 @@ static PVRSRV_ERROR PhysHeapCfgCreate(PVRSRV_DEVICE_CONFIG *psDevCfg)
 		 * the kernel on a page granularity and creates on-demand
 		 * mappings into the Firmware's address space.
 		 */
-		gsPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].eType = PHYS_HEAP_TYPE_UMA;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].eType = PHYS_HEAP_TYPE_UMA;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].ui32UsageFlags = PHYS_HEAP_USAGE_FW_SHARED;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sUMA.pszPDumpMemspaceName = "SYSMEM_FW";
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sUMA.psMemFuncs = &gsPhysHeapFuncs;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sUMA.pszHeapName = "uma_fw_shared";
+		psPhysHeapConfig[PHYS_HEAP_IDX_FIRMWARE].uConfig.sUMA.hPrivData = NULL;
 	}
-#endif
+#endif /* defined(RGX_VZ_STATIC_CARVEOUT_FW_HEAPS) */
+
+#if defined(RGX_VZ_STATIC_CARVEOUT_FW_HEAPS) && defined(RGX_PREMAP_FW_HEAPS)
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVCFG, psDevConfig))
+	{
+		sCpuBase.uiAddr = GetFwPageTableCarveoutBase(psDevConfig);
+		SysCpuPAToDevPA(NULL, 1, &sDeviceBase, &sCpuBase);
+
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].eType = PHYS_HEAP_TYPE_LMA;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].ui32UsageFlags = PHYS_HEAP_USAGE_FW_PREMAP_PT;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].uConfig.sLMA.pszPDumpMemspaceName = "SYSMEM_FW_PT";
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].uConfig.sLMA.psMemFuncs = &gsPhysHeapFuncs;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].uConfig.sLMA.pszHeapName = "lma_fw_pt";
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].uConfig.sLMA.sStartAddr = sCpuBase;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].uConfig.sLMA.sCardBase = sDeviceBase;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].uConfig.sLMA.uiSize = RGX_FIRMWARE_MAX_PAGETABLE_SIZE;
+		psPhysHeapConfig[PHYS_HEAP_IDX_FW_PT].uConfig.sLMA.hPrivData = NULL;
+	}
+#endif /* defined(RGX_VZ_STATIC_CARVEOUT_FW_HEAPS) */
 
 	/* Device's physical heaps */
-	psDevCfg->pasPhysHeaps = gsPhysHeapConfig;
-	psDevCfg->eDefaultHeap = PVRSRV_PHYS_HEAP_GPU_LOCAL;
-	psDevCfg->ui32PhysHeapCount = PHYS_HEAP_IDX_COUNT;
+	psDevConfig->eDefaultHeap = PVRSRV_PHYS_HEAP_GPU_LOCAL;
+	psDevConfig->ui32PhysHeapCount = PHYS_HEAP_IDX_COUNT;
 
 	return eError;
 }
 
-static void PhysHeapCfgDestroy(PVRSRV_DEVICE_CONFIG *psDevCfg)
+static void PhysHeapCfgDestroy(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
 #if defined(RGX_VZ_STATIC_CARVEOUT_FW_HEAPS)
-	if (PVRSRV_VZ_MODE_IS(GUEST))
+	if (PVRSRV_VZ_MODE_IS(GUEST, DEVCFG, psDevConfig))
 	{
-		DMA_ALLOC *psDmaAlloc = psDevCfg->pasPhysHeaps[PHYS_HEAP_IDX_FIRMWARE].hPrivData;
+		DMA_ALLOC *psDmaAlloc = psDevConfig->pasPhysHeaps[PHYS_HEAP_IDX_FIRMWARE].uConfig.sDMA.hPrivData;
 
 		SysDmaDeregisterForIoRemapping(psDmaAlloc);
 		SysDmaFreeMem(psDmaAlloc);
 		OSFreeMem(psDmaAlloc);
 	}
 #endif
-
-#if defined(SUPPORT_GPUVIRT_VALIDATION)
-	DestroyMPUWatchdogThread();
-#endif
 }
 
 PVRSRV_ERROR SysDevInit(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **ppsDevConfig)
 {
+	PVRSRV_DEVICE_CONFIG *psDevConfig;
 	PVRSRV_ERROR eError;
 
-	eError = DeviceConfigCreate(pvOSDevice, &gsDevCfg);
+	eError = DeviceConfigCreate(pvOSDevice, &psDevConfig);
 	if (eError == PVRSRV_OK)
 	{
-		eError = PhysHeapCfgCreate(&gsDevCfg);
-		*ppsDevConfig = &gsDevCfg;
+		eError = PhysHeapCfgCreate(psDevConfig);
+		if (eError != PVRSRV_OK)
+		{
+			OSFreeMem(psDevConfig);
+		}
+
+		*ppsDevConfig = psDevConfig;
 	}
 
 	return eError;
@@ -532,7 +643,8 @@ PVRSRV_ERROR SysDevInit(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **ppsDevConfig)
 void SysDevDeInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
 	PhysHeapCfgDestroy(psDevConfig);
-	psDevConfig->pvOSDevice = NULL;
+
+	OSFreeMem(psDevConfig);
 }
 
 PVRSRV_ERROR SysDebugInfo(PVRSRV_DEVICE_CONFIG *psDevConfig,

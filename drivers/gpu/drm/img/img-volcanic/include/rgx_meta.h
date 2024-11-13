@@ -231,6 +231,16 @@ typedef struct
 /* All threads can access and writable */
 #define RGXFW_SEGMMU_ALLTHRS_WRITEABLE	(RGXFW_SEGMMU_ALLTHRS | RGXFW_SEGMMU_WRITEABLE)
 
+/* Direct map region 8 optionally used for custom mappings - max 8MB */
+#define RGXFW_SEGMMU_DMAP_CUSTOM0_ID			(8U)
+#define RGXFW_SEGMMU_DMAP_CUSTOM0_ADDR_START	(0x06000000U)
+#define RGXFW_SEGMMU_DMAP_CUSTOM0_MAX_SIZE		(0x00800000U)
+
+/* Direct map region 9 optionally used for custom mappings - max 8MB */
+#define RGXFW_SEGMMU_DMAP_CUSTOM1_ID			(9U)
+#define RGXFW_SEGMMU_DMAP_CUSTOM1_ADDR_START	(0x06800000U)
+#define RGXFW_SEGMMU_DMAP_CUSTOM1_MAX_SIZE		(0x00800000U)
+
 /* Direct map region 10 used for mapping GPU memory - max 8MB */
 #define RGXFW_SEGMMU_DMAP_GPU_ID			(10U)
 #define RGXFW_SEGMMU_DMAP_GPU_ADDR_START	(0x07000000U)
@@ -261,7 +271,7 @@ typedef struct
                                                               ((IMG_UINT64)((IMG_UINT64)(bifdm) & 0xFU) << 40U))
 
 #define RGXFW_SEGMMU_META_BIFDM_ID   (0x7U)
-#if !defined(__KERNEL__) && defined(RGX_FEATURE_META)
+#if !(defined(__KERNEL__) || defined(TEE_DDK)) && defined(RGX_FEATURE_META)
 #if defined(RGX_FEATURE_SLC_VIVT)
 #define RGXFW_SEGMMU_OUTADDR_TOP_SLC_CACHED    RGXFW_SEGMMU_OUTADDR_TOP_VIVT_SLC_CACHED
 #define RGXFW_SEGMMU_OUTADDR_TOP_SLC_UNCACHED  RGXFW_SEGMMU_OUTADDR_TOP_VIVT_SLC_UNCACHED
@@ -302,12 +312,6 @@ typedef struct
 #define RGXFW_SEGMMU_DATA_VIVT_SLC_UNCACHED   (0x60000000U)
 #define RGXFW_SEGMMU_DATA_VIVT_SLC_CACHE_MASK (0x60000000U)
 
-
-#if defined(SECURE_FW_CODE_OSID) && defined(RGX_FEATURE_META)
-#error "SECURE_FW_CODE_OSID is not supported on META cores"
-#endif
-
-
 /******************************************************************************
 * RGX FW Bootloader defaults
 ******************************************************************************/
@@ -335,7 +339,7 @@ typedef struct
 #define RGX_META_COREMEM_DATA_ADDR   (0x82000000U)
 #define RGX_META_COREMEM_OFFSET_MASK (0x01ffffffU)
 
-#if defined(__KERNEL__)
+#if defined(__KERNEL__) || defined(TEE_DDK)
 #define RGX_META_IS_COREMEM_CODE(A, B)  (((A) >= RGX_META_COREMEM_CODE_ADDR) && ((A) < (RGX_META_COREMEM_CODE_ADDR + (B))))
 #define RGX_META_IS_COREMEM_DATA(A, B)  (((A) >= RGX_META_COREMEM_DATA_ADDR) && ((A) < (RGX_META_COREMEM_DATA_ADDR + (B))))
 #endif
@@ -354,7 +358,7 @@ typedef struct
 #define META_CR_CORE_ID_VER_SHIFT	(16U)
 #define META_CR_CORE_ID_VER_CLRMSK	(0XFF00FFFFU)
 
-#if !defined(__KERNEL__) && defined(RGX_FEATURE_META)
+#if !(defined(__KERNEL__) || defined(TEE_DDK)) && defined(RGX_FEATURE_META)
 
 	#if (RGX_FEATURE_META == MTP218)
 	#define RGX_CR_META_CORE_ID_VALUE 0x19

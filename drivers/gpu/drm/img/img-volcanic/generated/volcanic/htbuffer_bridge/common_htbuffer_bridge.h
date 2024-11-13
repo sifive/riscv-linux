@@ -56,8 +56,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #define PVRSRV_BRIDGE_HTBUFFER_CMD_FIRST			0
 #define PVRSRV_BRIDGE_HTBUFFER_HTBCONTROL			PVRSRV_BRIDGE_HTBUFFER_CMD_FIRST+0
-#define PVRSRV_BRIDGE_HTBUFFER_HTBLOG			PVRSRV_BRIDGE_HTBUFFER_CMD_FIRST+1
-#define PVRSRV_BRIDGE_HTBUFFER_CMD_LAST			(PVRSRV_BRIDGE_HTBUFFER_CMD_FIRST+1)
+#define PVRSRV_BRIDGE_HTBUFFER_CMD_LAST			(PVRSRV_BRIDGE_HTBUFFER_CMD_FIRST+0)
 
 /*******************************************
             HTBControl
@@ -79,26 +78,5 @@ typedef struct PVRSRV_BRIDGE_OUT_HTBCONTROL_TAG
 {
 	PVRSRV_ERROR eError;
 } __packed PVRSRV_BRIDGE_OUT_HTBCONTROL;
-
-/*******************************************
-            HTBLog
- *******************************************/
-
-/* Bridge in structure for HTBLog */
-typedef struct PVRSRV_BRIDGE_IN_HTBLOG_TAG
-{
-	IMG_UINT64 ui64TimeStamp;
-	IMG_UINT32 *pui32Args;
-	IMG_UINT32 ui32NumArgs;
-	IMG_UINT32 ui32PID;
-	IMG_UINT32 ui32SF;
-	IMG_UINT32 ui32TID;
-} __packed PVRSRV_BRIDGE_IN_HTBLOG;
-
-/* Bridge out structure for HTBLog */
-typedef struct PVRSRV_BRIDGE_OUT_HTBLOG_TAG
-{
-	PVRSRV_ERROR eError;
-} __packed PVRSRV_BRIDGE_OUT_HTBLOG;
 
 #endif /* COMMON_HTBUFFER_BRIDGE_H */

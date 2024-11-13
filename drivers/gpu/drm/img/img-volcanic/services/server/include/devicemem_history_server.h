@@ -149,9 +149,14 @@ typedef struct _DEVICEMEM_HISTORY_QUERY_OUT_RESULT_
 typedef struct _DEVICEMEM_HISTORY_QUERY_OUT_
 {
 	IMG_UINT32 ui32NumResults;
+	IMG_UINT64 ui64SearchCount;
 	/* result 0 is the newest */
 	DEVICEMEM_HISTORY_QUERY_OUT_RESULT sResults[DEVICEMEM_HISTORY_QUERY_OUT_MAX_RESULTS];
 } DEVICEMEM_HISTORY_QUERY_OUT;
+
+void DevicememHistoryDumpRecordStats(PVRSRV_DEVICE_NODE *psDevNode,
+                                    DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf,
+                                    void *pvDumpDebugFile);
 
 IMG_BOOL
 DevicememHistoryQuery(DEVICEMEM_HISTORY_QUERY_IN *psQueryIn,

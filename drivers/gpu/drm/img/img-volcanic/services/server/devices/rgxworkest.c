@@ -50,6 +50,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "device.h"
 #include "hash.h"
 #include "pvr_debug.h"
+#if defined(SUPPORT_SOC_TIMER)
+#include "rgxtimecorr.h"
+#endif
 
 #define ROUND_DOWN_TO_NEAREST_1024(number) (((number) >> 10) << 10)
 
@@ -243,20 +246,24 @@ void WorkEstCheckFirmwareCCB(PVRSRV_RGXDEV_INFO *psDevInfo)
 	RGXFWIF_WORKEST_FWCCB_CMD *psFwCCBCmd;
 	IMG_UINT8 *psFWCCB = psDevInfo->psWorkEstFirmwareCCB;
 	RGXFWIF_CCB_CTL *psFWCCBCtl = psDevInfo->psWorkEstFirmwareCCBCtl;
+	RGXFWIF_CCB_CTL *psFWCCBCtlLocal = psDevInfo->psWorkEstFirmwareCCBCtlLocal;
 
-	while (psFWCCBCtl->ui32ReadOffset != psFWCCBCtl->ui32WriteOffset)
+	RGXFwSharedMemCacheOpPtr(psFWCCBCtl, INVALIDATE);
+	while (psFWCCBCtlLocal->ui32ReadOffset != psFWCCBCtl->ui32WriteOffset)
 	{
 		PVRSRV_ERROR eError;
 
 		/* Point to the next command */
-		psFwCCBCmd = (RGXFWIF_WORKEST_FWCCB_CMD *)((uintptr_t)psFWCCB + psFWCCBCtl->ui32ReadOffset * sizeof(RGXFWIF_WORKEST_FWCCB_CMD));
+		psFwCCBCmd = (RGXFWIF_WORKEST_FWCCB_CMD *)((uintptr_t)psFWCCB + psFWCCBCtlLocal->ui32ReadOffset * sizeof(RGXFWIF_WORKEST_FWCCB_CMD));
 
 		eError = WorkEstRetire(psDevInfo, psFwCCBCmd);
 		PVR_LOG_IF_ERROR(eError, "WorkEstCheckFirmwareCCB: WorkEstRetire failed");
 
 		/* Update read offset */
-		psFWCCBCtl->ui32ReadOffset = (psFWCCBCtl->ui32ReadOffset + 1) & psFWCCBCtl->ui32WrapMask;
+		psFWCCBCtlLocal->ui32ReadOffset = (psFWCCBCtlLocal->ui32ReadOffset + 1) & psFWCCBCtlLocal->ui32WrapMask;
+		psFWCCBCtl->ui32ReadOffset = psFWCCBCtlLocal->ui32ReadOffset;
 	}
+	RGXFwSharedMemCacheOpValue(psFWCCBCtl->ui32ReadOffset, FLUSH);
 }
 
 PVRSRV_ERROR WorkEstPrepare(PVRSRV_RGXDEV_INFO        *psDevInfo,
@@ -303,8 +310,15 @@ PVRSRV_ERROR WorkEstPrepare(PVRSRV_RGXDEV_INFO        *psDevInfo,
 
 #if defined(SUPPORT_SOC_TIMER)
 	psDevConfig = psDevInfo->psDeviceNode->psDevConfig;
-	PVR_LOG_RETURN_IF_FALSE(psDevConfig->pfnSoCTimerRead, "SoC timer not available", eError);
-	ui64CurrentSoCTime = psDevConfig->pfnSoCTimerRead(psDevConfig->hSysData);
+	if (psDevConfig->pfnSoCTimerRead)
+	{
+		ui64CurrentSoCTime = psDevConfig->pfnSoCTimerRead(psDevConfig->hSysData);
+	}
+	else
+	{
+		/* Fallback to OS clock */
+		ui64CurrentSoCTime = 0;
+	}
 #endif
 
 	eError = OSClockMonotonicus64(&ui64CurrentTime);
@@ -322,8 +336,22 @@ PVRSRV_ERROR WorkEstPrepare(PVRSRV_RGXDEV_INFO        *psDevInfo,
 	{
 		/* Rounding is done to reduce multiple deadlines with minor spread flooding the fw workload array. */
 #if defined(SUPPORT_SOC_TIMER)
-		IMG_UINT64 ui64TimeDelta = (ui64DeadlineInus - ui64CurrentTime) * SOC_TIMER_FREQ;
-		psWorkEstKickData->ui64Deadline = ROUND_DOWN_TO_NEAREST_1024(ui64CurrentSoCTime + ui64TimeDelta);
+		if (psDevConfig->pfnSoCTimerRead)
+		{
+			RGX_DATA *psRGXData = (RGX_DATA*)psDevConfig->hDevData;
+			RGX_TIMING_INFORMATION *psRGXTimingInfo = psRGXData->psRGXTimingInfo;
+			IMG_UINT32 ui32Remainder;
+			IMG_UINT64 ui64TimeDelta =
+				OSDivide64r64((ui64DeadlineInus - ui64CurrentTime) * psRGXTimingInfo->ui32SOCClockSpeed, SECONDS_TO_MICROSECONDS, &ui32Remainder);
+
+			psWorkEstKickData->ui64Deadline = ROUND_DOWN_TO_NEAREST_1024(ui64CurrentSoCTime + ui64TimeDelta);
+			PVR_DPF((PVR_DBG_MESSAGE, "Current SOC time: %llu. New deadline: %llu SOC ticks",
+					 ui64CurrentSoCTime, psWorkEstKickData->ui64Deadline));
+		}
+		else
+		{
+			psWorkEstKickData->ui64Deadline = ROUND_DOWN_TO_NEAREST_1024(ui64DeadlineInus);
+		}
 #else
 		psWorkEstKickData->ui64Deadline = ROUND_DOWN_TO_NEAREST_1024(ui64DeadlineInus);
 #endif
@@ -418,6 +446,7 @@ PVRSRV_ERROR WorkEstRetire(PVRSRV_RGXDEV_INFO *psDevInfo,
 	RGX_WORKLOAD           *pasWorkloadHashKeys;
 	IMG_UINT32             ui32HashArrayWO;
 	IMG_UINT64             *pui64CyclesTaken;
+	IMG_UINT64              ui64ActualCyclesTaken;
 	WORKEST_RETURN_DATA    *psReturnData;
 	WORKEST_HOST_DATA      *psWorkEstHostData;
 
@@ -430,6 +459,8 @@ PVRSRV_ERROR WorkEstRetire(PVRSRV_RGXDEV_INFO *psDevInfo,
 	PVR_LOG_RETURN_IF_FALSE(psReturnCmd,
 	                        "WorkEstRetire: Missing return command",
 	                        PVRSRV_ERROR_INVALID_PARAMS);
+
+	RGXFwSharedMemCacheOpPtr(psReturnCmd, INVALIDATE);
 
 	if (psReturnCmd->ui16ReturnDataIndex >= RETURN_DATA_ARRAY_SIZE)
 	{
@@ -448,6 +479,11 @@ PVRSRV_ERROR WorkEstRetire(PVRSRV_RGXDEV_INFO *psDevInfo,
 	psWorkEstHostData = psReturnData->psWorkEstHostData;
 	PVR_LOG_GOTO_IF_FALSE(psWorkEstHostData,
 	                      "WorkEstRetire: Missing host data",
+	                      unlock_workest);
+
+	/* Skip if cycle data unavailable */
+	PVR_LOG_GOTO_IF_FALSE(psReturnCmd->ui32CyclesTaken,
+	                      "WorkEstRetire: Cycle data not available",
 	                      unlock_workest);
 
 	/* Retrieve/validate completed workload matching data */
@@ -482,11 +518,14 @@ PVRSRV_ERROR WorkEstRetire(PVRSRV_RGXDEV_INFO *psDevInfo,
 		(void) HASH_Remove(psWorkloadMatchingData->psHashTable, (uintptr_t)psWorkloadHashKey);
 	}
 
+	ui64ActualCyclesTaken = (IMG_UINT64)psReturnCmd->ui16CyclesTakenHigh << 32U;
+	ui64ActualCyclesTaken += psReturnCmd->ui32CyclesTaken;
+
 	if (pui64CyclesTaken == NULL)
 	{
 		/* There is no existing entry for this workload characteristics,
 		 * store it */
-		paui64WorkloadHashData[ui32HashArrayWO] = psReturnCmd->ui32CyclesTaken;
+		paui64WorkloadHashData[ui32HashArrayWO] = ui64ActualCyclesTaken;
 		pasWorkloadHashKeys[ui32HashArrayWO] = *psWorkloadCharacteristics;
 	}
 	else
@@ -494,7 +533,7 @@ PVRSRV_ERROR WorkEstRetire(PVRSRV_RGXDEV_INFO *psDevInfo,
 		/* Found prior entry for workload characteristics, average with
 		 * completed; also reset the old value to 0 so it is known to be
 		 * invalid */
-		paui64WorkloadHashData[ui32HashArrayWO] = (*pui64CyclesTaken + psReturnCmd->ui32CyclesTaken)/2;
+		paui64WorkloadHashData[ui32HashArrayWO] = (*pui64CyclesTaken + ui64ActualCyclesTaken)/2;
 		pasWorkloadHashKeys[ui32HashArrayWO] = *psWorkloadCharacteristics;
 		*pui64CyclesTaken = 0;
 	}
@@ -509,6 +548,13 @@ PVRSRV_ERROR WorkEstRetire(PVRSRV_RGXDEV_INFO *psDevInfo,
 		PVR_LOG(("WorkEstRetire: HASH_Insert failed"));
 	}
 
+#if defined(DEBUG)
+	/* Zero the current entry in the return data table.
+	 * Helps detect invalid ReturnDataIndex values from the
+	 * firmware before the hash table is corrupted. */
+	memset(psReturnData, 0, sizeof(WORKEST_RETURN_DATA));
+#endif
+
 	psWorkloadMatchingData->ui32HashArrayWO = (ui32HashArrayWO + 1) & WORKLOAD_HASH_WRAP_MASK;
 
 	OSLockRelease(psWorkloadMatchingData->psHashLock);
@@ -522,7 +568,12 @@ PVRSRV_ERROR WorkEstRetire(PVRSRV_RGXDEV_INFO *psDevInfo,
 
 unlock_workest:
 	OSLockRelease(psDevInfo->hWorkEstLock);
-	psWorkEstHostData->ui32WorkEstCCBReceived++;
+
+	PVR_ASSERT(psWorkEstHostData);
+	if (psWorkEstHostData)
+	{
+		psWorkEstHostData->ui32WorkEstCCBReceived++;
+	}
 
 	return PVRSRV_ERROR_INVALID_PARAMS;
 }
@@ -575,8 +626,6 @@ void _WorkEstDeInit(PVRSRV_RGXDEV_INFO *psDevInfo,
 
 	/* Remove the hash lock */
 	WorkEstHashLockDestroy(psWorkloadMatchingData->psHashLock);
-
-	return;
 }
 
 void WorkEstInitTA3D(PVRSRV_RGXDEV_INFO *psDevInfo, WORKEST_HOST_DATA *psWorkEstData)

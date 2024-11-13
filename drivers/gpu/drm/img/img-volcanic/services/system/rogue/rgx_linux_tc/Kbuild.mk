@@ -38,16 +38,9 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### ###########################################################################
-PVRSRVKM_NAME = $(PVRSRV_MODNAME)
-
-$(PVRSRVKM_NAME)-y += \
+$(PVRSRV_MODNAME)-y += \
 	services/system/rogue/$(PVR_SYSTEM)/sysconfig.o \
-	services/system/common/sysconfig_cmn.o \
-	services/server/common/vmm_pvz_client.o \
-	services/server/common/vmm_pvz_server.o \
-	services/server/common/vz_vmm_pvz.o \
-	services/server/common/vz_vmm_vm.o \
-	services/system/rogue/common/vmm_type_$(VMM_TYPE).o
+	services/system/common/sysconfig_cmn.o
 
 ccflags-y += \
 	-I$(TOP)/services/system/rogue/common/env/linux -I$(TOP)/services/system/rogue/common/env/linux \

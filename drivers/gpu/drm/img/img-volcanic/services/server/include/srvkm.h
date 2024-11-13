@@ -72,13 +72,13 @@ void PVRSRVCommonDriverDeInit(void);
 @Description  Creates and initialises a common layer Services device node
               for an OS native device. First stage device discovery.
 @Input        pvOSDevice      OS native device
-@Input        i32OsDeviceID A unique identifier which helps recognise this
+@Input        i32KernelDeviceID A unique identifier which helps recognise this
                               Device in the UM space provided by the OS.
 @Output       ppsDeviceNode   Points to the new device node on success
 @Return       PVRSRV_ERROR    PVRSRV_OK on success and an error otherwise
 */ /**************************************************************************/
 PVRSRV_ERROR
-PVRSRVCommonDeviceCreate(void *pvOSDevice, IMG_INT32 i32OsDeviceID,
+PVRSRVCommonDeviceCreate(void *pvOSDevice, IMG_INT32 i32KernelDeviceID,
 				   struct _PVRSRV_DEVICE_NODE_ **ppsDeviceNode);
 
 /*************************************************************************/ /*!
@@ -96,9 +96,8 @@ PVRSRV_ERROR PVRSRVCommonDeviceInitialise(struct _PVRSRV_DEVICE_NODE_ *psDeviceN
 @Function     PVRSRVCommonDeviceDestroy
 @Description  Destroys a PVR Services device node.
 @Input        psDeviceNode  Device node to destroy
-@Return       PVRSRV_ERROR  PVRSRV_OK on success and an error otherwise
 */ /**************************************************************************/
-PVRSRV_ERROR
+void
 PVRSRVCommonDeviceDestroy(struct _PVRSRV_DEVICE_NODE_ *psDeviceNode);
 
 /******************
@@ -111,7 +110,7 @@ exits by its own means (break, return, goto, etc.)
 
 Example of usage:
 
-LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 {
 	if (psQueueInfo->ui32ReadOffset == psQueueInfo->ui32WriteOffset)
 	{
@@ -120,7 +119,7 @@ LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
 	}
 
 	OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-} END_LOOP_UNTIL_TIMEOUT();
+} END_LOOP_UNTIL_TIMEOUT_US();
 
 -----------------------------------------------------------------------------*/
 
@@ -129,17 +128,17 @@ LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
  * necessary when preemption is enabled.
  */
 /* PRQA S 3411,3431 12 */ /* critical format, leave alone */
-#define LOOP_UNTIL_TIMEOUT(TIMEOUT) \
+#define LOOP_UNTIL_TIMEOUT_US(TIMEOUT_US) \
 {\
 	IMG_UINT32 uiOffset, uiStart, uiCurrent; \
 	IMG_INT32 iNotLastLoop;					 \
 	for (uiOffset = 0, uiStart = OSClockus(), uiCurrent = uiStart + 1, iNotLastLoop = 1;\
-		((uiCurrent - uiStart + uiOffset) < (TIMEOUT)) || iNotLastLoop--;				\
+		((uiCurrent - uiStart + uiOffset) < (TIMEOUT_US)) || iNotLastLoop--;				\
 		uiCurrent = OSClockus(),													\
 		uiOffset = uiCurrent < uiStart ? IMG_UINT32_MAX - uiStart : uiOffset,		\
 		uiStart = uiCurrent < uiStart ? 0 : uiStart)
 
-#define END_LOOP_UNTIL_TIMEOUT() \
+#define END_LOOP_UNTIL_TIMEOUT_US() \
 }
 
 #endif /* SRVKM_H */

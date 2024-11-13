@@ -51,9 +51,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 typedef enum PVRSRV_ERROR_TAG
 {
 	PVRSRV_OK,
+
 #define PVRE(x) x,
 #include "pvrsrv_errors.h"
 #undef PVRE
+
 	PVRSRV_ERROR_FORCE_I32 = 0x7fffffff
 
 } PVRSRV_ERROR;
@@ -67,7 +69,7 @@ typedef enum PVRSRV_ERROR_TAG
  *         to retry.
  */
 #define PVRSRVIsRetryError(eError) \
-	((eError == PVRSRV_ERROR_RETRY || eError == PVRSRV_ERROR_KERNEL_CCB_FULL) ? \
+	(((eError == PVRSRV_ERROR_RETRY) || (eError == PVRSRV_ERROR_KERNEL_CCB_FULL)) ? \
 	 IMG_TRUE : IMG_FALSE)
 
 #endif /* !defined(PVRSRV_ERROR_H) */

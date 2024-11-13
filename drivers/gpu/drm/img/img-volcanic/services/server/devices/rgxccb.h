@@ -49,7 +49,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgxdevice.h"
 #include "sync_server.h"
 #include "connection_server.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "rgxdefs_km.h"
 #include "pvr_notifier.h"
 
@@ -143,10 +143,10 @@ typedef struct _RGX_CCB_CMD_HELPER_DATA_ {
 	RGXFWIF_CCB_CMD_TYPE	eType;
 	IMG_UINT32				ui32CmdSize;
 	IMG_UINT8				*pui8DMCmd;
-	IMG_UINT32				ui32FenceCmdSize;
 	IMG_UINT32				ui32FBSCInvalCmdSize;
 	IMG_UINT32				ui32DMCmdSize;
-	IMG_UINT32				ui32UpdateCmdSize;
+	IMG_UINT32				ui32TotalSize;
+	IMG_UINT32				ui32DMCmdOffset;
 
 	/* data for FBSC invalidate command */
 	IMG_UINT64				ui64FBSCEntryMask;
@@ -279,7 +279,8 @@ void RGXCmdHelperInitCmdCCB_CommandSize(PVRSRV_RGXDEV_INFO *psDevInfo,
                                         PRGXFWIF_UFO_ADDR       *ppRMWUFOAddr,
                                         RGX_CCB_CMD_HELPER_DATA *psCmdHelperData);
 
-void RGXCmdHelperInitCmdCCB_OtherData(RGX_CLIENT_CCB *psClientCCB,
+void RGXCmdHelperInitCmdCCB_OtherData(PVRSRV_RGXDEV_INFO *psDevInfo,
+                                      RGX_CLIENT_CCB *psClientCCB,
                                       IMG_UINT32 ui32ClientFenceCount,
                                       PRGXFWIF_UFO_ADDR *pauiFenceUFOAddress,
                                       IMG_UINT32 *paui32FenceValue,

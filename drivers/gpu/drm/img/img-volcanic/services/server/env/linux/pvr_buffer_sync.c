@@ -77,13 +77,7 @@ struct pvr_buffer_sync_append_data {
 static struct dma_resv *
 pmr_reservation_object_get(struct _PMR_ *pmr)
 {
-	struct dma_buf *dmabuf;
-
-	dmabuf = PhysmemGetDmaBuf(pmr);
-	if (dmabuf)
-		return dmabuf->resv;
-
-	return NULL;
+	return PhysmemGetDmaResv(pmr);
 }
 
 static int
@@ -300,7 +294,7 @@ pvr_buffer_sync_check_fences_create(struct pvr_fence_context *fence_ctx,
 		}
 	}
 
-	WARN_ON((i != nr_pmrs));
+	WARN_ON(i != nr_pmrs);
 
 	return data;
 
@@ -677,8 +671,8 @@ pvr_buffer_sync_kick_succeeded(struct pvr_buffer_sync_append_data *data)
 					data->update_fence->name, resv);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
 			dma_resv_add_fence(resv,
-					&data->update_fence->base,
-					DMA_RESV_USAGE_WRITE);
+					   &data->update_fence->base,
+					   DMA_RESV_USAGE_WRITE);
 #else
 			dma_resv_add_excl_fence(resv,
 						&data->update_fence->base);
@@ -689,8 +683,8 @@ pvr_buffer_sync_kick_succeeded(struct pvr_buffer_sync_append_data *data)
 					data->update_fence->name, resv);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
 			dma_resv_add_fence(resv,
-					&data->update_fence->base,
-					DMA_RESV_USAGE_READ);
+					   &data->update_fence->base,
+					   DMA_RESV_USAGE_READ);
 #else
 			dma_resv_add_shared_fence(resv,
 						  &data->update_fence->base);

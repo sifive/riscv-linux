@@ -46,7 +46,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pdump_km.h"
 #include "pvr_debug.h"
 #include "rgxutils.h"
-#include "rgxfwutils.h"
+#include "rgxfwcmnctx.h"
 #include "rgxcompute.h"
 #include "rgx_bvnc_defs_km.h"
 #include "rgxmem.h"
@@ -57,7 +57,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgxccb.h"
 #include "rgxhwperf.h"
 #include "ospvr_gputrace.h"
-#include "htbuffer.h"
+#include "htbserver.h"
+#include "rgxshader.h"
 
 #include "sync_server.h"
 #include "sync_internal.h"
@@ -72,6 +73,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "sync_checkpoint_internal.h"
 
 #include "rgxtimerquery.h"
+
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
 #include "rgxworkest.h"
@@ -188,7 +190,10 @@ PVRSRV_ERROR PVRSRVRGXCreateComputeContextKM(CONNECTION_DATA			*psConnection,
 	}
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	WorkEstInitCompute(psDevInfo, &psComputeContext->sWorkEstData);
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDeviceNode))
+	{
+		WorkEstInitCompute(psDevInfo, &psComputeContext->sWorkEstData);
+	}
 #endif
 
 	if (ui32FrameworkCommandSize)
@@ -258,6 +263,7 @@ PVRSRV_ERROR PVRSRVRGXCreateComputeContextKM(CONNECTION_DATA			*psConnection,
 
 	OSDeviceMemCopy(&psFWComputeContext->sStaticComputeContextState, pStaticComputeContextState, ui32StaticComputeContextStateSize);
 	DevmemPDumpLoadMem(psComputeContext->psFWComputeContextMemDesc, 0, sizeof(RGXFWIF_FWCOMPUTECONTEXT), PDUMP_FLAGS_CONTINUOUS);
+	RGXFwSharedMemCacheOpValue(psFWComputeContext->sStaticComputeContextState, FLUSH);
 	DevmemReleaseCpuVirtAddr(psComputeContext->psFWComputeContextMemDesc);
 
 #if defined(SUPPORT_BUFFER_SYNC)
@@ -315,10 +321,6 @@ PVRSRV_ERROR PVRSRVRGXDestroyComputeContextKM(RGX_SERVER_COMPUTE_CONTEXT *psComp
 {
 	PVRSRV_ERROR				eError = PVRSRV_OK;
 	PVRSRV_RGXDEV_INFO *psDevInfo = psComputeContext->psDeviceNode->pvDevice;
-#if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	RGXFWIF_FWCOMPUTECONTEXT	*psFWComputeContext;
-	IMG_UINT32 ui32WorkEstCCBSubmitted;
-#endif
 
 	/* Check if the FW has finished with this resource ... */
 	eError = RGXFWRequestCommonContextCleanUp(psComputeContext->psDeviceNode,
@@ -326,17 +328,9 @@ PVRSRV_ERROR PVRSRVRGXDestroyComputeContextKM(RGX_SERVER_COMPUTE_CONTEXT *psComp
 											  RGXFWIF_DM_CDM,
 											  PDUMP_FLAGS_NONE);
 
-	if (eError == PVRSRV_ERROR_RETRY)
-	{
-		return eError;
-	}
-	else if (eError != PVRSRV_OK)
-	{
-		PVR_LOG(("%s: Unexpected error from RGXFWRequestCommonContextCleanUp (%s)",
-				__func__,
-				PVRSRVGetErrorString(eError)));
-		return eError;
-	}
+	RGX_RETURN_IF_ERROR_AND_DEVICE_RECOVERABLE(psComputeContext->psDeviceNode,
+						   eError,
+						   RGXFWRequestCommonContextCleanUp);
 
 #if defined(SUPPORT_BUFFER_SYNC)
 	/* remove after RGXFWRequestCommonContextCleanUp() because we might return
@@ -349,30 +343,36 @@ PVRSRV_ERROR PVRSRVRGXDestroyComputeContextKM(RGX_SERVER_COMPUTE_CONTEXT *psComp
 #endif
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	eError = DevmemAcquireCpuVirtAddr(psComputeContext->psFWComputeContextMemDesc,
-			(void **)&psFWComputeContext);
-	if (eError != PVRSRV_OK)
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVINFO, psDevInfo))
 	{
-		PVR_DPF((PVR_DBG_ERROR,
-				"%s: Failed to map firmware compute context (%s)",
-				__func__,
-				PVRSRVGetErrorString(eError)));
-		return eError;
-	}
+		RGXFWIF_FWCOMPUTECONTEXT	*psFWComputeContext;
+		IMG_UINT32 ui32WorkEstCCBSubmitted;
 
-	ui32WorkEstCCBSubmitted = psFWComputeContext->ui32WorkEstCCBSubmitted;
+		eError = DevmemAcquireCpuVirtAddr(psComputeContext->psFWComputeContextMemDesc,
+				(void **)&psFWComputeContext);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,
+					"%s: Failed to map firmware compute context (%s)",
+					__func__,
+					PVRSRVGetErrorString(eError)));
+			return eError;
+		}
+		RGXFwSharedMemCacheOpValue(psFWComputeContext->ui32WorkEstCCBSubmitted, INVALIDATE);
+		ui32WorkEstCCBSubmitted = psFWComputeContext->ui32WorkEstCCBSubmitted;
 
-	DevmemReleaseCpuVirtAddr(psComputeContext->psFWComputeContextMemDesc);
+		DevmemReleaseCpuVirtAddr(psComputeContext->psFWComputeContextMemDesc);
 
-	/* Check if all of the workload estimation CCB commands for this workload are read */
-	if (ui32WorkEstCCBSubmitted != psComputeContext->sWorkEstData.ui32WorkEstCCBReceived)
-	{
-		PVR_DPF((PVR_DBG_WARNING,
-		        "%s: WorkEst # cmds submitted (%u) and received (%u) mismatch",
-		        __func__, ui32WorkEstCCBSubmitted,
-		        psComputeContext->sWorkEstData.ui32WorkEstCCBReceived));
+		/* Check if all of the workload estimation CCB commands for this workload are read */
+		if (ui32WorkEstCCBSubmitted != psComputeContext->sWorkEstData.ui32WorkEstCCBReceived)
+		{
+			PVR_DPF((PVR_DBG_WARNING,
+					"%s: WorkEst # cmds submitted (%u) and received (%u) mismatch",
+					__func__, ui32WorkEstCCBSubmitted,
+					psComputeContext->sWorkEstData.ui32WorkEstCCBReceived));
 
-		return PVRSRV_ERROR_RETRY;
+			return PVRSRV_ERROR_RETRY;
+		}
 	}
 #endif
 
@@ -383,10 +383,18 @@ PVRSRV_ERROR PVRSRVRGXDestroyComputeContextKM(RGX_SERVER_COMPUTE_CONTEXT *psComp
 	OSWRLockReleaseWrite(psDevInfo->hComputeCtxListLock);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	WorkEstDeInitCompute(psDevInfo, &psComputeContext->sWorkEstData);
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVINFO, psDevInfo))
+	{
+		WorkEstDeInitCompute(psDevInfo, &psComputeContext->sWorkEstData);
+	}
 #endif
 
+	SyncAddrListDeinit(&psComputeContext->sSyncAddrListFence);
+	SyncAddrListDeinit(&psComputeContext->sSyncAddrListUpdate);
+
 	FWCommonContextFree(psComputeContext->psServerCommonContext);
+	psComputeContext->psServerCommonContext = NULL;
+
 	if (psComputeContext->psFWFrameworkMemDesc)
 	{
 		DevmemFwUnmapAndFree(psDevInfo, psComputeContext->psFWFrameworkMemDesc);
@@ -400,7 +408,6 @@ PVRSRV_ERROR PVRSRVRGXDestroyComputeContextKM(RGX_SERVER_COMPUTE_CONTEXT *psComp
 	return PVRSRV_OK;
 }
 
-
 PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 								IMG_UINT32					ui32ClientUpdateCount,
 								SYNC_PRIMITIVE_BLOCK		**pauiClientUpdateUFODevVarBlock,
@@ -410,6 +417,7 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 								PVRSRV_TIMELINE				iUpdateTimeline,
 								PVRSRV_FENCE				*piUpdateFence,
 								IMG_CHAR					pszUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH],
+								PVRSRV_FENCE				iExportFenceToSignal,
 								IMG_UINT32					ui32CmdSize,
 								IMG_PBYTE					pui8DMCmd,
 								IMG_UINT32					ui32PDumpFlags,
@@ -419,7 +427,8 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 								PMR							**ppsSyncPMRs,
 								IMG_UINT32					ui32NumWorkgroups,
 								IMG_UINT32					ui32NumWorkitems,
-								IMG_UINT64					ui64DeadlineInus)
+								IMG_UINT64					ui64DeadlineInus,
+								IMG_PUINT32					pui32IntJobRef)
 {
 	RGXFWIF_KCCB_CMD		sCmpKCCBCmd;
 	RGX_CCB_CMD_HELPER_DATA	asCmdHelperData[1];
@@ -453,6 +462,7 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	IMG_UINT64 uiCheckFenceUID = 0;
 	IMG_UINT64 uiUpdateFenceUID = 0;
 	PSYNC_CHECKPOINT psUpdateSyncCheckpoint = NULL;
+	PSYNC_CHECKPOINT psExportFenceSyncCheckpoint = NULL;
 	PSYNC_CHECKPOINT *apsFenceSyncCheckpoints = NULL;
 	IMG_UINT32 ui32FenceSyncCheckpointCount = 0;
 	IMG_UINT32 *pui32IntAllocatedUpdateValues = NULL;
@@ -471,7 +481,15 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 
 	if (iUpdateTimeline >= 0 && !piUpdateFence)
 	{
+		PVR_DPF((PVR_DBG_ERROR, "%s:   "
+				"iUpdateTimeline=%d but piUpdateFence is NULL - PVRSRV_ERROR_INVALID_PARAMS",
+				__func__, iUpdateTimeline));
 		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	if (pui32IntJobRef)
+	{
+		*pui32IntJobRef = ui32IntJobRef;
 	}
 
 	/* Ensure we haven't been given a null ptr to
@@ -487,7 +505,7 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	}
 
 	/* Ensure the string is null-terminated (Required for safety) */
-	pszUpdateFenceName[31] = '\0';
+	pszUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH-1] = '\0';
 
 	OSLockAcquire(psComputeContext->hLock);
 
@@ -593,6 +611,9 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 			ui32IntClientUpdateCount++;
 		}
 #else /* defined(SUPPORT_BUFFER_SYNC) */
+		PVR_UNREFERENCED_PARAMETER(paui32SyncPMRFlags);
+		PVR_UNREFERENCED_PARAMETER(ppsSyncPMRs);
+
 		PVR_DPF((PVR_DBG_ERROR, "%s: Buffer sync not supported but got %u buffers",
 		        __func__, ui32SyncPMRCount));
 		eError = PVRSRV_ERROR_INVALID_PARAMS;
@@ -612,7 +633,7 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 		CHKPT_DBG((PVR_DBG_ERROR, "%s: ...done, returned ERROR (%s)", __func__, PVRSRVGetErrorString(eError)));
 		goto fail_free_buffer_sync_data;
 	}
-	CHKPT_DBG((PVR_DBG_ERROR, "%s: ...done, fence %d contained %d checkpoints (apsFenceSyncCheckpoints=<%p>)", __func__, iCheckFence, ui32FenceSyncCheckpointCount, (void*)apsFenceSyncCheckpoints));
+	CHKPT_DBG((PVR_DBG_ERROR, "%s: ...done, iCheckFence %d contained %d checkpoints (apsFenceSyncCheckpoints=<%p>)", __func__, iCheckFence, ui32FenceSyncCheckpointCount, (void*)apsFenceSyncCheckpoints));
 #if defined(CMP_CHECKPOINT_DEBUG)
 	if (ui32FenceSyncCheckpointCount > 0)
 	{
@@ -620,7 +641,7 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 		for (ii=0; ii<ui32FenceSyncCheckpointCount; ii++)
 		{
 			PSYNC_CHECKPOINT psNextCheckpoint = *(apsFenceSyncCheckpoints + ii);
-			CHKPT_DBG((PVR_DBG_ERROR, "%s:    apsFenceSyncCheckpoints[%d]=<%p>", __func__, ii, (void*)psNextCheckpoint));
+			CHKPT_DBG((PVR_DBG_ERROR, "%s:    apsFenceSyncCheckpoints[%d]=<%p>, FWAddr=0x%x", __func__, ii, (void*)psNextCheckpoint, SyncCheckpointGetFirmwareAddr(psNextCheckpoint)));
 		}
 	}
 #endif
@@ -646,6 +667,48 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 		}
 
 		CHKPT_DBG((PVR_DBG_ERROR, "%s: ...returned from SyncCheckpointCreateFence (iUpdateFence=%d, psFenceTimelineUpdateSync=<%p>, ui32FenceTimelineUpdateValue=%u)", __func__, iUpdateFence, psFenceTimelineUpdateSync, ui32FenceTimelineUpdateValue));
+
+		CHKPT_DBG((PVR_DBG_ERROR, "%s: iExportFenceToSignal=%d", __func__, iExportFenceToSignal));
+		/* Resolve the iExportFenceToSignal (if required) */
+		if (iExportFenceToSignal != PVRSRV_NO_FENCE)
+		{
+			CHKPT_DBG((PVR_DBG_ERROR, "%s: SyncCheckpointResolveExportFence(iExportFenceToSignal=%d), ui32FenceSyncCheckpointCount=%d", __func__, iExportFenceToSignal, ui32FenceSyncCheckpointCount));
+			eError = SyncCheckpointResolveExportFence(iExportFenceToSignal,
+			                                          psComputeContext->psDeviceNode->hSyncCheckpointContext,
+			                                          &psExportFenceSyncCheckpoint,
+			                                          ui32PDumpFlags);
+			if (eError != PVRSRV_OK)
+			{
+				CHKPT_DBG((PVR_DBG_ERROR, "%s: ...returned error (%s) psExportFenceSyncCheckpoint=<%p>", __func__, PVRSRVGetErrorString(eError), psExportFenceSyncCheckpoint));
+				goto fail_resolve_export_fence;
+			}
+
+			/* Check that the export fence was not also included as part of the
+			 * check fence (which is an error and would lead to a stalled kick).
+			 */
+			if (ui32FenceSyncCheckpointCount > 0)
+			{
+				CHKPT_DBG((PVR_DBG_ERROR, "%s:   Checking export fence is not part of check fence...", __func__));
+				CHKPT_DBG((PVR_DBG_ERROR, "%s:   ui32FenceSyncCheckpointCount=%d",
+						   __func__, ui32FenceSyncCheckpointCount));
+				if (ui32FenceSyncCheckpointCount > 0)
+				{
+					IMG_UINT32 iii;
+
+					for (iii=0; iii<ui32FenceSyncCheckpointCount; iii++)
+					{
+						CHKPT_DBG((PVR_DBG_ERROR, "%s: apsFenceSyncCheckpoints[%d]=<%p>, FWAddr=0x%x", __func__, iii, apsFenceSyncCheckpoints[iii], SyncCheckpointGetFirmwareAddr(apsFenceSyncCheckpoints[iii])));
+						if (apsFenceSyncCheckpoints[iii] == psExportFenceSyncCheckpoint)
+						{
+							CHKPT_DBG((PVR_DBG_ERROR, "%s: ERROR psExportFenceSyncCheckpoint=<%p>", __func__, psExportFenceSyncCheckpoint));
+							eError = PVRSRV_ERROR_INVALID_PARAMS;
+							PVR_DPF((PVR_DBG_ERROR, " %s - iCheckFence includes iExportFenceToSignal", PVRSRVGetErrorString(eError)));
+							goto fail_check_fence_includes_export_fence;
+						}
+					}
+				}
+			}
+		}
 
 		CHKPT_DBG((PVR_DBG_ERROR, "%s: ui32IntClientUpdateCount=%u, psFenceTimelineUpdateSync=<%p>", __func__, ui32IntClientUpdateCount, (void*)psFenceTimelineUpdateSync));
 		/* Append the sync prim update for the timeline (if required) */
@@ -716,15 +779,13 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	{
 		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Append %d sync checkpoints to Compute CDM Fence (&psComputeContext->sSyncAddrListFence=<%p>)...", __func__, ui32FenceSyncCheckpointCount, (void*)&psComputeContext->sSyncAddrListFence));
 #if defined(CMP_CHECKPOINT_DEBUG)
-		if (ui32IntClientUpdateCount > 0)
+		if (ui32FenceSyncCheckpointCount > 0)
 		{
 			IMG_UINT32 iii;
-			IMG_UINT32 *pui32Tmp = (IMG_UINT32*)pauiIntFenceUFOAddress;
 
-			for (iii=0; iii<ui32IntClientUpdateCount; iii++)
+			for (iii=0; iii<ui32FenceSyncCheckpointCount; iii++)
 			{
-				CHKPT_DBG((PVR_DBG_ERROR, "%s: pui32IntAllocatedUpdateValues[%d](<%p>) = 0x%x", __func__, iii, (void*)pui32Tmp, *pui32Tmp));
-				pui32Tmp++;
+				CHKPT_DBG((PVR_DBG_ERROR, "%s: apsFenceSyncCheckpoints[%d]=<%p>, FWAddr=0x%x", __func__, iii, apsFenceSyncCheckpoints[iii], SyncCheckpointGetFirmwareAddr(apsFenceSyncCheckpoints[iii])));
 			}
 		}
 #endif
@@ -760,6 +821,34 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 		SyncAddrListAppendCheckpoints(&psComputeContext->sSyncAddrListUpdate,
 									  1,
 									  &psUpdateSyncCheckpoint);
+		if (!pauiIntUpdateUFOAddress)
+		{
+			pauiIntUpdateUFOAddress = psComputeContext->sSyncAddrListUpdate.pasFWAddrs;
+		}
+		ui32IntClientUpdateCount++;
+#if defined(CMP_CHECKPOINT_DEBUG)
+		if (ui32IntClientUpdateCount > 0)
+		{
+			IMG_UINT32 iii;
+			IMG_UINT32 *pui32Tmp = (IMG_UINT32*)pauiIntUpdateUFOAddress;
+
+			CHKPT_DBG((PVR_DBG_ERROR, "%s: pauiIntUpdateUFOAddress=<%p>, pui32Tmp=<%p>, ui32IntClientUpdateCount=%u", __func__, (void*)pauiIntUpdateUFOAddress, (void*)pui32Tmp, ui32IntClientUpdateCount));
+			for (iii=0; iii<ui32IntClientUpdateCount; iii++)
+			{
+				CHKPT_DBG((PVR_DBG_ERROR, "%s: pauiIntUpdateUFOAddress[%d](<%p>) = 0x%x", __func__, iii, (void*)pui32Tmp, *pui32Tmp));
+				pui32Tmp++;
+			}
+		}
+#endif
+	}
+
+	if (psExportFenceSyncCheckpoint)
+	{
+		/* Append the update (from export fence) */
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Append 1 sync checkpoint to Compute CDM Update (&psComputeContext->sSyncAddrListUpdate=<%p>, psExportFenceSyncCheckpoint=<%p>)...", __func__, (void*)&psComputeContext->sSyncAddrListUpdate , (void*)psExportFenceSyncCheckpoint));
+		SyncAddrListAppendCheckpoints(&psComputeContext->sSyncAddrListUpdate,
+									  1,
+									  &psExportFenceSyncCheckpoint);
 		if (!pauiIntUpdateUFOAddress)
 		{
 			pauiIntUpdateUFOAddress = psComputeContext->sSyncAddrListUpdate.pasFWAddrs;
@@ -834,17 +923,24 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 #endif
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	sWorkloadCharacteristics.sCompute.ui32NumberOfWorkgroups = ui32NumWorkgroups;
-	sWorkloadCharacteristics.sCompute.ui32NumberOfWorkitems  = ui32NumWorkitems;
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psComputeContext->psDeviceNode))
+	{
+		sWorkloadCharacteristics.sCompute.ui32NumberOfWorkgroups = ui32NumWorkgroups;
+		sWorkloadCharacteristics.sCompute.ui32NumberOfWorkitems  = ui32NumWorkitems;
 
-	/* Prepare workload estimation */
-	WorkEstPrepare(psComputeContext->psDeviceNode->pvDevice,
-			&psComputeContext->sWorkEstData,
-			&psComputeContext->sWorkEstData.uWorkloadMatchingData.sCompute.sDataCDM,
-			RGXFWIF_CCB_CMD_TYPE_CDM,
-			&sWorkloadCharacteristics,
-			ui64DeadlineInus,
-			&sWorkloadKickDataCompute);
+		/* Prepare workload estimation */
+		WorkEstPrepare(psComputeContext->psDeviceNode->pvDevice,
+				&psComputeContext->sWorkEstData,
+				&psComputeContext->sWorkEstData.uWorkloadMatchingData.sCompute.sDataCDM,
+				RGXFWIF_CCB_CMD_TYPE_CDM,
+				&sWorkloadCharacteristics,
+				ui64DeadlineInus,
+				&sWorkloadKickDataCompute);
+	}
+#else
+	PVR_UNREFERENCED_PARAMETER(ui32NumWorkgroups);
+	PVR_UNREFERENCED_PARAMETER(ui32NumWorkitems);
+	PVR_UNREFERENCED_PARAMETER(ui64DeadlineInus);
 #endif
 
 	RGX_GetTimestampCmdHelper((PVRSRV_RGXDEV_INFO*) psComputeContext->psDeviceNode->pvDevice,
@@ -882,7 +978,7 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	eError = RGXCmdHelperAcquireCmdCCB(ARRAY_SIZE(asCmdHelperData), asCmdHelperData);
 	if (eError != PVRSRV_OK)
 	{
-		goto fail_cmdaquire;
+		goto fail_cmdacquire;
 	}
 
 
@@ -903,26 +999,43 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	  take the required server sync operations and commit all the resources
 	*/
 
+	eError = PVRSRVPowerLock(psDevInfo->psDeviceNode);
+	if (unlikely(eError != PVRSRV_OK))
+	{
+		PVR_DPF((PVR_DBG_WARNING, "%s: failed to acquire powerlock (%s)",
+			__func__, PVRSRVGetErrorString(eError)));
+
+		/* If system is found powered OFF, Retry scheduling the command */
+		if (likely(eError == PVRSRV_ERROR_SYSTEM_STATE_POWERED_OFF))
+		{
+			eError = PVRSRV_ERROR_RETRY;
+		}
+		goto fail_acquirepowerlock;
+	}
+
 	ui32CDMCmdOffset = RGXGetHostWriteOffsetCCB(psClientCCB);
 	RGXCmdHelperReleaseCmdCCB(1, asCmdHelperData, "CDM", FWCommonContextGetFWAddress(psComputeContext->psServerCommonContext).ui32Addr);
 
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	/* The following is used to determine the offset of the command header containing
-	   the workload estimation data so that can be accessed when the KCCB is read */
-	ui32CDMCmdHeaderOffset = RGXCmdHelperGetDMCommandHeaderOffset(asCmdHelperData);
-
-	ui32CDMCmdOffsetWrapCheck = RGXGetHostWriteOffsetCCB(FWCommonContextGetClientCCB(psComputeContext->psServerCommonContext));
-
-	/* This checks if the command would wrap around at the end of the CCB and
-	 * therefore would start at an offset of 0 rather than the current command
-	 * offset */
-	if (ui32CDMCmdOffset < ui32CDMCmdOffsetWrapCheck)
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDevInfo->psDeviceNode))
 	{
-		ui32CDMWorkloadDataRO = ui32CDMCmdOffset;
-	}
-	else
-	{
-		ui32CDMWorkloadDataRO = 0;
+		/* The following is used to determine the offset of the command header containing
+		   the workload estimation data so that can be accessed when the KCCB is read */
+		ui32CDMCmdHeaderOffset = RGXCmdHelperGetDMCommandHeaderOffset(asCmdHelperData);
+
+		ui32CDMCmdOffsetWrapCheck = RGXGetHostWriteOffsetCCB(FWCommonContextGetClientCCB(psComputeContext->psServerCommonContext));
+
+		/* This checks if the command would wrap around at the end of the CCB and
+		 * therefore would start at an offset of 0 rather than the current command
+		 * offset */
+		if (ui32CDMCmdOffset < ui32CDMCmdOffsetWrapCheck)
+		{
+			ui32CDMWorkloadDataRO = ui32CDMCmdOffset;
+		}
+		else
+		{
+			ui32CDMWorkloadDataRO = 0;
+		}
 	}
 #endif
 
@@ -935,9 +1048,12 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 
 	/* Add the Workload data into the KCCB kick */
 #if defined(SUPPORT_WORKLOAD_ESTIMATION)
-	/* Store the offset to the CCCB command header so that it can be referenced
-	 * when the KCCB command reaches the FW */
-	sCmpKCCBCmd.uCmdData.sCmdKickData.ui32WorkEstCmdHeaderOffset = ui32CDMWorkloadDataRO + ui32CDMCmdHeaderOffset;
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVNODE, psDevInfo->psDeviceNode))
+	{
+		/* Store the offset to the CCCB command header so that it can be referenced
+		 * when the KCCB command reaches the FW */
+		sCmpKCCBCmd.uCmdData.sCmdKickData.ui32WorkEstCmdHeaderOffset = ui32CDMWorkloadDataRO + ui32CDMCmdHeaderOffset;
+	}
 #endif
 
 	ui32FWCtx = FWCommonContextGetFWAddress(psComputeContext->psServerCommonContext).ui32Addr;
@@ -969,9 +1085,9 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	/*
 	 * Submit the compute command to the firmware.
 	 */
-	LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 	{
-		eError = RGXScheduleCommand(psComputeContext->psDeviceNode->pvDevice,
+		eError = RGXScheduleCommandWithoutPowerLock(psComputeContext->psDeviceNode->pvDevice,
 									RGXFWIF_DM_CDM,
 									&sCmpKCCBCmd,
 									ui32PDumpFlags);
@@ -980,7 +1096,9 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 			break;
 		}
 		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-	} END_LOOP_UNTIL_TIMEOUT();
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	PVRSRVPowerUnlock(psDevInfo->psDeviceNode);
 
 	if (eError != PVRSRV_OK)
 	{
@@ -1001,15 +1119,28 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	/* If NO_HARDWARE, signal the output fence's sync checkpoint and sync prim */
 	if (psUpdateSyncCheckpoint)
 	{
-		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Signalling NOHW sync checkpoint<%p>, ID:%d, FwAddr=0x%x", __func__, (void*)psUpdateSyncCheckpoint, SyncCheckpointGetId(psUpdateSyncCheckpoint), SyncCheckpointGetFirmwareAddr(psUpdateSyncCheckpoint)));
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Signalling NOHW sync checkpoint<%p>, ID:%d, FwAddr=0x%x", __func__,
+		           (void*)psUpdateSyncCheckpoint, SyncCheckpointGetId(psUpdateSyncCheckpoint),
+		           SyncCheckpointGetFirmwareAddr(psUpdateSyncCheckpoint)));
 		SyncCheckpointSignalNoHW(psUpdateSyncCheckpoint);
 	}
 	if (psFenceTimelineUpdateSync)
 	{
-		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Updating NOHW sync prim<%p> to %d", __func__, (void*)psFenceTimelineUpdateSync, ui32FenceTimelineUpdateValue));
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Updating NOHW sync prim<%p> to %d", __func__,
+		           (void*)psFenceTimelineUpdateSync, ui32FenceTimelineUpdateValue));
 		SyncPrimNoHwUpdate(psFenceTimelineUpdateSync, ui32FenceTimelineUpdateValue);
 	}
 	SyncCheckpointNoHWUpdateTimelines(NULL);
+
+	if (psExportFenceSyncCheckpoint)
+	{
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Signalling NOHW sync checkpoint<%p>, ID:%d, FwAddr=0x%x", __func__,
+		           (void*)psExportFenceSyncCheckpoint, SyncCheckpointGetId(psExportFenceSyncCheckpoint),
+		           SyncCheckpointGetFirmwareAddr(psExportFenceSyncCheckpoint)));
+		SyncCheckpointSignalNoHW(psExportFenceSyncCheckpoint);
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   SyncCheckpointNoHWSignalExportFence(iExportFenceToSignal=%d)", __func__, iExportFenceToSignal));
+		SyncCheckpointNoHWSignalExportFence(iExportFenceToSignal);
+	}
 #endif /* defined(NO_HARDWARE) */
 
 #if defined(SUPPORT_BUFFER_SYNC)
@@ -1052,13 +1183,20 @@ PVRSRV_ERROR PVRSRVRGXKickCDMKM(RGX_SERVER_COMPUTE_CONTEXT	*psComputeContext,
 	return PVRSRV_OK;
 
 fail_schedulecmd:
-fail_cmdaquire:
+fail_acquirepowerlock:
+fail_cmdacquire:
 #if defined(RGX_FBSC_INVALIDATE_COMMAND_SUPPORTED)
 fail_cmdinvalfbsc:
 #endif
 	SyncAddrListRollbackCheckpoints(psComputeContext->psDeviceNode, &psComputeContext->sSyncAddrListFence);
 	SyncAddrListRollbackCheckpoints(psComputeContext->psDeviceNode, &psComputeContext->sSyncAddrListUpdate);
 fail_alloc_update_values_mem:
+	if (psExportFenceSyncCheckpoint)
+	{
+		SyncCheckpointRollbackExportFence(iExportFenceToSignal);
+	}
+fail_check_fence_includes_export_fence:
+fail_resolve_export_fence:
 	if (iUpdateFence != PVRSRV_NO_FENCE)
 	{
 		SyncCheckpointRollbackFenceData(iUpdateFence, pvUpdateFenceFinaliseData);
@@ -1099,6 +1237,38 @@ err_populate_sync_addr_list:
 	return eError;
 }
 
+PVRSRV_ERROR PVRSRVRGXSendCancelCmdKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeContext, IMG_UINT32 ui32FirstIntJobRefToCancel, IMG_UINT32 ui32LastIntJobRefToCancel)
+{
+	RGXFWIF_KCCB_CMD sCancelWorkKCCBCmd;
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
+	sCancelWorkKCCBCmd.eCmdType = RGXFWIF_KCCB_CMD_CANCEL_WORK;
+	sCancelWorkKCCBCmd.uCmdData.sCancelWorkData.psContext = FWCommonContextGetFWAddress(psComputeContext->psServerCommonContext);
+	sCancelWorkKCCBCmd.uCmdData.sCancelWorkData.ui32FirstIntJobRefToCancel = ui32FirstIntJobRefToCancel;
+	sCancelWorkKCCBCmd.uCmdData.sCancelWorkData.ui32LastIntJobRefToCancel = ui32LastIntJobRefToCancel;
+
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		eError = RGXScheduleCommand(psComputeContext->psDeviceNode->pvDevice,
+		                            RGXFWIF_DM_CDM,
+		                            &sCancelWorkKCCBCmd,
+		                            PDUMP_FLAGS_CONTINUOUS);
+
+		/* Iterate if we hit a PVRSRV_ERROR_KERNEL_CCB_FULL error */
+		if ((eError != PVRSRV_ERROR_RETRY) &&
+		    (eError != PVRSRV_ERROR_KERNEL_CCB_FULL))
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	PVR_DPF((PVR_DBG_MESSAGE, "Sending compute cancel command for context <%p>. Work with IntJobRef below ui32FirstValidIntJobRef=0x%x might be discarded.",
+	    psComputeContext->psServerCommonContext, ui32LastIntJobRefToCancel + 1));
+
+	return eError;
+}
+
 PVRSRV_ERROR PVRSRVRGXFlushComputeDataKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeContext)
 {
 	RGXFWIF_KCCB_CMD sFlushCmd;
@@ -1117,7 +1287,7 @@ PVRSRV_ERROR PVRSRVRGXFlushComputeDataKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeCo
 
 	OSLockAcquire(psComputeContext->hLock);
 
-	LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 	{
 		eError = RGXScheduleCommandAndGetKCCBSlot(psDevInfo,
 									RGXFWIF_DM_CDM,
@@ -1131,7 +1301,7 @@ PVRSRV_ERROR PVRSRVRGXFlushComputeDataKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeCo
 			break;
 		}
 		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-	} END_LOOP_UNTIL_TIMEOUT();
+	} END_LOOP_UNTIL_TIMEOUT_US();
 
 	if (eError != PVRSRV_OK)
 	{
@@ -1160,14 +1330,17 @@ PVRSRV_ERROR PVRSRVRGXFlushComputeDataKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeCo
 					 "%s: Compute flush aborted (%s)",
 					 __func__,
 					 PVRSRVGetErrorString(eError)));
+			goto error_exit;
 		}
-		else if (unlikely(psDevInfo->pui32KernelCCBRtnSlots[ui32kCCBCommandSlot] &
+
+		if (unlikely(psDevInfo->pui32KernelCCBRtnSlots[ui32kCCBCommandSlot] &
 		                  RGXFWIF_KCCB_RTN_SLOT_POLL_FAILURE))
 		{
 			PVR_DPF((PVR_DBG_WARNING, "%s: FW poll on a HW operation failed", __func__));
 		}
 	}
 
+error_exit:
 	OSLockRelease(psComputeContext->hLock);
 	return eError;
 }
@@ -1176,8 +1349,11 @@ PVRSRV_ERROR PVRSRVRGXFlushComputeDataKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeCo
 PVRSRV_ERROR PVRSRVRGXNotifyComputeWriteOffsetUpdateKM(RGX_SERVER_COMPUTE_CONTEXT  *psComputeContext)
 {
 	PVRSRV_RGXDEV_INFO *psDevInfo = psComputeContext->psDeviceNode->pvDevice;
-	if (RGX_IS_FEATURE_VALUE_SUPPORTED(psDevInfo, CDM_CONTROL_STREAM_FORMAT) &&
-		2 == RGX_GET_FEATURE_VALUE(psDevInfo, CDM_CONTROL_STREAM_FORMAT))
+	IMG_UINT32 ui32ControlStreamFormat =
+		RGX_IS_FEATURE_VALUE_SUPPORTED(psDevInfo, CDM_CONTROL_STREAM_FORMAT) ?
+		RGX_GET_FEATURE_VALUE(psDevInfo, CDM_CONTROL_STREAM_FORMAT) : 0;
+
+	if (ui32ControlStreamFormat >= 2U && ui32ControlStreamFormat < 5U)
 	{
 
 		RGXFWIF_KCCB_CMD  sKCCBCmd;
@@ -1189,7 +1365,7 @@ PVRSRV_ERROR PVRSRVRGXNotifyComputeWriteOffsetUpdateKM(RGX_SERVER_COMPUTE_CONTEX
 		sKCCBCmd.eCmdType = RGXFWIF_KCCB_CMD_NOTIFY_WRITE_OFFSET_UPDATE;
 		sKCCBCmd.uCmdData.sWriteOffsetUpdateData.psContext = FWCommonContextGetFWAddress(psComputeContext->psServerCommonContext);
 
-		LOOP_UNTIL_TIMEOUT(MAX_HW_TIME_US)
+		LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
 		{
 			eError = RGXScheduleCommand(psComputeContext->psDeviceNode->pvDevice,
 										RGXFWIF_DM_CDM,
@@ -1200,7 +1376,7 @@ PVRSRV_ERROR PVRSRVRGXNotifyComputeWriteOffsetUpdateKM(RGX_SERVER_COMPUTE_CONTEX
 				break;
 			}
 			OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
-		} END_LOOP_UNTIL_TIMEOUT();
+		} END_LOOP_UNTIL_TIMEOUT_US();
 
 		if (eError != PVRSRV_OK)
 		{
@@ -1328,6 +1504,366 @@ PVRSRV_ERROR PVRSRVRGXGetLastDeviceErrorKM(CONNECTION_DATA    *psConnection,
 
 	*ui32Error = psDevInfo->eLastDeviceError;
 	psDevInfo->eLastDeviceError = RGX_CONTEXT_RESET_REASON_NONE;
+	return PVRSRV_OK;
+}
+
+/*
+ * PVRSRVRGXKickTimestampQueryKM
+ */
+PVRSRV_ERROR PVRSRVRGXKickTimestampQueryKM(RGX_SERVER_COMPUTE_CONTEXT *psComputeContext,
+                                           PVRSRV_FENCE iCheckFence,
+										   PVRSRV_TIMELINE iUpdateTimeline,
+										   PVRSRV_FENCE *piUpdateFence,
+                                           IMG_CHAR pszUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH],
+                                           IMG_UINT32 ui32CmdSize,
+                                           IMG_PBYTE pui8DMCmd,
+                                           IMG_UINT32 ui32ExtJobRef)
+{
+	PVRSRV_RGXDEV_INFO *psDevInfo = FWCommonContextGetRGXDevInfo(psComputeContext->psServerCommonContext);
+	RGX_CLIENT_CCB *psClientCCB = FWCommonContextGetClientCCB(psComputeContext->psServerCommonContext);
+	RGX_CCB_CMD_HELPER_DATA	asCmdHelperData[1];
+	IMG_UINT32 ui32IntJobRef = OSAtomicIncrement(&psDevInfo->iCCBSubmissionOrdinal);
+	IMG_UINT32 ui32PDumpFlags = 0;
+	IMG_UINT32 ui32IntClientFenceCount = 0;
+	PRGXFWIF_UFO_ADDR *pauiIntFenceUFOAddress = NULL;
+	IMG_UINT32 ui32IntClientUpdateCount = 0;
+	PRGXFWIF_UFO_ADDR *pauiIntUpdateUFOAddress = NULL;
+	IMG_UINT32 *paui32IntUpdateValue = NULL;
+	PVRSRV_FENCE  iUpdateFence = PVRSRV_NO_FENCE;
+	IMG_UINT64 uiCheckFenceUID = 0;
+	IMG_UINT64 uiUpdateFenceUID = 0;
+	PSYNC_CHECKPOINT psUpdateSyncCheckpoint = NULL;
+	PSYNC_CHECKPOINT *apsFenceSyncCheckpoints = NULL;
+	IMG_UINT32 ui32FenceSyncCheckpointCount = 0;
+	IMG_UINT32 *paui32ClientUpdateValue = NULL;
+	IMG_UINT32 *pui32IntAllocatedUpdateValues = NULL;
+	RGXFWIF_KCCB_CMD sCmpKCCBCmd;
+	PVRSRV_ERROR eError;
+	PVRSRV_CLIENT_SYNC_PRIM *psFenceTimelineUpdateSync = NULL;
+	IMG_UINT32 ui32FenceTimelineUpdateValue = 0;
+	void *pvUpdateFenceFinaliseData = NULL;
+
+	if (iUpdateTimeline >= 0 && !piUpdateFence)
+	{
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	/* Ensure the string is null-terminated (Required for safety) */
+	pszUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH-1] = '\0';
+
+	OSLockAcquire(psComputeContext->hLock);
+
+	eError = SyncAddrListPopulate(&psComputeContext->sSyncAddrListFence,
+									0,
+									NULL,
+									NULL);
+	if (eError != PVRSRV_OK)
+	{
+		goto err_populate_sync_addr_list;
+	}
+
+	eError = SyncAddrListPopulate(&psComputeContext->sSyncAddrListUpdate,
+									0,
+									NULL,
+									NULL);
+	if (eError != PVRSRV_OK)
+	{
+		goto err_populate_sync_addr_list;
+	}
+	if (ui32IntClientUpdateCount)
+	{
+		pauiIntUpdateUFOAddress = psComputeContext->sSyncAddrListUpdate.pasFWAddrs;
+	}
+	paui32IntUpdateValue = paui32ClientUpdateValue;
+
+
+	CHKPT_DBG((PVR_DBG_ERROR, "%s: calling SyncCheckpointResolveFence (iCheckFence=%d), psComputeContext->psDeviceNode->hSyncCheckpointContext=<%p>...", __func__, iCheckFence, (void*)psComputeContext->psDeviceNode->hSyncCheckpointContext));
+	/* Resolve the sync checkpoints that make up the input fence */
+	eError = SyncCheckpointResolveFence(psComputeContext->psDeviceNode->hSyncCheckpointContext,
+	                                    iCheckFence,
+	                                    &ui32FenceSyncCheckpointCount,
+	                                    &apsFenceSyncCheckpoints,
+	                                    &uiCheckFenceUID, ui32PDumpFlags);
+	if (eError != PVRSRV_OK)
+	{
+		CHKPT_DBG((PVR_DBG_ERROR, "%s: ...done, returned ERROR (%s)", __func__, PVRSRVGetErrorString(eError)));
+		goto err_populate_sync_addr_list;
+	}
+	CHKPT_DBG((PVR_DBG_ERROR, "%s: ...done, fence %d contained %d checkpoints (apsFenceSyncCheckpoints=<%p>)", __func__, iCheckFence, ui32FenceSyncCheckpointCount, (void*)apsFenceSyncCheckpoints));
+#if defined(CMP_CHECKPOINT_DEBUG)
+	if (ui32FenceSyncCheckpointCount > 0)
+	{
+		IMG_UINT32 ii;
+		for (ii=0; ii<ui32FenceSyncCheckpointCount; ii++)
+		{
+			PSYNC_CHECKPOINT psNextCheckpoint = *(apsFenceSyncCheckpoints + ii);
+			CHKPT_DBG((PVR_DBG_ERROR, "%s:    apsFenceSyncCheckpoints[%d]=<%p>, FWAddr=0x%x", __func__, ii, (void*)psNextCheckpoint, SyncCheckpointGetFirmwareAddr(psNextCheckpoint)));
+		}
+	}
+#endif
+	/* Create the output fence (if required) */
+	if (iUpdateTimeline != PVRSRV_NO_TIMELINE)
+	{
+		CHKPT_DBG((PVR_DBG_ERROR, "%s: calling SyncCheckpointCreateFence (iUpdateFence=%d, iUpdateTimeline=%d,  psComputeContext->psDeviceNode->hSyncCheckpointContext=<%p>)...", __func__, iUpdateFence, iUpdateTimeline, (void*)psComputeContext->psDeviceNode->hSyncCheckpointContext));
+		eError = SyncCheckpointCreateFence(psComputeContext->psDeviceNode,
+		                                   pszUpdateFenceName,
+										   iUpdateTimeline,
+										   psComputeContext->psDeviceNode->hSyncCheckpointContext,
+										   &iUpdateFence,
+										   &uiUpdateFenceUID,
+										   &pvUpdateFenceFinaliseData,
+										   &psUpdateSyncCheckpoint,
+										   (void*)&psFenceTimelineUpdateSync,
+										   &ui32FenceTimelineUpdateValue,
+										   ui32PDumpFlags);
+		if (eError != PVRSRV_OK)
+		{
+			CHKPT_DBG((PVR_DBG_ERROR, "%s: ...returned error (%s)", __func__, PVRSRVGetErrorString(eError)));
+			goto fail_create_output_fence;
+		}
+
+		CHKPT_DBG((PVR_DBG_ERROR, "%s: ...returned from SyncCheckpointCreateFence (iUpdateFence=%d, psFenceTimelineUpdateSync=<%p>, ui32FenceTimelineUpdateValue=%u)", __func__, iUpdateFence, psFenceTimelineUpdateSync, ui32FenceTimelineUpdateValue));
+
+		CHKPT_DBG((PVR_DBG_ERROR, "%s: ui32IntClientUpdateCount=%u, psFenceTimelineUpdateSync=<%p>", __func__, ui32IntClientUpdateCount, (void*)psFenceTimelineUpdateSync));
+		/* Append the sync prim update for the timeline (if required) */
+		if (psFenceTimelineUpdateSync)
+		{
+			IMG_UINT32 *pui32TimelineUpdateWp = NULL;
+
+			/* Allocate memory to hold the list of update values (including our timeline update) */
+			pui32IntAllocatedUpdateValues = OSAllocMem(sizeof(*pui32IntAllocatedUpdateValues) * (ui32IntClientUpdateCount+1));
+			if (!pui32IntAllocatedUpdateValues)
+			{
+				/* Failed to allocate memory */
+				eError = PVRSRV_ERROR_OUT_OF_MEMORY;
+				goto fail_alloc_update_values_mem;
+			}
+			OSCachedMemSet(pui32IntAllocatedUpdateValues, 0xbb, sizeof(*pui32IntAllocatedUpdateValues) * (ui32IntClientUpdateCount+1));
+			/* Copy the update values into the new memory, then append our timeline update value */
+			if (paui32IntUpdateValue)
+			{
+				OSCachedMemCopy(pui32IntAllocatedUpdateValues, paui32IntUpdateValue, sizeof(*pui32IntAllocatedUpdateValues) * ui32IntClientUpdateCount);
+			}
+
+			/* Now set the additional update value */
+			pui32TimelineUpdateWp = pui32IntAllocatedUpdateValues + ui32IntClientUpdateCount;
+			*pui32TimelineUpdateWp = ui32FenceTimelineUpdateValue;
+			ui32IntClientUpdateCount++;
+			/* Now make sure paui32ClientUpdateValue points to pui32IntAllocatedUpdateValues */
+			paui32ClientUpdateValue = pui32IntAllocatedUpdateValues;
+
+			CHKPT_DBG((PVR_DBG_ERROR, "%s: append the timeline sync prim addr <%p> to the compute context update list", __func__,  (void*)psFenceTimelineUpdateSync));
+			/* Now append the timeline sync prim addr to the compute context update list */
+			SyncAddrListAppendSyncPrim(&psComputeContext->sSyncAddrListUpdate,
+			                           psFenceTimelineUpdateSync);
+
+			/* Ensure paui32IntUpdateValue is now pointing to our new array of update values */
+			paui32IntUpdateValue = pui32IntAllocatedUpdateValues;
+		}
+	}
+
+	/* Append the checks (from input fence) */
+	if (ui32FenceSyncCheckpointCount > 0)
+	{
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Append %d sync checkpoints to Compute CDM Fence (&psComputeContext->sSyncAddrListFence=<%p>)...", __func__, ui32FenceSyncCheckpointCount, (void*)&psComputeContext->sSyncAddrListFence));
+
+		SyncAddrListAppendCheckpoints(&psComputeContext->sSyncAddrListFence,
+									  ui32FenceSyncCheckpointCount,
+									  apsFenceSyncCheckpoints);
+		if (!pauiIntFenceUFOAddress)
+		{
+			pauiIntFenceUFOAddress = psComputeContext->sSyncAddrListFence.pasFWAddrs;
+		}
+		ui32IntClientFenceCount += ui32FenceSyncCheckpointCount;
+	}
+
+	if (psUpdateSyncCheckpoint)
+	{
+		/* Append the update (from output fence) */
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Append 1 sync checkpoint to Compute CDM Update (&psComputeContext->sSyncAddrListUpdate=<%p>, psUpdateSyncCheckpoint=<%p>)...", __func__, (void*)&psComputeContext->sSyncAddrListUpdate , (void*)psUpdateSyncCheckpoint));
+		SyncAddrListAppendCheckpoints(&psComputeContext->sSyncAddrListUpdate,
+									  1,
+									  &psUpdateSyncCheckpoint);
+		if (!pauiIntUpdateUFOAddress)
+		{
+			pauiIntUpdateUFOAddress = psComputeContext->sSyncAddrListUpdate.pasFWAddrs;
+		}
+		ui32IntClientUpdateCount++;
+	}
+
+	RGXCmdHelperInitCmdCCB(psDevInfo,
+	                       psClientCCB,
+	                       0, /* empty ui64FBSCEntryMask */
+	                       ui32IntClientFenceCount,
+	                       pauiIntFenceUFOAddress,
+	                       NULL,
+	                       ui32IntClientUpdateCount,
+	                       pauiIntUpdateUFOAddress,
+	                       paui32IntUpdateValue,
+	                       ui32CmdSize,
+	                       pui8DMCmd,
+	                       NULL,
+	                       NULL,
+	                       NULL,
+	                       RGXFWIF_CCB_CMD_TYPE_VK_TIMESTAMP,
+	                       ui32ExtJobRef,
+	                       ui32IntJobRef,
+	                       PDUMP_FLAGS_NONE,
+	                       NULL,
+	                       "VkTimestamp",
+	                       IMG_FALSE, /* bCCBStateOpen */
+	                       asCmdHelperData);
+
+	eError = RGXCmdHelperAcquireCmdCCB(ARRAY_SIZE(asCmdHelperData), asCmdHelperData);
+
+	PVR_LOG_GOTO_IF_ERROR(eError, "RGXCmdHelperAcquireCmdCCB", fail_cmdacquire);
+
+	eError = PVRSRVPowerLock(psDevInfo->psDeviceNode);
+	if (unlikely(eError != PVRSRV_OK))
+	{
+		PVR_DPF((PVR_DBG_WARNING, "%s: failed to acquire powerlock (%s)",
+			__func__, PVRSRVGetErrorString(eError)));
+
+		/* If system is found powered OFF, Retry scheduling the command */
+		if (likely(eError == PVRSRV_ERROR_SYSTEM_STATE_POWERED_OFF))
+		{
+			eError = PVRSRV_ERROR_RETRY;
+		}
+		goto fail_acquirepowerlock;
+	}
+
+	RGXCmdHelperReleaseCmdCCB(1, asCmdHelperData, "CDM",
+	                          FWCommonContextGetFWAddress(psComputeContext->psServerCommonContext).ui32Addr);
+
+	/* Construct the kernel compute CCB command. */
+	sCmpKCCBCmd.eCmdType = RGXFWIF_KCCB_CMD_KICK;
+	sCmpKCCBCmd.uCmdData.sCmdKickData.psContext = FWCommonContextGetFWAddress(psComputeContext->psServerCommonContext);
+	sCmpKCCBCmd.uCmdData.sCmdKickData.ui32CWoffUpdate = RGXGetHostWriteOffsetCCB(psClientCCB);
+	sCmpKCCBCmd.uCmdData.sCmdKickData.ui32CWrapMaskUpdate = RGXGetWrapMaskCCB(psClientCCB);
+	sCmpKCCBCmd.uCmdData.sCmdKickData.ui32NumCleanupCtl = 0;
+
+	/*
+	 * Submit the RGXFWIF_CCB_CMD_TYPE_VK_TIMESTAMP
+	 * command to the firmware.
+	 */
+
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		eError = RGXScheduleCommandWithoutPowerLock(psComputeContext->psDeviceNode->pvDevice,
+		                            RGXFWIF_DM_CDM,
+		                            &sCmpKCCBCmd,
+		                            PDUMP_FLAGS_NONE);
+		if (eError != PVRSRV_ERROR_RETRY)
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	PVRSRVPowerUnlock(psDevInfo->psDeviceNode);
+
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,
+				 "%s failed to schedule kernel CCB command (%s)",
+				 __func__,
+				 PVRSRVGetErrorString(eError)));
+		goto fail_schedulecmd;
+	}
+
+#if defined(NO_HARDWARE)
+	/* If NO_HARDWARE, signal the output fence's sync checkpoint and sync prim */
+	if (psUpdateSyncCheckpoint)
+	{
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Signalling NOHW sync checkpoint<%p>, ID:%d, FwAddr=0x%x", __func__, (void*)psUpdateSyncCheckpoint, SyncCheckpointGetId(psUpdateSyncCheckpoint), SyncCheckpointGetFirmwareAddr(psUpdateSyncCheckpoint)));
+		SyncCheckpointSignalNoHW(psUpdateSyncCheckpoint);
+	}
+	if (psFenceTimelineUpdateSync)
+	{
+		CHKPT_DBG((PVR_DBG_ERROR, "%s:   Updating NOHW sync prim<%p> to %d", __func__, (void*)psFenceTimelineUpdateSync, ui32FenceTimelineUpdateValue));
+		SyncPrimNoHwUpdate(psFenceTimelineUpdateSync, ui32FenceTimelineUpdateValue);
+	}
+	SyncCheckpointNoHWUpdateTimelines(NULL);
+#endif /* defined(NO_HARDWARE) */
+
+
+	*piUpdateFence = iUpdateFence;
+
+	if (pvUpdateFenceFinaliseData && (iUpdateFence != PVRSRV_NO_FENCE))
+	{
+		SyncCheckpointFinaliseFence(psComputeContext->psDeviceNode, iUpdateFence,
+		                            pvUpdateFenceFinaliseData,
+									psUpdateSyncCheckpoint, pszUpdateFenceName);
+	}
+
+	/* Drop the references taken on the sync checkpoints in the
+	 * resolved input fence */
+	SyncAddrListDeRefCheckpoints(ui32FenceSyncCheckpointCount,
+	                             apsFenceSyncCheckpoints);
+	/* Free the memory that was allocated for the sync checkpoint list returned
+	 * by ResolveFence() */
+	if (apsFenceSyncCheckpoints)
+	{
+		SyncCheckpointFreeCheckpointListMem(apsFenceSyncCheckpoints);
+	}
+
+	/* Free memory allocated to hold the internal list of update values */
+	if (pui32IntAllocatedUpdateValues)
+	{
+		OSFreeMem(pui32IntAllocatedUpdateValues);
+		pui32IntAllocatedUpdateValues = NULL;
+	}
+
+	OSLockRelease(psComputeContext->hLock);
+
+	return PVRSRV_OK;
+
+fail_schedulecmd:
+fail_acquirepowerlock:
+fail_cmdacquire:
+	SyncAddrListRollbackCheckpoints(psComputeContext->psDeviceNode, &psComputeContext->sSyncAddrListFence);
+	SyncAddrListRollbackCheckpoints(psComputeContext->psDeviceNode, &psComputeContext->sSyncAddrListUpdate);
+fail_alloc_update_values_mem:
+	if (iUpdateFence != PVRSRV_NO_FENCE)
+	{
+		SyncCheckpointRollbackFenceData(iUpdateFence, pvUpdateFenceFinaliseData);
+	}
+fail_create_output_fence:
+	/* Drop the references taken on the sync checkpoints in the
+	 * resolved input fence */
+	SyncAddrListDeRefCheckpoints(ui32FenceSyncCheckpointCount,
+	                             apsFenceSyncCheckpoints);
+err_populate_sync_addr_list:
+	/* Free the memory that was allocated for the sync checkpoint list returned by ResolveFence() */
+	if (apsFenceSyncCheckpoints)
+	{
+		SyncCheckpointFreeCheckpointListMem(apsFenceSyncCheckpoints);
+	}
+	/* Free memory allocated to hold the internal list of update values */
+	if (pui32IntAllocatedUpdateValues)
+	{
+		OSFreeMem(pui32IntAllocatedUpdateValues);
+		pui32IntAllocatedUpdateValues = NULL;
+	}
+	OSLockRelease(psComputeContext->hLock);
+	return eError;
+}
+
+PVRSRV_ERROR PVRSRVRGXCDMGetSharedMemoryKM(
+	CONNECTION_DATA           * psConnection,
+	PVRSRV_DEVICE_NODE        * psDeviceNode,
+	PMR                      ** ppsCLIPMRMem)
+{
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVRSRVTQAcquireShaders(psDeviceNode, ppsCLIPMRMem);
+
+	return PVRSRV_OK;
+}
+
+PVRSRV_ERROR PVRSRVRGXCDMReleaseSharedMemoryKM(PMR * psPMRMem)
+{
+	PVR_UNREFERENCED_PARAMETER(psPMRMem);
+
 	return PVRSRV_OK;
 }
 

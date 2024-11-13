@@ -44,6 +44,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define PVRSRV_CLEANUP_H
 
 #include "dllist.h"
+#include "device.h"
 
 /**************************************************************************/ /*!
 @Brief          CLEANUP_THREAD_FN
@@ -110,7 +111,7 @@ typedef PVRSRV_ERROR (*CLEANUP_THREAD_FN)(void *pvParam);
 /* Indicates if the timeout on a given item has been reached.
  * _item - pointer to the PVRSRV_CLEANUP_THREAD_WORK
  */
-#define CLEANUP_THREAD_RETRY_TIMEOUT_REACHED(_item) \
+#define CLEANUP_THREAD_RETRY_TIMEOUT_NOT_REACHED(_item) \
 	((_item)->ui32TimeEnd - (_item)->ui32TimeStart >= \
 			OSClockms() - (_item)->ui32TimeStart)
 
@@ -120,28 +121,84 @@ typedef PVRSRV_ERROR (*CLEANUP_THREAD_FN)(void *pvParam);
 #define CLEANUP_THREAD_IS_RETRY_TIMEOUT(_item) \
 	((_item)->ui32TimeStart != (_item->ui32TimeEnd))
 
+#define CLEANUP_TYPE_LIST \
+	X(UNDEF)      /**/ \
+	X(CONNECTION)     /**/ \
+	X(MMU)     /**/ \
+	X(OSMEM)   /**/ \
+	X(PMR)       /**/ \
+	X(LAST)      /**/ \
+
+#define CLEANUP_TYPE_ITEM_LABEL_MAX_SIZE 11     /* CONNECTION\0 */
+#define CLEANUP_TYPE_ITEM_DPF " %1.11s : %1.5d"
+#define CLEANUP_TYPE_ITEM_DPF_MAX_SIZE CLEANUP_TYPE_ITEM_LABEL_MAX_SIZE+sizeof(" : ")+5+1
+
+typedef enum _PVRSRV_CLEANUP_TYPE_
+{
+#define X(_name) PVRSRV_CLEANUP_TYPE_ ## _name,
+	CLEANUP_TYPE_LIST
+#undef X
+
+} PVRSRV_CLEANUP_TYPE;
+
+#if defined(CLEANUP_TYPE_STRINGS)
+
+static const char *const _pszCleanupStrings[] = {
+#define X(_name) #_name,
+	CLEANUP_TYPE_LIST
+#undef X
+};
+
+/*************************************************************************/ /*!
+@Function       PVRSRVGetCleanupName
+@Description    Returns the name of a Cleanup Type.
+
+@Input          eCleanupType   The enum value of the cleanup type.
+
+@Return         const IMG_CHAR pointer.
+*/ /**************************************************************************/
+static inline const IMG_CHAR *PVRSRVGetCleanupName(PVRSRV_CLEANUP_TYPE eCleanupType)
+{
+	if (eCleanupType < 0 || eCleanupType > PVRSRV_CLEANUP_TYPE_LAST)
+	{
+		return "Undefined";
+	}
+
+	PVR_ASSERT(sizeof(_pszCleanupStrings[eCleanupType]) < CLEANUP_TYPE_ITEM_LABEL_MAX_SIZE);
+
+	return _pszCleanupStrings[eCleanupType];
+}
+
+#endif /* CLEANUP_TYPE_STRINGS */
+
 /* Clean up work item specifics so that the task can be managed by the
- * pvr_defer_free cleanup thread in the Server.
- */
+* pvr_defer_free cleanup thread in the Server.
+*/
 typedef struct _PVRSRV_CLEANUP_THREAD_WORK_
 {
-	DLLIST_NODE sNode;             /*!< List node used internally by the cleanup
+	DLLIST_NODE sNode;               /*!< List node used internally by the cleanup
 	                                    thread */
-	CLEANUP_THREAD_FN pfnFree;     /*!< Pointer to the function to be called to
+	CLEANUP_THREAD_FN pfnFree;       /*!< Pointer to the function to be called to
 	                                    carry out the deferred cleanup */
-	void *pvData;                  /*!< private data for pfnFree, usually a way back
+	void *pvData;                    /*!< private data for pfnFree, usually a way back
 	                                    to the original PVRSRV_CLEANUP_THREAD_WORK*
 	                                    pointer supplied in the call to
 	                                    PVRSRVCleanupThreadAddWork(). */
-	IMG_UINT32 ui32TimeStart;      /*!< Timestamp in ms of the moment when
+	IMG_UINT32 ui32TimeStart;        /*!< Timestamp in ms of the moment when
 	                                    cleanup item has been created. */
-	IMG_UINT32 ui32TimeEnd;        /*!< Time in ms after which no further retry
+	IMG_UINT32 ui32TimeEnd;          /*!< Time in ms after which no further retry
 	                                    attempts will be made, item discard and
 	                                    error logged when this is reached. */
-	IMG_UINT32 ui32RetryCount;     /*!< Number of times the callback should be
+	IMG_UINT32 ui32RetryCount;       /*!< Number of times the callback should be
 	                                    re-tried when it returns error. */
-	IMG_BOOL bDependsOnHW;         /*!< Retry again after the RGX interrupt signals
-	                                    the global event object */
+	IMG_BOOL bDependsOnHW;           /*!< Don't drop the cleanup task if retry limit
+	                                      is reached, we could depend on event from
+	                                      device to continue. */
+	PVRSRV_CLEANUP_TYPE eCleanupType;/*!< Type of work item added to queue */
+#if defined(DEBUG)
+	const char *pszFun;
+	unsigned int ui32LineNum;
+#endif
 } PVRSRV_CLEANUP_THREAD_WORK;
 
 
@@ -150,11 +207,33 @@ typedef struct _PVRSRV_CLEANUP_THREAD_WORK_
 
 @Description    Add a work item to be called from the cleanup thread
 
-@Input          psData : The function pointer and private data for the callback
+@Input          psDevNode : Pointer to the device node
+@Input          psData :    The function pointer and private data for the
+                            callback
 
 @Return         None
 */ /***************************************************************************/
-void PVRSRVCleanupThreadAddWork(PVRSRV_CLEANUP_THREAD_WORK *psData);
+#if defined(DEBUG)
+#define PVRSRVCleanupThreadAddWork(DEV, DATA)		PVRSRVCleanupThreadAddWork_Debug(DEV, DATA, __FILE__, __LINE__)
+void PVRSRVCleanupThreadAddWork_Debug(PVRSRV_DEVICE_NODE *psDevNode,
+                                      PVRSRV_CLEANUP_THREAD_WORK *psData,
+                                      const char *pszFun, const unsigned int ui32LineNum);
+#else
+#define PVRSRVCleanupThreadAddWork					PVRSRVCleanupThreadAddWork_Int
+void PVRSRVCleanupThreadAddWork_Int(PVRSRV_DEVICE_NODE *psDevNode,
+                                    PVRSRV_CLEANUP_THREAD_WORK *psData);
+#endif
+
+/**************************************************************************/ /*!
+@Function       PVRSRVCleanupThreadWaitForDevice
+
+@Description    Blocking wait for all of the device's items to be cleaned.
+
+@Input          psDevNode : Pointer to the device node
+
+@Return         None
+*/ /***************************************************************************/
+void PVRSRVCleanupThreadWaitForDevice(PVRSRV_DEVICE_NODE *psDevNode);
 
 /**************************************************************************/ /*!
 @Function       PVRSRVCleanupThreadGetPid

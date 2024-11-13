@@ -76,7 +76,89 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGX_HWPERF_MAX_STREAM_ID (RGX_HWPERF_STREAM_ID2_CLIENT)
 
 
-IMG_INTERNAL /*static inline*/ IMG_UINT32 RGXGetHWPerfBlockConfig(const RGXFW_HWPERF_CNTBLK_TYPE_MODEL **);
+static const RGXFW_HWPERF_CNTBLK_TYPE_MODEL gasCntBlkTypeModel[] =
+{
+#define X(a, b, c, d, e, f, g)  {a, b, 0xFF, d, e, f, NULL}
+RGX_CNT_BLK_TYPE_MODEL_DIRECT_LIST,
+RGX_CNT_BLK_TYPE_MODEL_INDIRECT_LIST
+#undef X
+};
+
+IMG_INTERNAL IMG_UINT32
+RGXGetHWPerfBlockConfig(const RGXFW_HWPERF_CNTBLK_TYPE_MODEL **ppsModel)
+{
+    *ppsModel = gasCntBlkTypeModel;
+    return ARRAY_SIZE(gasCntBlkTypeModel);
+}
+
+/*!
+*******************************************************************************
+ @Function    RGXHWPerfMaxDefinedBlks
+
+ @Description Return the number of valid block-IDs for the given device node
+
+ @Input       (PVRSRV_RGXDEV_INFO *)   pvDevice    device-node to query
+
+ @Returns     (IMG_UINT32)             Number of block-IDs (RGX_CNTBLK_ID)
+                                       valid for this device.
+******************************************************************************/
+IMG_INTERNAL IMG_UINT32
+RGXHWPerfMaxDefinedBlks(PVRSRV_RGXDEV_INFO *psDevInfo)
+{
+	RGX_HWPERF_CNTBLK_RT_INFO sRtInfo;
+	IMG_UINT32  uiRetVal;
+	const RGXFW_HWPERF_CNTBLK_TYPE_MODEL *psHWPBlkConfig;
+	IMG_UINT32  uiNumArrayEls, ui;
+
+	uiRetVal = RGX_CNTBLK_ID_DIRECT_LAST;
+
+	uiNumArrayEls = RGXGetHWPerfBlockConfig(&psHWPBlkConfig);
+
+	if (psHWPBlkConfig == NULL)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Unexpected NULL Config Block", __func__));
+		return 0;
+	}
+	PVR_ASSERT(uiNumArrayEls > 0);
+
+	/* Iterate over each block-ID and find the number of instances of each
+	 * block which are present for this device type. We only query the
+	 * Indirect blocks as their presence varies according to GPU. All direct
+	 * blocks have an entry - but they may not be physically present.
+	 */
+	for (ui = RGX_CNTBLK_ID_DIRECT_LAST; ui < uiNumArrayEls; ui++)
+	{
+		if (rgx_hwperf_blk_present(&psHWPBlkConfig[ui], (void *)psDevInfo, &sRtInfo))
+		{
+			uiRetVal += sRtInfo.uiNumUnits;
+			PVR_DPF((PVR_DBG_VERBOSE, "%s: Block %u, NumUnits %u, Total %u",
+			        __func__, ui, sRtInfo.uiNumUnits, uiRetVal));
+		}
+#ifdef DEBUG
+		else
+		{
+			if (psHWPBlkConfig[ui].uiCntBlkIdBase == RGX_CNTBLK_ID_RAC0)
+			{
+				if (PVRSRV_GET_DEVICE_FEATURE_VALUE(psDevInfo->psDeviceNode,
+				    RAY_TRACING_ARCH) > 2U)
+				{
+					PVR_DPF((PVR_DBG_WARNING, "%s: Block %u *NOT* present",
+					        __func__, ui));
+				}
+			}
+			else
+			{
+				PVR_DPF((PVR_DBG_WARNING, "%s: Block %u *NOT* present",
+				        __func__, ui));
+			}
+		}
+#endif
+	}
+
+	PVR_DPF((PVR_DBG_VERBOSE, "%s: Num Units = %u", __func__, uiRetVal));
+
+	return uiRetVal;
+}
 
 static IMG_BOOL RGXServerFeatureFlagsToHWPerfFlagsAddBlock(
 	RGX_HWPERF_BVNC_BLOCK	* const psBlocks,
@@ -126,7 +208,7 @@ PVRSRV_ERROR RGXServerFeatureFlagsToHWPerfFlags(PVRSRV_RGXDEV_INFO *psDevInfo, R
 	if ((pszBVNC = RGXDevBVNCString(psDevInfo)))
 	{
 		size_t uiStringLength = OSStringNLength(pszBVNC, RGX_HWPERF_MAX_BVNC_LEN - 1);
-		OSStringLCopy(psBVNC->aszBvncString, pszBVNC, uiStringLength + 1);
+		OSStringSafeCopy(psBVNC->aszBvncString, pszBVNC, uiStringLength + 1);
 		memset(&psBVNC->aszBvncString[uiStringLength], 0, RGX_HWPERF_MAX_BVNC_LEN - uiStringLength);
 	}
 	else
@@ -159,8 +241,11 @@ PVRSRV_ERROR RGXServerFeatureFlagsToHWPerfFlags(PVRSRV_RGXDEV_INFO *psDevInfo, R
 	}
 
 #ifdef SUPPORT_WORKLOAD_ESTIMATION
-	/* Not a part of BVNC feature line and so doesn't need the feature supported check */
-	psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_WORKLOAD_ESTIMATION;
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVINFO, psDevInfo))
+	{
+		/* Not a part of BVNC feature line and so doesn't need the feature supported check */
+		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_WORKLOAD_ESTIMATION;
+	}
 #endif
 
 	/* Define the HW counter block counts. */
@@ -233,6 +318,9 @@ PVRSRV_ERROR RGXServerFeatureFlagsToHWPerfFlags(PVRSRV_RGXDEV_INFO *psDevInfo, R
 		OSDeviceMemSet(&psBlocks[uiCount], 0, (RGX_HWPERF_MAX_BVNC_BLOCK_LEN - uiCount) * sizeof(*psBlocks));
 	}
 
+	/* The GPU core count is overwritten by the FW */
+	psBVNC->ui16BvncGPUCores = 0;
+
 	return PVRSRV_OK;
 }
 
@@ -246,12 +334,12 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 		IMG_UINT32                 ui32ArrayLen,
 		RGX_HWPERF_CONFIG_CNTBLK * psBlockConfigs)
 {
-	PVRSRV_ERROR		eError = PVRSRV_OK;
-	RGXFWIF_KCCB_CMD	sKccbCmd;
-	DEVMEM_MEMDESC*		psFwBlkConfigsMemDesc;
-	RGX_HWPERF_CONFIG_CNTBLK* psFwArray;
-	IMG_UINT32			ui32kCCBCommandSlot;
-	PVRSRV_RGXDEV_INFO	*psDevice;
+	PVRSRV_ERROR             eError = PVRSRV_OK;
+	RGXFWIF_KCCB_CMD         sKccbCmd;
+	DEVMEM_MEMDESC           *psFwBlkConfigsMemDesc;
+	RGX_HWPERF_CONFIG_CNTBLK *psFwArray;
+	IMG_UINT32               ui32kCCBCommandSlot;
+	PVRSRV_RGXDEV_INFO       *psDevice;
 
 	PVR_LOG_RETURN_IF_FALSE(psDeviceNode != NULL, "psDeviceNode is NULL",
 	                        PVRSRV_ERROR_INVALID_PARAMS);
@@ -260,7 +348,7 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	PVR_LOG_RETURN_IF_FALSE(ui32ArrayLen > 0, "ui32ArrayLen is 0",
 	                        PVRSRV_ERROR_INVALID_PARAMS);
@@ -269,15 +357,14 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 
 	PVR_DPF_ENTERED;
 
-	/* Fill in the command structure with the parameters needed
-	 */
+	/* Fill in the command structure with the parameters needed */
 	sKccbCmd.eCmdType = RGXFWIF_KCCB_CMD_HWPERF_CONFIG_BLKS;
 	sKccbCmd.uCmdData.sHWPerfCfgEnableBlks.ui32CtrlWord = ui32CtrlWord;
 	sKccbCmd.uCmdData.sHWPerfCfgEnableBlks.ui32NumBlocks = ui32ArrayLen;
 
 	/* used for passing counters config to the Firmware, write-only for the CPU */
 	eError = DevmemFwAllocate(psDevice,
-	                          sizeof(RGX_HWPERF_CONFIG_CNTBLK)*ui32ArrayLen,
+	                          sizeof(RGX_HWPERF_CONFIG_CNTBLK) * ui32ArrayLen,
 	                          PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(PMMETA_PROTECT) |
 	                          PVRSRV_MEMALLOCFLAG_GPU_READABLE |
 	                          PVRSRV_MEMALLOCFLAG_GPU_WRITEABLE |
@@ -291,7 +378,7 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 	PVR_LOG_RETURN_IF_ERROR(eError, "DevmemFwAllocate");
 
 	eError = RGXSetFirmwareAddress(&sKccbCmd.uCmdData.sHWPerfCfgEnableBlks.sBlockConfigs,
-	                      psFwBlkConfigsMemDesc, 0, RFW_FWADDR_FLAG_NONE);
+	                               psFwBlkConfigsMemDesc, 0, RFW_FWADDR_FLAG_NONE);
 	PVR_LOG_GOTO_IF_ERROR(eError, "RGXSetFirmwareAddress", fail1);
 
 	eError = DevmemAcquireCpuVirtAddr(psFwBlkConfigsMemDesc, (void **)&psFwArray);
@@ -303,26 +390,26 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 	                   sizeof(RGX_HWPERF_CONFIG_CNTBLK)*ui32ArrayLen,
 	                   PDUMP_FLAGS_CONTINUOUS);
 
-	/* Ask the FW to carry out the HWPerf configuration command
-	 */
+	/* Ask the FW to carry out the HWPerf configuration command. */
 	eError = RGXScheduleCommandAndGetKCCBSlot(psDevice,
-											  RGXFWIF_DM_GP,
-											  &sKccbCmd,
-											  PDUMP_FLAGS_CONTINUOUS,
-											  &ui32kCCBCommandSlot);
+	                                          RGXFWIF_DM_GP,
+	                                          &sKccbCmd,
+	                                          PDUMP_FLAGS_CONTINUOUS,
+	                                          &ui32kCCBCommandSlot);
+
 	PVR_LOG_GOTO_IF_ERROR(eError, "RGXScheduleCommandAndGetKCCBSlot", fail2);
 
 	/* Wait for FW to complete */
 	eError = RGXWaitForKCCBSlotUpdate(psDevice, ui32kCCBCommandSlot, PDUMP_FLAGS_CONTINUOUS);
 	PVR_LOG_GOTO_IF_ERROR(eError, "RGXWaitForKCCBSlotUpdate", fail3);
 
-	/* Release temporary memory used for block configuration
-	 */
+	/* Release temporary memory used for block configuration. */
 	RGXUnsetFirmwareAddress(psFwBlkConfigsMemDesc);
 	DevmemReleaseCpuVirtAddr(psFwBlkConfigsMemDesc);
 	DevmemFwUnmapAndFree(psDevice, psFwBlkConfigsMemDesc);
 
-	PVR_DPF((PVR_DBG_WARNING, "HWPerf %d counter blocks configured and ENABLED", ui32ArrayLen));
+	PVR_DPF((PVR_DBG_MESSAGE, "HWPerf %d counter blocks configured and ENABLED",
+	         ui32ArrayLen));
 
 	PVR_DPF_RETURN_OK;
 
@@ -376,7 +463,6 @@ PVRSRV_ERROR RGXHWPerfConfigureCounters(
 	RGX_KM_HWPERF_DEVDATA* psDevData;
 	RGX_HWPERF_DEVICE *psHWPerfDev;
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_IMPLEMENTED);
 
 	/* Validate input argument values supplied by the caller */
 	if (!psHWPerfConnection || ui32NumBlocks==0 || !asBlockConfigs)
@@ -394,6 +480,8 @@ PVRSRV_ERROR RGXHWPerfConfigureCounters(
 	while (psHWPerfDev)
 	{
 		psDevData = (RGX_KM_HWPERF_DEVDATA *) psHWPerfDev->hDevData;
+
+		PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDevData->psRgxDevNode, PVRSRV_ERROR_NOT_IMPLEMENTED);
 
 		/* Call the internal server API */
 		eError = PVRSRVRGXConfigureHWPerfBlocksKM(NULL,
@@ -480,7 +568,7 @@ PVRSRV_ERROR PVRSRVRGXGetEnabledHWPerfBlocks(PVRSRV_DEVICE_NODE *psDevNode,
                                              IMG_UINT32 *pui32BlockCount,
                                              IMG_UINT32 *pui32EnabledBlockIDs)
 {
-	IMG_UINT32 ui32LastIDIdx = 0;
+	IMG_UINT32 ui32LastIdx = 0;
 	IMG_UINT32 i;
 	PVRSRV_ERROR eError = PVRSRV_OK;
 
@@ -507,14 +595,14 @@ PVRSRV_ERROR PVRSRVRGXGetEnabledHWPerfBlocks(PVRSRV_DEVICE_NODE *psDevNode,
 				continue;
 			}
 
-			if (ui32LastIDIdx + 1 > ui32ArrayLen)
+			if (ui32LastIdx > ui32ArrayLen)
 			{
 				PVR_DPF((PVR_DBG_ERROR, "ui32ArrayLen less than the number of enabled blocks."));
 				PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_OUT_OF_MEMORY, Error);
 			}
 
-			pui32EnabledBlockIDs[ui32LastIDIdx] = psHWPerfCtl->sBlkCfg[i].uiBlockID;
-			ui32LastIDIdx += 1;
+			pui32EnabledBlockIDs[ui32LastIdx] = psHWPerfCtl->sBlkCfg[i].uiBlockID;
+			ui32LastIdx++;
 		}
 	}
 

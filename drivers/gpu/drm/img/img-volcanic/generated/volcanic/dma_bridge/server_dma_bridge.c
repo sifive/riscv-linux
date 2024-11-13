@@ -85,9 +85,7 @@ PVRSRVBridgeDmaTransfer(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -113,7 +111,6 @@ PVRSRVBridgeDmaTransfer(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psDmaTransferIN), sizeof(unsigned long));
@@ -129,7 +126,6 @@ PVRSRVBridgeDmaTransfer(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -280,11 +276,7 @@ DmaTransfer_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -311,9 +303,7 @@ PVRSRVBridgeDmaSparseMappingTable(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -337,7 +327,6 @@ PVRSRVBridgeDmaSparseMappingTable(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psDmaSparseMappingTableIN), sizeof(unsigned long));
@@ -353,7 +342,6 @@ PVRSRVBridgeDmaSparseMappingTable(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -432,11 +420,7 @@ DmaSparseMappingTable_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -476,13 +460,17 @@ PVRSRV_ERROR InitDMABridge(void)
 {
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_DMA, PVRSRV_BRIDGE_DMA_DMATRANSFER,
-			      PVRSRVBridgeDmaTransfer, NULL);
+			      PVRSRVBridgeDmaTransfer, NULL, sizeof(PVRSRV_BRIDGE_IN_DMATRANSFER),
+			      sizeof(PVRSRV_BRIDGE_OUT_DMATRANSFER));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_DMA, PVRSRV_BRIDGE_DMA_DMASPARSEMAPPINGTABLE,
-			      PVRSRVBridgeDmaSparseMappingTable, NULL);
+			      PVRSRVBridgeDmaSparseMappingTable, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_DMASPARSEMAPPINGTABLE),
+			      sizeof(PVRSRV_BRIDGE_OUT_DMASPARSEMAPPINGTABLE));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_DMA, PVRSRV_BRIDGE_DMA_DMADEVICEPARAMS,
-			      PVRSRVBridgeDmaDeviceParams, NULL);
+			      PVRSRVBridgeDmaDeviceParams, NULL, 0,
+			      sizeof(PVRSRV_BRIDGE_OUT_DMADEVICEPARAMS));
 
 	return PVRSRV_OK;
 }

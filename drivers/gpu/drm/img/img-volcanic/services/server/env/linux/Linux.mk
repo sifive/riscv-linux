@@ -39,12 +39,8 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### ###########################################################################
 
-ifneq ($(SERVICES_SC),1)
-
 modules := srvkm
 
 srvkm_type := kernel_module
 srvkm_target := $(PVRSRV_MODNAME).ko
 srvkm_makefile := $(THIS_DIR)/Kbuild.mk
-
-endif # SERVICES_SC

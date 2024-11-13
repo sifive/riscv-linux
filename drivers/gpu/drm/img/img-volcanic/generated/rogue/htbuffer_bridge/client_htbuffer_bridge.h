@@ -61,11 +61,4 @@ IMG_INTERNAL PVRSRV_ERROR BridgeHTBControl(IMG_HANDLE hBridge,
 					   IMG_UINT32 ui32EnablePID,
 					   IMG_UINT32 ui32LogMode, IMG_UINT32 ui32OpMode);
 
-IMG_INTERNAL PVRSRV_ERROR BridgeHTBLog(IMG_HANDLE hBridge,
-				       IMG_UINT32 ui32PID,
-				       IMG_UINT32 ui32TID,
-				       IMG_UINT64 ui64TimeStamp,
-				       IMG_UINT32 ui32SF,
-				       IMG_UINT32 ui32NumArgs, IMG_UINT32 * pui32Args);
-
 #endif /* CLIENT_HTBUFFER_BRIDGE_H */

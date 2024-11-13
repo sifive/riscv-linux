@@ -59,7 +59,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #endif
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) && defined(__KERNEL__)
  #include <linux/version.h>
 
  #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
@@ -271,41 +271,6 @@ typedef void (*PFN_MISR)(void *pvData);
 typedef void (*PFN_THREAD)(void *pvData);
 
 /*************************************************************************/ /*!
-@Function       OSChangeSparseMemCPUAddrMap
-@Description    This function changes the CPU mapping of the underlying
-                sparse allocation. It is used by a PMR 'factory'
-                implementation if that factory supports sparse
-                allocations.
-@Input          psPageArray        array representing the pages in the
-                                   sparse allocation
-@Input          sCpuVAddrBase      the virtual base address of the sparse
-                                   allocation ('first' page)
-@Input          sCpuPAHeapBase     the physical address of the virtual
-                                   base address 'sCpuVAddrBase'
-@Input          ui32AllocPageCount the number of pages referenced in
-                                   'pai32AllocIndices'
-@Input          pai32AllocIndices  list of indices of pages within
-                                   'psPageArray' that we now want to
-                                   allocate and map
-@Input          ui32FreePageCount  the number of pages referenced in
-                                   'pai32FreeIndices'
-@Input          pai32FreeIndices   list of indices of pages within
-                                   'psPageArray' we now want to
-                                   unmap and free
-@Input          bIsLMA             flag indicating if the sparse allocation
-                                   is from LMA or UMA memory
-@Return         PVRSRV_OK on success, a failure code otherwise.
-*/ /**************************************************************************/
-PVRSRV_ERROR OSChangeSparseMemCPUAddrMap(void **psPageArray,
-                                         IMG_UINT64 sCpuVAddrBase,
-                                         IMG_CPU_PHYADDR sCpuPAHeapBase,
-                                         IMG_UINT32 ui32AllocPageCount,
-                                         IMG_UINT32 *pai32AllocIndices,
-                                         IMG_UINT32 ui32FreePageCount,
-                                         IMG_UINT32 *pai32FreeIndices,
-                                         IMG_BOOL bIsLMA);
-
-/*************************************************************************/ /*!
 @Function       OSInstallMISR
 @Description    Installs a Mid-level Interrupt Service Routine (MISR)
                 which handles higher-level processing of interrupts from
@@ -349,6 +314,15 @@ PVRSRV_ERROR OSUninstallMISR(IMG_HANDLE hMISRData);
 @Return         PVRSRV_OK on success, a failure code otherwise.
 */ /**************************************************************************/
 PVRSRV_ERROR OSScheduleMISR(IMG_HANDLE hMISRData);
+
+/*************************************************************************/ /*!
+@Function       OSSyncIRQ
+@Description    Wait for LISR to complete. If you use this function while
+                holding a resource which the IRQ handler also requires,
+                you will deadlock.
+@Input          ui32IRQ     IRQ number
+*/ /**************************************************************************/
+void OSSyncIRQ(IMG_UINT32 ui32IRQ);
 
 /*************************************************************************/ /*!
 @Description    Pointer to a function implementing debug dump of thread-specific
@@ -603,9 +577,10 @@ typedef enum
                 This is used to infer whether the virtual or physical address
                 supplied to the OSCPUCacheXXXRangeKM functions can be omitted
                 when called.
+@Input          psDevNode   device on which the allocation was made
 @Return         OS_CACHE_OP_ADDR_TYPE
 */ /**************************************************************************/
-OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(void);
+OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(PVRSRV_DEVICE_NODE *psDevNode);
 
 /*! CPU Cache attributes available for retrieval, DCache unless specified */
 typedef enum _OS_CPU_CACHE_ATTRIBUTE_
@@ -681,6 +656,32 @@ IMG_PID OSGetCurrentClientProcessIDKM(void);
 @Return         Client process name
 *****************************************************************************/
 IMG_CHAR *OSGetCurrentClientProcessNameKM(void);
+
+/*************************************************************************/ /*!
+@Function       OSAcquireCurrentPPIDResourceRefKM
+@Description    Returns a unique process identifier for the current client
+                parent process (thread group) and takes a reference on it
+                (if required) to prevent it being freed/re-allocated.
+                This value may then be used as a unique reference to the
+                process rather than using the PID value which might be
+                reallocated to represent a further process on process
+                destruction.
+                Note that the value to be returned is an address relating to
+                the parent process (thread group) and not to just one thread.
+                It is the caller's responsibility to ensure the reference is
+                subsequently dropped (by calling OSReleasePPIDResourceRefKM())
+                to allow it to be freed when no longer required.
+@Return         Address of a kernel resource allocated for the current client
+                parent process (thread group)
+*****************************************************************************/
+uintptr_t OSAcquireCurrentPPIDResourceRefKM(void);
+
+/*************************************************************************/ /*!
+@Function       OSReleasePPIDResourceRefKM
+@Description    Drops a reference on the unique process identifier provided.
+@Return         None
+*****************************************************************************/
+void OSReleasePPIDResourceRefKM(uintptr_t psPPIDResource);
 
 /*************************************************************************/ /*!
 @Function       OSGetCurrentClientThreadIDKM
@@ -1083,9 +1084,28 @@ void OSWriteMemoryBarrier(volatile void *hReadback);
 		OSWriteMemoryBarrier(addr); \
 	} while (0)
 
-#if defined(__linux__) && defined(__KERNEL__) && !defined(NO_HARDWARE)
-	#define OSReadUncheckedHWReg8(addr, off)  ((IMG_UINT8)readb((IMG_BYTE __iomem *)(addr) + (off)))
-	#define OSReadUncheckedHWReg16(addr, off) ((IMG_UINT16)readw((IMG_BYTE __iomem *)(addr) + (off)))
+#if defined(NO_HARDWARE)
+	/* OSReadHWReg and OSWriteHWReg operations are skipped to no-op in nohw builds */
+	#define OSReadUncheckedHWReg32(addr, off) ((void)(addr), (void)(off), 0x30f73a4eU)
+#if defined(__QNXNTO__) && __SIZEOF_LONG__ == 8
+	/* This is needed for 64-bit QNX builds where the size of a long is 64 bits */
+	#define OSReadUncheckedHWReg64(addr, off) ((void)(addr), (void)(off), 0x5b376c9d30f73a4eUL)
+#else
+	#define OSReadUncheckedHWReg64(addr, off) ((void)(addr), (void)(off), 0x5b376c9d30f73a4eULL)
+#endif
+
+	#define OSWriteUncheckedHWReg32(addr, off, val) ((void)(addr), (void)(off), (void)(val))
+	#define OSWriteUncheckedHWReg64(addr, off, val) ((void)(addr), (void)(off), (void)(val))
+
+	#define OSReadHWReg32(addr, off) OSReadUncheckedHWReg32(addr, off)
+	#define OSReadHWReg64(addr, off) OSReadUncheckedHWReg64(addr, off)
+
+	#define OSWriteHWReg32(addr, off, val) OSWriteUncheckedHWReg32(addr, off, val)
+	#define OSWriteHWReg64(addr, off, val) OSWriteUncheckedHWReg64(addr, off, val)
+
+#else
+
+#if defined(__linux__) && defined(__KERNEL__)
 	#define OSReadUncheckedHWReg32(addr, off) ((IMG_UINT32)readl((IMG_BYTE __iomem *)(addr) + (off)))
 
 	/* Little endian support only */
@@ -1100,8 +1120,6 @@ void OSWriteMemoryBarrier(volatile void *hReadback);
 				); \
 			})
 
-	#define OSWriteUncheckedHWReg8(addr, off, val)  writeb((IMG_UINT8)(val), (IMG_BYTE __iomem *)(addr) + (off))
-	#define OSWriteUncheckedHWReg16(addr, off, val) writew((IMG_UINT16)(val), (IMG_BYTE __iomem *)(addr) + (off))
 	#define OSWriteUncheckedHWReg32(addr, off, val) writel((IMG_UINT32)(val), (IMG_BYTE __iomem *)(addr) + (off))
 	/* Little endian support only */
 	#define OSWriteUncheckedHWReg64(addr, off, val) do \
@@ -1113,97 +1131,9 @@ void OSWriteMemoryBarrier(volatile void *hReadback);
 				writel((IMG_UINT32)(((IMG_UINT64)(_val) >> 32) & 0xffffffff), (IMG_BYTE __iomem *)(_addr) + (_off) + 4); \
 			} while (0)
 
-	#define OSReadHWReg8(addr, off)  ({PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); OSReadUncheckedHWReg8(addr, off);})
-	#define OSReadHWReg16(addr, off) ({PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); OSReadUncheckedHWReg16(addr, off);})
-	#define OSReadHWReg32(addr, off) ({PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); OSReadUncheckedHWReg32(addr, off);})
-	#define OSReadHWReg64(addr, off) ({PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); OSReadUncheckedHWReg64(addr, off);})
-
-	#define OSWriteHWReg8(addr, off, val) do \
-			{ \
-				PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); \
-				OSWriteUncheckedHWReg8(addr, off, val); \
-			} while (0)
-
-	#define OSWriteHWReg16(addr, off, val) do \
-			{ \
-				PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); \
-				OSWriteUncheckedHWReg16(addr, off, val); \
-			} while (0)
-
-	#define OSWriteHWReg32(addr, off, val) do \
-			{ \
-				PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); \
-				OSWriteUncheckedHWReg32(addr, off, val); \
-			} while (0)
-
-	#define OSWriteHWReg64(addr, off, val) do \
-			{ \
-				PVR_ASSERT((off) < RGX_HOST_SECURE_REGBANK_OFFSET); \
-				OSWriteUncheckedHWReg64(addr, off, val); \
-			} while (0)
-
-#elif defined(NO_HARDWARE)
-	/* OSReadHWReg operations skipped in no hardware builds */
-	#define OSReadHWReg8(addr, off)  ((void)(addr), 0x4eU)
-	#define OSReadHWReg16(addr, off) ((void)(addr), 0x3a4eU)
-	#define OSReadHWReg32(addr, off) ((void)(addr), 0x30f73a4eU)
-#if defined(__QNXNTO__) && __SIZEOF_LONG__ == 8
-	/* This is needed for 64-bit QNX builds where the size of a long is 64 bits */
-	#define OSReadHWReg64(addr, off) ((void)(addr), 0x5b376c9d30f73a4eUL)
-#else
-	#define OSReadHWReg64(addr, off) ((void)(addr), 0x5b376c9d30f73a4eULL)
-#endif
-
-	#define OSWriteHWReg8(addr, off, val)
-	#define OSWriteHWReg16(addr, off, val)
-	#define OSWriteHWReg32(addr, off, val)
-	#define OSWriteHWReg64(addr, off, val) ((void)(val))
-
-	#define OSReadUncheckedHWReg8(addr, off) OSReadHWReg8(addr, off)
-	#define OSReadUncheckedHWReg16(addr, off) OSReadHWReg16(addr, off)
-	#define OSReadUncheckedHWReg32(addr, off) OSReadHWReg32(addr, off)
-	#define OSReadUncheckedHWReg64(addr, off) OSReadHWReg64(addr, off)
-
-	#define OSWriteUncheckedHWReg8(addr, off, val) OSWriteHWReg8(addr, off, val)
-	#define OSWriteUncheckedHWReg16(addr, off, val) OSWriteHWReg16(addr, off, val)
-	#define OSWriteUncheckedHWReg32(addr, off, val) OSWriteHWReg32(addr, off, val)
-	#define OSWriteUncheckedHWReg64(addr, off, val) OSWriteHWReg64(addr, off, val)
-
-#else
+#else /* defined(__linux__) && defined(__KERNEL__) */
 /*************************************************************************/ /*!
-@Function       OSReadHWReg8
-@Description    Read from an 8-bit memory-mapped device register.
-                The implementation should not permit the compiler to
-                reorder the I/O sequence.
-                The implementation should ensure that for a NO_HARDWARE
-                build the code does not attempt to read from a location
-                but instead returns a constant value.
-@Input          pvLinRegBaseAddr   The virtual base address of the register
-                                   block.
-@Input          ui32Offset         The byte offset from the base address of
-                                   the register to be read.
-@Return         The byte read.
-*/ /**************************************************************************/
-	IMG_UINT8 OSReadHWReg8(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset);
-
-/*************************************************************************/ /*!
-@Function       OSReadHWReg16
-@Description    Read from a 16-bit memory-mapped device register.
-                The implementation should not permit the compiler to
-                reorder the I/O sequence.
-                The implementation should ensure that for a NO_HARDWARE
-                build the code does not attempt to read from a location
-                but instead returns a constant value.
-@Input          pvLinRegBaseAddr   The virtual base address of the register
-                                   block.
-@Input          ui32Offset         The byte offset from the base address of
-                                   the register to be read.
-@Return         The word read.
-*/ /**************************************************************************/
-	IMG_UINT16 OSReadHWReg16(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset);
-
-/*************************************************************************/ /*!
-@Function       OSReadHWReg32
+@Function       OSReadUncheckedHWReg32
 @Description    Read from a 32-bit memory-mapped device register.
                 The implementation should not permit the compiler to
                 reorder the I/O sequence.
@@ -1216,10 +1146,11 @@ void OSWriteMemoryBarrier(volatile void *hReadback);
                                    the register to be read.
 @Return         The long word read.
 */ /**************************************************************************/
-	IMG_UINT32 OSReadHWReg32(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset);
+	IMG_UINT32 OSReadUncheckedHWReg32(volatile void *pvLinRegBaseAddr,
+									  IMG_UINT32 ui32Offset);
 
 /*************************************************************************/ /*!
-@Function       OSReadHWReg64
+@Function       OSReadUncheckedHWReg64
 @Description    Read from a 64-bit memory-mapped device register.
                 The implementation should not permit the compiler to
                 reorder the I/O sequence.
@@ -1232,42 +1163,10 @@ void OSWriteMemoryBarrier(volatile void *hReadback);
                                    the register to be read.
 @Return         The long long word read.
 */ /**************************************************************************/
-	IMG_UINT64 OSReadHWReg64(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset);
-
+	IMG_UINT64 OSReadUncheckedHWReg64(volatile void *pvLinRegBaseAddr,
+									  IMG_UINT32 ui32Offset);
 /*************************************************************************/ /*!
-@Function       OSWriteHWReg8
-@Description    Write to an 8-bit memory-mapped device register.
-                The implementation should not permit the compiler to
-                reorder the I/O sequence.
-                The implementation should ensure that for a NO_HARDWARE
-                build the code does not attempt to write to a location.
-@Input          pvLinRegBaseAddr   The virtual base address of the register
-                                   block.
-@Input          ui32Offset         The byte offset from the base address of
-                                   the register to be written to.
-@Input          ui8Value           The byte to be written to the register.
-@Return         None.
-*/ /**************************************************************************/
-	void OSWriteHWReg8(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset, IMG_UINT8 ui8Value);
-
-/*************************************************************************/ /*!
-@Function       OSWriteHWReg16
-@Description    Write to a 16-bit memory-mapped device register.
-                The implementation should not permit the compiler to
-                reorder the I/O sequence.
-                The implementation should ensure that for a NO_HARDWARE
-                build the code does not attempt to write to a location.
-@Input          pvLinRegBaseAddr   The virtual base address of the register
-                                   block.
-@Input          ui32Offset         The byte offset from the base address of
-                                   the register to be written to.
-@Input          ui16Value          The word to be written to the register.
-@Return         None.
-*/ /**************************************************************************/
-	void OSWriteHWReg16(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset, IMG_UINT16 ui16Value);
-
-/*************************************************************************/ /*!
-@Function       OSWriteHWReg32
+@Function       OSWriteUncheckedHWReg32
 @Description    Write to a 32-bit memory-mapped device register.
                 The implementation should not permit the compiler to
                 reorder the I/O sequence.
@@ -1280,10 +1179,12 @@ void OSWriteMemoryBarrier(volatile void *hReadback);
 @Input          ui32Value          The long word to be written to the register.
 @Return         None.
 */ /**************************************************************************/
-	void OSWriteHWReg32(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset, IMG_UINT32 ui32Value);
+	void OSWriteUncheckedHWReg32(volatile void *pvLinRegBaseAddr,
+								 IMG_UINT32 ui32Offset,
+								 IMG_UINT32 ui32Value);
 
 /*************************************************************************/ /*!
-@Function       OSWriteHWReg64
+@Function       OSWriteUncheckedHWReg64
 @Description    Write to a 64-bit memory-mapped device register.
                 The implementation should not permit the compiler to
                 reorder the I/O sequence.
@@ -1297,20 +1198,72 @@ void OSWriteMemoryBarrier(volatile void *hReadback);
                                    register.
 @Return         None.
 */ /**************************************************************************/
-	void OSWriteHWReg64(volatile void *pvLinRegBaseAddr, IMG_UINT32 ui32Offset, IMG_UINT64 ui64Value);
+	void OSWriteUncheckedHWReg64(volatile void *pvLinRegBaseAddr,
+								 IMG_UINT32 ui32Offset,
+								 IMG_UINT64 ui64Value);
+
+#endif /* defined(__linux__) && defined(__KERNEL__) */
 
 #if !defined(DOXYGEN)
-	#define OSReadUncheckedHWReg8(addr, off) OSReadHWReg8(addr, off)
-	#define OSReadUncheckedHWReg16(addr, off) OSReadHWReg16(addr, off)
-	#define OSReadUncheckedHWReg32(addr, off) OSReadHWReg32(addr, off)
-	#define OSReadUncheckedHWReg64(addr, off) OSReadHWReg64(addr, off)
 
-	#define OSWriteUncheckedHWReg8(addr, off, val) OSWriteHWReg8(addr, off, val)
-	#define OSWriteUncheckedHWReg16(addr, off, val) OSWriteHWReg16(addr, off, val)
-	#define OSWriteUncheckedHWReg32(addr, off, val) OSWriteHWReg32(addr, off, val)
-	#define OSWriteUncheckedHWReg64(addr, off, val) OSWriteHWReg64(addr, off, val)
+#if defined(RGX_HOST_SECURE_REGBANK_OFFSET) && defined(DEBUG)
+static INLINE bool _NonSecureRegister(IMG_UINT32 ui32Offset)
+{
+	const IMG_UINT32 ui32PerCoreRegBankSize = RGX_HOST_SECURE_REGBANK_OFFSET + RGX_HOST_SECURE_REGBANK_SIZE;
+	const IMG_UINT32 ui32RegOffsetInCoreBank = ui32Offset % ui32PerCoreRegBankSize;
+
+	if (ui32RegOffsetInCoreBank < RGX_HOST_SECURE_REGBANK_OFFSET)
+	{
+		return true;
+	}
+	else
+	{
+		PVR_DPF((PVR_DBG_ERROR, "Secure register (0x%X) accessed incorrectly. "
+								"Call OS<Read/Write>UncheckedHWReg<Width> instead with "
+								"psDevInfo->pvSecureRegsBaseKM as a register base.",
+								ui32RegOffsetInCoreBank));
+		return false;
+	}
+
+}
+#else
+#define _NonSecureRegister(ui32Offset) (true)
 #endif
-#endif
+
+	/* systems using real hardware must check that regular register
+	 * operations don't attempt to access secure registers */
+	static INLINE IMG_UINT32 OSReadHWReg32(volatile void __iomem *pvLinRegBaseAddr,
+										   IMG_UINT32 ui32Offset)
+	{
+		PVR_ASSERT(_NonSecureRegister(ui32Offset));
+		return OSReadUncheckedHWReg32(pvLinRegBaseAddr, ui32Offset);
+	}
+
+	static INLINE IMG_UINT64 OSReadHWReg64(volatile void __iomem *pvLinRegBaseAddr,
+										   IMG_UINT32 ui32Offset)
+	{
+		PVR_ASSERT(_NonSecureRegister(ui32Offset));
+		return OSReadUncheckedHWReg64(pvLinRegBaseAddr, ui32Offset);
+	}
+
+	static INLINE void OSWriteHWReg32(volatile void __iomem *pvLinRegBaseAddr,
+									  IMG_UINT32 ui32Offset,
+									  IMG_UINT32 ui32Value)
+	{
+		PVR_ASSERT(_NonSecureRegister(ui32Offset));
+		OSWriteUncheckedHWReg32(pvLinRegBaseAddr, ui32Offset, ui32Value);
+	}
+
+	static INLINE void OSWriteHWReg64(volatile void __iomem *pvLinRegBaseAddr,
+									  IMG_UINT32 ui32Offset,
+									  IMG_UINT64 ui64Value)
+	{
+		PVR_ASSERT(_NonSecureRegister(ui32Offset));
+		OSWriteUncheckedHWReg64(pvLinRegBaseAddr, ui32Offset, ui64Value);
+	}
+
+#endif /* !defined(DOXYGEN) */
+#endif /* defined(NO_HARDWARE) */
 
 /*************************************************************************/ /*!
 @Description    Pointer to a timer callback function.
@@ -1365,7 +1318,7 @@ PVRSRV_ERROR OSDisableTimer(IMG_HANDLE hTimer);
  @Description   Take action in response to an unrecoverable driver error
  @Return        None
 */ /**************************************************************************/
-void OSPanic(void);
+void __noreturn OSPanic(void);
 
 /*************************************************************************/ /*!
 @Function       OSCopyToUser

@@ -48,7 +48,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #endif
 
 #define IMG_EXPLICIT_INCLUDE_HWDEFS
-#if defined(__KERNEL__)
+#if defined(__KERNEL__) || defined(TEE_DDK)
 #include "rgx_cr_defs_km.h"
 #endif
 #undef IMG_EXPLICIT_INCLUDE_HWDEFS
@@ -119,15 +119,20 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGX_CR_CORE_ID_CONFIG_C_CLRMSK   (0XFFFFFF00U)
 
 /* The default number of OSID is 1, higher number implies VZ enabled firmware */
-#if !defined(RGXFW_NATIVE) && defined(PVRSRV_VZ_NUM_OSID) && (PVRSRV_VZ_NUM_OSID + 1U > 1U)
-#define RGXFW_NUM_OS PVRSRV_VZ_NUM_OSID
+#if !defined(RGXFW_NATIVE) && defined(RGX_NUM_DRIVERS_SUPPORTED) && (RGX_NUM_DRIVERS_SUPPORTED + 1U > 1U)
+#define RGXFW_NUM_OS RGX_NUM_DRIVERS_SUPPORTED
 #else
 #define RGXFW_NUM_OS 1U
 #endif
 
-#define RGXFW_MAX_NUM_OS                                  (8U)
-#define RGXFW_HOST_OS                                     (0U)
-#define RGXFW_GUEST_OSID_START                            (1U)
+#if defined(RGX_FEATURE_NUM_OSIDS)
+#define RGXFW_MAX_NUM_OSIDS                               (RGX_FEATURE_NUM_OSIDS)
+#else
+#define RGXFW_MAX_NUM_OSIDS                               (8U)
+#endif
+
+#define RGXFW_HOST_DRIVER_ID                              (0U)
+#define RGXFW_GUEST_DRIVER_ID_START                       (RGXFW_HOST_DRIVER_ID + 1U)
 
 #define RGXFW_THREAD_0                                    (0U)
 #define RGXFW_THREAD_1                                    (1U)
@@ -146,7 +151,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGX_META_COREMEM_128K     (128*1024)
 #define RGX_META_COREMEM_256K     (256*1024)
 
-#if !defined(__KERNEL__)
+#if !(defined(__KERNEL__) || defined(TEE_DDK))
 #if defined(SUPPORT_TRUSTED_DEVICE) && !defined(RGX_FEATURE_META_DMA)
 #undef SUPPORT_META_COREMEM
 #undef RGX_FEATURE_META_COREMEM_SIZE
@@ -189,6 +194,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGX_CR_CLK_CTRL1_ALL_AUTO (IMG_UINT64_C(0xaaaaaaaaaaaaaaaa)&RGX_CR_CLK_CTRL1_MASKFULL)
 #define RGX_CR_CLK_CTRL2_ALL_ON   (IMG_UINT64_C(0x5555555555555555)&RGX_CR_CLK_CTRL2_MASKFULL)
 #define RGX_CR_CLK_CTRL2_ALL_AUTO (IMG_UINT64_C(0xaaaaaaaaaaaaaaaa)&RGX_CR_CLK_CTRL2_MASKFULL)
+
+#if defined(__KERNEL__)
+#define RGX_CR_CLK_CTRL0__PIPEDM_GT0__ALL_ON   (IMG_UINT64_C(0x5555555555555555)&RGX_CR_CLK_CTRL0__PIPEDM_GT0__MASKFULL)
+#define RGX_CR_CLK_CTRL0__PIPEDM_GT0__ALL_AUTO (IMG_UINT64_C(0xaaaaaaaaaaaaaaaa)&RGX_CR_CLK_CTRL0__PIPEDM_GT0__MASKFULL)
+#endif
 
 #define RGX_CR_MERCER0_SOFT_RESET_SPU_EN (RGX_CR_MERCER_SOFT_RESET_SPU0_MERCER0_EN | \
 										  RGX_CR_MERCER_SOFT_RESET_SPU1_MERCER0_EN | \
@@ -276,6 +286,20 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                                            RGX_CR_SOFT_RESET_BIF_JONES_EN | \
                                            RGX_CR_SOFT_RESET_SLC_EN))
 
+#define RGX_MLIST_ENTRY_STRIDE	(4U) /* 4 bytes */
+#define RGX_NUM_PM_ADDR_SPACES	(2U) /* VCE & TE share virtual space and Alist */
+#define RGX_PM_MAX_PB_VIRT_ADDR_SPACE  (IMG_UINT64_C(0x400000000)) /* PM Maximum addressable limit */
+
+
+#define RGX_PM_MAX_RSTATE_SIZE_DWORDS (46U)
+#define RGX_PM_MLIST_BASE_ADDR_MAX_ALIGNSIZE (32U)
+#define RGX_PM_VHEAP_BASE_ADDR_MAX_ALIGNSIZE (32U)
+#define _RGX_PM_RENDERSTATE_BUFFER_SET_MLIST_BASE_ADDR(_ft_,_x_) { ((_ft_)[2] = ((_x_) & (IMG_UINT64_C(0x00000000fffffff0)))); \
+                                                          ((_ft_)[3] = (((_x_) & (IMG_UINT64_C(0xffffffff00000000)))  >>  32)); }
+#define _RGX_PM_RENDERSTATE_BUFFER_SET_VHEAP_BASE_ADDR(_ft_,_x_) { ((_ft_)[6] = ((_x_) & (IMG_UINT64_C(0x00000000fffffff0)))); \
+                                                          ((_ft_)[7] = (((_x_) & (IMG_UINT64_C(0xffffffff00000000)))  >>  32)); }
+
+#define RGX_PM_RENDERSTATE_BASE_ADDR_ALIGNSIZE (32U)
 
 #define RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT		(12U)
 #define RGX_BIF_PM_PHYSICAL_PAGE_SIZE			(1U << RGX_BIF_PM_PHYSICAL_PAGE_ALIGNSHIFT)
@@ -292,7 +316,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGX_REQ_NUM_BERNADOS(CLUSTERS) ((CLUSTERS + 3U) / 4U)
 #define RGX_REQ_NUM_BLACKPEARLS(CLUSTERS) ((CLUSTERS + 3U) / 4U)
 
-#if !defined(__KERNEL__)
+#if !(defined(__KERNEL__) || defined(TEE_DDK))
 # define RGX_NUM_PHANTOMS (RGX_REQ_NUM_PHANTOMS(RGX_FEATURE_NUM_CLUSTERS))
 #endif
 
@@ -303,22 +327,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * META second thread feature depending on META variants and
  * available CoreMem
  */
-#if defined(RGX_FEATURE_META) && (RGX_FEATURE_META == MTP218 || RGX_FEATURE_META == MTP219) && (RGX_FEATURE_META_COREMEM_SIZE >= 96)
+#if defined(RGX_FEATURE_META) && (RGX_FEATURE_META == MTP218 || RGX_FEATURE_META == MTP219) && (RGX_FEATURE_META_COREMEM_SIZE >= 96) && (RGX_FEATURE_PIPELINED_DATAMASTERS_VERSION == 0)
 #define RGXFW_META_SUPPORT_2ND_THREAD
 #endif
-
-
-/*
- * FW MMU contexts
- */
-#if defined(SUPPORT_TRUSTED_DEVICE)
-#define MMU_CONTEXT_MAPPING_FWPRIV (0x0U) /* FW code/private data */
-#define MMU_CONTEXT_MAPPING_FWIF   (0x7U) /* Host/FW data */
-#else
-#define MMU_CONTEXT_MAPPING_FWPRIV (0x0U)
-#define MMU_CONTEXT_MAPPING_FWIF   (0x0U)
-#endif
-
 
 /*
  * FWCORE wrapper register defines
@@ -344,12 +355,21 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #define RGX_VIRTUALISATION_REG_SIZE_PER_OS (RGX_CR_MTS_SCHEDULE1 - RGX_CR_MTS_SCHEDULE)
 
+/*
+ * Renaming MTS sideband bitfields to emphasize that the Register Bank number
+ * of the MTS register used identifies a specific Driver/VM rather than the OSID tag
+ * emitted on bus memory transactions.
+ */
+#define RGX_MTS_SBDATA_DRIVERID_CLRMSK RGX_CR_MTS_BGCTX_SBDATA0_OS_ID_CLRMSK
+#define RGX_MTS_SBDATA_DRIVERID_SHIFT RGX_CR_MTS_BGCTX_SBDATA0_OS_ID_SHIFT
+
 /* Register Bank containing registers secured against host access */
 #define RGX_HOST_SECURE_REGBANK_OFFSET				(0xF0000U)
 #define RGX_HOST_SECURE_REGBANK_SIZE				(0x10000U)
 
 /* GPU CR timer tick in GPU cycles */
-#define RGX_CRTIME_TICK_IN_CYCLES (256U)
+#define RGX_CRTIME_TICK_IN_CYCLES					(256U)
+#define RGX_CRTIME_TICK_IN_CYCLES_SHIFT				(8U)
 
 #if defined(FIX_HW_BRN_71840)
 #define ROGUE_RENDERSIZE_MAXX						(16384U)
@@ -402,5 +422,19 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #endif
 #define RGX_BRN71422_WORKAROUND_READ_SIZE           (32U)
 #endif
+
+#define SUPPORT_VOLCANIC_TB
+#define RGX_FEATURE_SECURITY_VOLCANIC
+
+/* Typically the PCI bus returns this value on error */
+#define RGX_PCI_ERROR_VALUE_BYTE (0xFFU)
+#define RGX_PCI_ERROR_VALUE_DWORD (0xFFFFFFFFU)
+
+
+/*
+	Maximum number of render targets in array.
+	This derives from the maximum value for RGX_FEATURE_RTA_INDICES across all cores.
+*/
+#define RGX_MAX_RTA_INDICES (2048U)
 
 #endif /* RGXDEFS_KM_H */

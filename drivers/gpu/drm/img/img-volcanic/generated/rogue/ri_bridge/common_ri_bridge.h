@@ -88,13 +88,12 @@ typedef struct PVRSRV_BRIDGE_OUT_RIWRITEPMRENTRY_TAG
 /* Bridge in structure for RIWriteMEMDESCEntry */
 typedef struct PVRSRV_BRIDGE_IN_RIWRITEMEMDESCENTRY_TAG
 {
+	IMG_UINT64 ui64Flags;
 	IMG_UINT64 ui64Offset;
 	IMG_UINT64 ui64Size;
 	IMG_HANDLE hPMRHandle;
 	const IMG_CHAR *puiTextB;
 	IMG_UINT32 ui32TextBSize;
-	IMG_BOOL bIsImport;
-	IMG_BOOL bIsSuballoc;
 } __packed PVRSRV_BRIDGE_IN_RIWRITEMEMDESCENTRY;
 
 /* Bridge out structure for RIWriteMEMDESCEntry */

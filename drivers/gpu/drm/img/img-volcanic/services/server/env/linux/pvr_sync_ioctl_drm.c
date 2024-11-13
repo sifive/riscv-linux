@@ -127,35 +127,51 @@ void pvr_sync_close(void *connection_data)
 	if (iErr < 0)
 		pr_err("%s: ERROR (%d) returned by pvr_sync_close_common()\n",
 		       __func__, iErr);
+
+	iErr = OSConnectionPrivateDataDeInit(PVRSRVConnectionPrivateData(connection_data));
+	if (iErr != 0)
+		pr_err("%s: ERROR (%d) returned by OSConnectionPrivateDataDeInit()\n",
+		       __func__, iErr);
+
+	if (connection_data)
+		kfree(connection_data);
 }
 
 
 int pvr_sync_rename_ioctl(struct drm_device __maybe_unused *dev,
 			  void *arg, struct drm_file *file)
 {
-	return pvr_sync_ioctl_common(file->filp,
-				     DRM_PVR_SYNC_RENAME_CMD, arg);
+	return pvr_sync_ioctl_common_rename(file->filp, arg);
 }
 
 int pvr_sync_force_sw_only_ioctl(struct drm_device __maybe_unused *dev,
 				 void *arg, struct drm_file *file)
 {
-	return pvr_sync_ioctl_common(file->filp,
-				     DRM_PVR_SYNC_FORCE_SW_ONLY_CMD, arg);
+	return pvr_sync_ioctl_common_force_sw_only(file->filp, arg);
 }
 
 int pvr_sw_sync_create_fence_ioctl(struct drm_device __maybe_unused *dev,
 				   void *arg, struct drm_file *file)
 {
-	return pvr_sync_ioctl_common(file->filp,
-				     DRM_PVR_SW_SYNC_CREATE_FENCE_CMD, arg);
+	return pvr_sync_ioctl_common_sw_create_fence(file->filp, arg);
 }
 
 int pvr_sw_sync_inc_ioctl(struct drm_device __maybe_unused *dev,
 			  void *arg, struct drm_file *file)
 {
-	return pvr_sync_ioctl_common(file->filp,
-				     DRM_PVR_SW_SYNC_INC_CMD, arg);
+	return pvr_sync_ioctl_common_sw_inc(file->filp, arg);
+}
+
+int pvr_sync_ioctl_force_exp_only(struct drm_device __maybe_unused *dev,
+			  void *arg, struct drm_file *file)
+{
+	return pvr_sync_ioctl_common_force_exp_only(file->filp, arg);
+}
+
+int pvr_export_fence_sync_create_fence_ioctl(struct drm_device __maybe_unused *dev,
+			  void *arg, struct drm_file *file)
+{
+	return pvr_sync_ioctl_common_create_export_fence(file->filp, arg);
 }
 
 int pvr_sync_ioctl_init(void)

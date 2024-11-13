@@ -46,7 +46,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */ /**************************************************************************/
 
 #include "htbserver.h"
-#include "htbuffer.h"
 #include "htbuffer_types.h"
 #include "tlstream.h"
 #include "pvrsrv_tlcommon.h"
@@ -58,13 +57,24 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvr_notifier.h"
 #include "pvrsrv.h"
 #include "pvrsrv_apphint.h"
-#include "oskm_apphint.h"
+#include "os_apphint.h"
 
 /* size of circular buffer controlling the maximum number of concurrent PIDs logged */
 #define HTB_MAX_NUM_PID 8
 
 /* number of times to try rewriting a log entry */
 #define HTB_LOG_RETRY_COUNT 5
+
+#if defined(__linux__)
+ #include <linux/version.h>
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+  #include <linux/stdarg.h>
+ #else
+  #include <stdarg.h>
+ #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) */
+#else
+ #include <stdarg.h>
+#endif /* __linux__ */
 
 /*************************************************************************/ /*!
   Host Trace Buffer control information structure
@@ -159,7 +169,6 @@ static IMG_HANDLE g_hTLStream;
 
 static IMG_HANDLE hHtbDbgReqNotify;
 
-
 /************************************************************************/ /*!
  @Function      _LookupFlags
  @Description   Convert HTBuffer Operation mode to TLStream flags
@@ -251,7 +260,7 @@ static void _OnTLReaderOpenCallback(void *);
                                 number
 */ /**************************************************************************/
 PVRSRV_ERROR
-HTBInit(void)
+HTBInit_Impl(void)
 {
 	void			*pvAppHintState = NULL;
 	IMG_UINT32		ui32AppHintDefault;
@@ -289,11 +298,11 @@ HTBInit(void)
 	/*
 	 * Now get whatever values have been configured for our AppHints
 	 */
-	OSCreateKMAppHintState(&pvAppHintState);
+	OSCreateAppHintState(&pvAppHintState);
 	ui32AppHintDefault = HTB_TL_BUFFER_SIZE_MIN / 1024;
-	OSGetKMAppHintUINT32(APPHINT_NO_DEVICE, pvAppHintState, HTBufferSizeInKB,
+	OSGetAppHintUINT32(APPHINT_NO_DEVICE, pvAppHintState, HTBufferSizeInKB,
 						 &ui32AppHintDefault, &g_ui32HTBufferSize);
-	OSFreeKMAppHintState(pvAppHintState);
+	OSFreeAppHintState(pvAppHintState);
 
 	ui32BufBytes = g_ui32HTBufferSize * 1024;
 
@@ -340,7 +349,7 @@ HTBInit(void)
                                 number
 */ /**************************************************************************/
 PVRSRV_ERROR
-HTBDeInit( void )
+HTBDeInit_Impl( void )
 {
 	if (!g_sCtrl.bInitDone)
 		return PVRSRV_OK;
@@ -419,162 +428,11 @@ PVRSRV_ERROR _HTBReadOpMode(const PVRSRV_DEVICE_NODE *psDeviceNode,
 	return PVRSRV_OK;
 }
 
-
-static void
-_OnTLReaderOpenCallback( void *pvArg )
-{
-	if ( g_hTLStream )
-	{
-		IMG_UINT64 ui64Time;
-		OSClockMonotonicns64(&ui64Time);
-		(void) HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
-		              g_sCtrl.ui32SyncMarker,
-		              ((IMG_UINT32)((g_sCtrl.ui64SyncOSTS>>32)&0xffffffff)),
-		              ((IMG_UINT32)(g_sCtrl.ui64SyncOSTS&0xffffffff)),
-		              ((IMG_UINT32)((g_sCtrl.ui64SyncCRTS>>32)&0xffffffff)),
-		              ((IMG_UINT32)(g_sCtrl.ui64SyncCRTS&0xffffffff)),
-		              g_sCtrl.ui32SyncCalcClkSpd);
-	}
-
-	PVR_UNREFERENCED_PARAMETER(pvArg);
-}
-
-
-/*************************************************************************/ /*!
- @Function      HTBControlKM
- @Description   Update the configuration of the Host Trace Buffer
-
- @Input         ui32NumFlagGroups Number of group enable flags words
-
- @Input         aui32GroupEnable  Flags words controlling groups to be logged
-
- @Input         ui32LogLevel    Log level to record
-
- @Input         ui32EnablePID   PID to enable logging for a specific process
-
- @Input         eLogMode        Enable logging for all or specific processes,
-
- @Input         eOpMode         Control the behaviour of the data buffer
-
- @Return        eError          Internal services call returned eError error
-                                number
-*/ /**************************************************************************/
-PVRSRV_ERROR
-HTBControlKM(
-	const IMG_UINT32 ui32NumFlagGroups,
-	const IMG_UINT32 * aui32GroupEnable,
-	const IMG_UINT32 ui32LogLevel,
-	const IMG_UINT32 ui32EnablePID,
-	const HTB_LOGMODE_CTRL eLogMode,
-	const HTB_OPMODE_CTRL eOpMode
-)
-{
-	PVRSRV_ERROR eError = PVRSRV_OK;
-	IMG_UINT32 ui32RetryCount = HTB_LOG_RETRY_COUNT;
-	IMG_UINT32 i;
-	IMG_UINT64 ui64Time;
-	OSClockMonotonicns64(&ui64Time);
-
-	if ( !g_bConfigured && ui32NumFlagGroups )
-	{
-		eError = TLStreamCreate(
-				&g_hTLStream,
-				HTB_STREAM_NAME,
-				g_sCtrl.ui32BufferSize,
-				_LookupFlags(HTB_OPMODE_DROPOLDEST) | g_ui32TLBaseFlags,
-				_OnTLReaderOpenCallback, NULL, NULL, NULL);
-		PVR_LOG_RETURN_IF_ERROR(eError, "TLStreamCreate");
-		g_bConfigured = IMG_TRUE;
-	}
-
-	if (HTB_OPMODE_UNDEF != eOpMode && g_sCtrl.eOpMode != eOpMode)
-	{
-		g_sCtrl.eOpMode = eOpMode;
-		eError = TLStreamReconfigure(g_hTLStream, _LookupFlags(g_sCtrl.eOpMode | g_ui32TLBaseFlags));
-		while ( PVRSRV_ERROR_NOT_READY == eError && ui32RetryCount-- )
-		{
-			OSReleaseThreadQuanta();
-			eError = TLStreamReconfigure(g_hTLStream, _LookupFlags(g_sCtrl.eOpMode | g_ui32TLBaseFlags));
-		}
-		PVR_LOG_RETURN_IF_ERROR(eError, "TLStreamReconfigure");
-	}
-
-	if ( ui32EnablePID )
-	{
-		g_sCtrl.aui32EnablePID[g_sCtrl.ui32PIDHead] = ui32EnablePID;
-		g_sCtrl.ui32PIDHead++;
-		g_sCtrl.ui32PIDHead %= HTB_MAX_NUM_PID;
-		g_sCtrl.ui32PIDCount++;
-		if ( g_sCtrl.ui32PIDCount > HTB_MAX_NUM_PID )
-		{
-			g_sCtrl.ui32PIDCount = HTB_MAX_NUM_PID;
-		}
-	}
-
-	/* HTB_LOGMODE_ALLPID overrides ui32EnablePID */
-	if ( HTB_LOGMODE_ALLPID == eLogMode )
-	{
-		OSCachedMemSet(g_sCtrl.aui32EnablePID, 0, sizeof(g_sCtrl.aui32EnablePID));
-		g_sCtrl.ui32PIDCount = 0;
-		g_sCtrl.ui32PIDHead = 0;
-	}
-	if ( HTB_LOGMODE_UNDEF != eLogMode )
-	{
-		g_sCtrl.eLogMode = eLogMode;
-	}
-
-	if ( ui32NumFlagGroups )
-	{
-		for (i = 0; i < HTB_FLAG_NUM_EL && i < ui32NumFlagGroups; i++)
-		{
-			g_auiHTBGroupEnable[i] = aui32GroupEnable[i];
-		}
-		for (; i < HTB_FLAG_NUM_EL; i++)
-		{
-			g_auiHTBGroupEnable[i] = 0;
-		}
-	}
-
-	if ( ui32LogLevel )
-	{
-		g_sCtrl.ui32LogLevel = ui32LogLevel;
-	}
-
-	/* Dump the current configuration state */
-	eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_OPMODE, g_sCtrl.eOpMode);
-	PVR_LOG_IF_ERROR(eError, "HTBLog");
-	eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_ENABLE_GROUP, g_auiHTBGroupEnable[0]);
-	PVR_LOG_IF_ERROR(eError, "HTBLog");
-	eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_LOG_LEVEL, g_sCtrl.ui32LogLevel);
-	PVR_LOG_IF_ERROR(eError, "HTBLog");
-	eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_LOGMODE, g_sCtrl.eLogMode);
-	PVR_LOG_IF_ERROR(eError, "HTBLog");
-	for (i = 0; i < g_sCtrl.ui32PIDCount; i++)
-	{
-		eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_ENABLE_PID, g_sCtrl.aui32EnablePID[i]);
-		PVR_LOG_IF_ERROR(eError, "HTBLog");
-	}
-	/* Else should never be hit as we set the spd when the power state is updated */
-	if (0 != g_sCtrl.ui32SyncMarker && 0 != g_sCtrl.ui32SyncCalcClkSpd)
-	{
-		eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
-				g_sCtrl.ui32SyncMarker,
-				((IMG_UINT32)((g_sCtrl.ui64SyncOSTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncOSTS&0xffffffff)),
-				((IMG_UINT32)((g_sCtrl.ui64SyncCRTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncCRTS&0xffffffff)),
-				g_sCtrl.ui32SyncCalcClkSpd);
-		PVR_LOG_IF_ERROR(eError, "HTBLog");
-	}
-
-	return eError;
-}
-
-/*************************************************************************/ /*!
-*/ /**************************************************************************/
+#if defined(PVRSRV_ENABLE_HTB)
 static IMG_BOOL
 _ValidPID( IMG_UINT32 PID )
 {
 	IMG_UINT32 i;
-
 	for (i = 0; i < g_sCtrl.ui32PIDCount; i++)
 	{
 		if ( g_sCtrl.aui32EnablePID[i] == PID )
@@ -584,121 +442,7 @@ _ValidPID( IMG_UINT32 PID )
 	}
 	return IMG_FALSE;
 }
-
-
-/*************************************************************************/ /*!
- @Function      HTBSyncPartitionMarker
- @Description   Write an HTB sync partition marker to the HTB log
-
- @Input         ui33Marker      Marker value
-
-*/ /**************************************************************************/
-void
-HTBSyncPartitionMarker(
-	const IMG_UINT32 ui32Marker
-)
-{
-	g_sCtrl.ui32SyncMarker = ui32Marker;
-	if ( g_hTLStream )
-	{
-		PVRSRV_ERROR eError;
-		IMG_UINT64 ui64Time;
-		OSClockMonotonicns64(&ui64Time);
-
-		/* Else should never be hit as we set the spd when the power state is updated */
-		if (0 != g_sCtrl.ui32SyncCalcClkSpd)
-		{
-			eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
-					ui32Marker,
-					((IMG_UINT32)((g_sCtrl.ui64SyncOSTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncOSTS&0xffffffff)),
-					((IMG_UINT32)((g_sCtrl.ui64SyncCRTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncCRTS&0xffffffff)),
-					g_sCtrl.ui32SyncCalcClkSpd);
-			PVR_WARN_IF_ERROR(eError, "HTBLog");
-		}
-	}
-}
-
-/*************************************************************************/ /*!
- @Function      HTBSyncPartitionMarkerRepeat
- @Description   Write a HTB sync partition marker to the HTB log, given
-                the previous values to repeat.
-
- @Input         ui33Marker      Marker value
- @Input         ui64SyncOSTS    previous OSTS
- @Input         ui64SyncCRTS    previous CRTS
- @Input         ui32ClkSpeed    previous Clock speed
-
-*/ /**************************************************************************/
-void
-HTBSyncPartitionMarkerRepeat(
-	const IMG_UINT32 ui32Marker,
-	const IMG_UINT64 ui64SyncOSTS,
-	const IMG_UINT64 ui64SyncCRTS,
-	const IMG_UINT32 ui32ClkSpeed
-)
-{
-	if ( g_hTLStream )
-	{
-		PVRSRV_ERROR eError;
-		IMG_UINT64 ui64Time;
-		OSClockMonotonicns64(&ui64Time);
-
-		/* Else should never be hit as we set the spd when the power state is updated */
-		if (0 != ui32ClkSpeed)
-		{
-			eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
-					ui32Marker,
-					((IMG_UINT32)((ui64SyncOSTS>>32)&0xffffffffU)), ((IMG_UINT32)(ui64SyncOSTS&0xffffffffU)),
-					((IMG_UINT32)((ui64SyncCRTS>>32)&0xffffffffU)), ((IMG_UINT32)(ui64SyncCRTS&0xffffffffU)),
-					ui32ClkSpeed);
-			PVR_WARN_IF_ERROR(eError, "HTBLog");
-		}
-	}
-}
-
-/*************************************************************************/ /*!
- @Function      HTBSyncScale
- @Description   Write FW-Host synchronisation data to the HTB log when clocks
-                change or are re-calibrated
-
- @Input         bLogValues      IMG_TRUE if value should be immediately written
-                                out to the log
-
- @Input         ui32OSTS        OS Timestamp
-
- @Input         ui32CRTS        Rogue timestamp
-
- @Input         ui32CalcClkSpd  Calculated clock speed
-
-*/ /**************************************************************************/
-void
-HTBSyncScale(
-	const IMG_BOOL bLogValues,
-	const IMG_UINT64 ui64OSTS,
-	const IMG_UINT64 ui64CRTS,
-	const IMG_UINT32 ui32CalcClkSpd
-)
-{
-	g_sCtrl.ui64SyncOSTS = ui64OSTS;
-	g_sCtrl.ui64SyncCRTS = ui64CRTS;
-	g_sCtrl.ui32SyncCalcClkSpd = ui32CalcClkSpd;
-	if (g_hTLStream && bLogValues)
-	{
-		PVRSRV_ERROR eError;
-		IMG_UINT64 ui64Time;
-		OSClockMonotonicns64(&ui64Time);
-		eError = HTBLog((IMG_HANDLE) NULL, 0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
-				g_sCtrl.ui32SyncMarker,
-				((IMG_UINT32)((ui64OSTS>>32)&0xffffffff)), ((IMG_UINT32)(ui64OSTS&0xffffffff)),
-				((IMG_UINT32)((ui64CRTS>>32)&0xffffffff)), ((IMG_UINT32)(ui64CRTS&0xffffffff)),
-				ui32CalcClkSpd);
-		/*
-		 * Don't spam the log with non-failure cases
-		 */
-		PVR_WARN_IF_ERROR(eError, "HTBLog");
-	}
-}
-
+#endif	/* PVRSRV_ENABLE_HTB */
 
 /*************************************************************************/ /*!
  @Function      HTBLogKM
@@ -719,18 +463,19 @@ HTBSyncScale(
  @Return        PVRSRV_OK       Success.
 
 */ /**************************************************************************/
-PVRSRV_ERROR
-HTBLogKM(
-		IMG_UINT32 PID,
+static PVRSRV_ERROR
+HTBLogKM(IMG_UINT32 PID,
 		IMG_UINT32 TID,
 		IMG_UINT64 ui64TimeStamp,
 		HTB_LOG_SFids SF,
-		IMG_UINT32 ui32NumArgs,
-		IMG_UINT32 * aui32Args
+		va_list args
 )
 {
+#if defined(PVRSRV_ENABLE_HTB)
+
 	OS_SPINLOCK_FLAGS uiSpinLockFlags;
 	IMG_UINT32 ui32ReturnFlags = 0;
+	IMG_UINT32 ui32CurrentArg = 0;
 
 	/* Local snapshot variables of global counters */
 	IMG_UINT64 ui64OSTSSnap;
@@ -741,6 +486,7 @@ HTBLogKM(
 	 * Buffer is on the stack so we don't need a semaphore to guard it
 	 */
 	IMG_UINT32 aui32MessageBuffer[HTB_LOG_HEADER_SIZE+HTB_LOG_MAX_PARAMS];
+	IMG_UINT32 aui32Args[HTB_LOG_MAX_PARAMS + 1] = {0};
 
 	/* Min HTB size is HTB_TL_BUFFER_SIZE_MIN : 10000 bytes and Max message/
 	 * packet size is 4*(HTB_LOG_HEADER_SIZE+HTB_LOG_MAX_PARAMS) = 80 bytes,
@@ -750,11 +496,85 @@ HTBLogKM(
 	PVRSRV_ERROR eError = PVRSRV_ERROR_NOT_ENABLED;
 	IMG_UINT32 ui32RetryCount = HTB_LOG_RETRY_COUNT;
 	IMG_UINT32 * pui32Message = aui32MessageBuffer;
+	IMG_UINT32 ui32NumArgs = HTB_SF_PARAMNUM(SF);
+	IMG_UINT32 ui32StrArg = HTB_SF_STRNUM(SF);
+	IMG_UINT32 ui32CurrentStringArg;
+
 	IMG_UINT32 ui32MessageSize = 4 * (HTB_LOG_HEADER_SIZE+ui32NumArgs);
 
-	PVR_LOG_GOTO_IF_INVALID_PARAM(aui32Args != NULL, eError, ReturnError);
+	if (ui32StrArg > 0)
+	{
+		ui32MessageSize += HTB_LOG_STR_ARG_SIZE - sizeof(IMG_UINT32);
+	}
+
+	PVR_ASSERT(ui32NumArgs <= HTB_LOG_MAX_PARAMS);
+	ui32NumArgs = (ui32NumArgs>HTB_LOG_MAX_PARAMS) ?
+			HTB_LOG_MAX_PARAMS : ui32NumArgs;
+
 	PVR_LOG_GOTO_IF_INVALID_PARAM(ui32NumArgs == HTB_SF_PARAMNUM(SF), eError, ReturnError);
 	PVR_LOG_GOTO_IF_INVALID_PARAM(ui32NumArgs <= HTB_LOG_MAX_PARAMS, eError, ReturnError);
+
+	/* Needs to be set up here because it's accessed from both `if` blocks below
+	 * and it needs to be pre-populated for both of them (pui32Message case and
+	 * HTB_SF_CTRL_FWSYNC_MARK_SCALE case). */
+
+	while (ui32CurrentArg < ui32NumArgs)
+	{
+		if (ui32StrArg != 0 && ui32CurrentArg == ui32StrArg - 1)
+		{
+			IMG_CHAR* strArg;
+			strArg = va_arg(args, IMG_CHAR*);
+
+			/* if a string is present, it will need more than one UINT32 words. */
+			ui32NumArgs += HTB_LOG_STR_ARG_NUM_WORDS - 1;
+
+			/* Ignore if filename is not supported. */
+			if (strcmp(strArg, "n/a") == 0)
+			{
+				PVR_DPF((PVR_DBG_MESSAGE, "N/A\n"));
+				return PVRSRV_OK;
+			}
+
+			/* looping through the created string to get the substrings to encode. */
+			for (ui32CurrentStringArg = 0; ui32CurrentStringArg < HTB_LOG_STR_ARG_NUM_WORDS; ui32CurrentStringArg++)
+			{
+				IMG_UINT32 encodedString = 0;
+
+				if (*strArg == '\0')
+				{
+					aui32Args[ui32CurrentArg] = encodedString;
+					ui32CurrentArg++;
+				}
+				else
+				{
+					IMG_UINT32 currentSubstring;
+
+					for (currentSubstring = 0; currentSubstring < sizeof(IMG_UINT32); currentSubstring++)
+					{
+						IMG_UINT32 bitPos = currentSubstring * 8;
+
+						if (*strArg == '\0')
+						{
+							break;
+						}
+						else
+						{
+							encodedString |= (IMG_UINT32) *strArg << bitPos;
+							strArg++;
+						}
+					}
+
+					aui32Args[ui32CurrentArg] = encodedString;
+					ui32CurrentArg++;
+				}
+			}
+		}
+		else
+		{
+			aui32Args[ui32CurrentArg] = va_arg(args, IMG_UINT32);
+			ui32CurrentArg++;
+		}
+	}
 
 	if ( g_hTLStream
 			&& ( 0 == PID || ~0 == PID || HTB_LOGMODE_ALLPID == g_sCtrl.eLogMode || _ValidPID(PID) )
@@ -767,13 +587,13 @@ HTBLogKM(
 		*pui32Message++ = TID;
 		*pui32Message++ = ((IMG_UINT32)((ui64TimeStamp>>32)&0xffffffff));
 		*pui32Message++ = ((IMG_UINT32)(ui64TimeStamp&0xffffffff));
-		while ( ui32NumArgs )
+		for (ui32CurrentArg = 0; ui32CurrentArg < ui32NumArgs; ui32CurrentArg++)
 		{
-			ui32NumArgs--;
-			pui32Message[ui32NumArgs] = aui32Args[ui32NumArgs];
+			pui32Message[ui32CurrentArg] = aui32Args[ui32CurrentArg];
 		}
 
 		eError = TLStreamWriteRetFlags( g_hTLStream, (IMG_UINT8*)aui32MessageBuffer, ui32MessageSize, &ui32ReturnFlags );
+
 		while ( PVRSRV_ERROR_NOT_READY == eError && ui32RetryCount-- )
 		{
 			OSReleaseThreadQuanta();
@@ -836,6 +656,327 @@ HTBLogKM(
 	}
 
 ReturnError:
+	return eError;
+
+#else
+	/* HTB support is disabled. Just return PVRSRV_OK and do nothing. */
+	PVR_UNREFERENCED_PARAMETER(PID);
+	PVR_UNREFERENCED_PARAMETER(TID);
+	PVR_UNREFERENCED_PARAMETER(ui64TimeStamp);
+	PVR_UNREFERENCED_PARAMETER(SF);
+	PVR_UNREFERENCED_PARAMETER(args);
+	return PVRSRV_OK;
+#endif
+}
+
+/*************************************************************************/ /*!
+ @Function      HTBLog
+ @Description   Record a Host Trace Buffer log event
+ @Input         PID     The PID of the process the event is associated
+                        with. This is provided as an argument rather
+                        than querying internally so that events
+                        associated with a particular process, but
+                        performed by another can be logged correctly.
+ @Input         ui64TimeStamp   The timestamp to be associated with this
+                                log event
+ @Input         SF              The log event ID
+ @Input         ...             Log parameters
+ @Return        PVRSRV_OK       Success.
+*/ /**************************************************************************/
+static PVRSRV_ERROR
+HTBLog(IMG_UINT32 PID, IMG_UINT32 TID, IMG_UINT64 ui64TimeStamp,
+		IMG_UINT32 SF, ...)
+{
+	PVRSRV_ERROR eError;
+
+	va_list args;
+	va_start(args, SF);
+	eError = HTBLogKM(PID, TID, ui64TimeStamp, SF, args);
+	va_end(args);
+	return eError;
+}
+
+static void
+_OnTLReaderOpenCallback( void *pvArg )
+{
+	if ( g_hTLStream )
+	{
+		IMG_UINT64 ui64Time;
+		OSClockMonotonicns64(&ui64Time);
+		(void) HTBLog(0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
+		              g_sCtrl.ui32SyncMarker,
+		              ((IMG_UINT32)((g_sCtrl.ui64SyncOSTS>>32)&0xffffffff)),
+		              ((IMG_UINT32)(g_sCtrl.ui64SyncOSTS&0xffffffff)),
+		              ((IMG_UINT32)((g_sCtrl.ui64SyncCRTS>>32)&0xffffffff)),
+		              ((IMG_UINT32)(g_sCtrl.ui64SyncCRTS&0xffffffff)),
+		              g_sCtrl.ui32SyncCalcClkSpd);
+	}
+
+	PVR_UNREFERENCED_PARAMETER(pvArg);
+}
+
+
+/*************************************************************************/ /*!
+ @Function      HTBControlKM
+ @Description   Update the configuration of the Host Trace Buffer
+
+ @Input         ui32NumFlagGroups Number of group enable flags words
+
+ @Input         aui32GroupEnable  Flags words controlling groups to be logged
+
+ @Input         ui32LogLevel    Log level to record
+
+ @Input         ui32EnablePID   PID to enable logging for a specific process
+
+ @Input         eLogMode        Enable logging for all or specific processes,
+
+ @Input         eOpMode         Control the behaviour of the data buffer
+
+ @Return        eError          Internal services call returned eError error
+                                number
+*/ /**************************************************************************/
+PVRSRV_ERROR
+HTBControlKM_Impl(
+	const IMG_UINT32 ui32NumFlagGroups,
+	const IMG_UINT32 * aui32GroupEnable,
+	const IMG_UINT32 ui32LogLevel,
+	const IMG_UINT32 ui32EnablePID,
+	const HTB_LOGMODE_CTRL eLogMode,
+	const HTB_OPMODE_CTRL eOpMode
+)
+{
+	PVRSRV_ERROR eError = PVRSRV_OK;
+	IMG_UINT32 ui32RetryCount = HTB_LOG_RETRY_COUNT;
+	IMG_UINT32 i;
+	IMG_UINT64 ui64Time;
+	OSClockMonotonicns64(&ui64Time);
+
+	if ( !g_bConfigured && ui32NumFlagGroups )
+	{
+		eError = TLStreamCreate(
+				&g_hTLStream,
+				HTB_STREAM_NAME,
+				g_sCtrl.ui32BufferSize,
+				_LookupFlags(HTB_OPMODE_DROPOLDEST) | g_ui32TLBaseFlags,
+				_OnTLReaderOpenCallback, NULL, NULL, NULL, NULL, NULL);
+		PVR_LOG_RETURN_IF_ERROR(eError, "TLStreamCreate");
+		g_bConfigured = IMG_TRUE;
+	}
+
+	if (HTB_OPMODE_UNDEF != eOpMode && g_sCtrl.eOpMode != eOpMode)
+	{
+		g_sCtrl.eOpMode = eOpMode;
+		eError = TLStreamReconfigure(g_hTLStream, _LookupFlags(g_sCtrl.eOpMode | g_ui32TLBaseFlags));
+		while ( PVRSRV_ERROR_NOT_READY == eError && ui32RetryCount-- )
+		{
+			OSReleaseThreadQuanta();
+			eError = TLStreamReconfigure(g_hTLStream, _LookupFlags(g_sCtrl.eOpMode | g_ui32TLBaseFlags));
+		}
+		PVR_LOG_RETURN_IF_ERROR(eError, "TLStreamReconfigure");
+	}
+
+	if ( ui32EnablePID )
+	{
+		g_sCtrl.aui32EnablePID[g_sCtrl.ui32PIDHead] = ui32EnablePID;
+		g_sCtrl.ui32PIDHead++;
+		g_sCtrl.ui32PIDHead %= HTB_MAX_NUM_PID;
+		g_sCtrl.ui32PIDCount++;
+		if ( g_sCtrl.ui32PIDCount > HTB_MAX_NUM_PID )
+		{
+			g_sCtrl.ui32PIDCount = HTB_MAX_NUM_PID;
+		}
+	}
+
+	/* HTB_LOGMODE_ALLPID overrides ui32EnablePID */
+	if ( HTB_LOGMODE_ALLPID == eLogMode )
+	{
+		OSCachedMemSet(g_sCtrl.aui32EnablePID, 0, sizeof(g_sCtrl.aui32EnablePID));
+		g_sCtrl.ui32PIDCount = 0;
+		g_sCtrl.ui32PIDHead = 0;
+	}
+	if ( HTB_LOGMODE_UNDEF != eLogMode )
+	{
+		g_sCtrl.eLogMode = eLogMode;
+	}
+
+	if ( ui32NumFlagGroups )
+	{
+		for (i = 0; i < HTB_FLAG_NUM_EL && i < ui32NumFlagGroups; i++)
+		{
+			g_auiHTBGroupEnable[i] = aui32GroupEnable[i];
+		}
+		for (; i < HTB_FLAG_NUM_EL; i++)
+		{
+			g_auiHTBGroupEnable[i] = 0;
+		}
+	}
+
+	if ( ui32LogLevel )
+	{
+		g_sCtrl.ui32LogLevel = ui32LogLevel;
+	}
+
+	/* Dump the current configuration state */
+	eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_OPMODE, g_sCtrl.eOpMode);
+	PVR_LOG_IF_ERROR(eError, "HTBLog");
+	eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_ENABLE_GROUP, g_auiHTBGroupEnable[0]);
+	PVR_LOG_IF_ERROR(eError, "HTBLog");
+	eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_LOG_LEVEL, g_sCtrl.ui32LogLevel);
+	PVR_LOG_IF_ERROR(eError, "HTBLog");
+	eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_LOGMODE, g_sCtrl.eLogMode);
+	PVR_LOG_IF_ERROR(eError, "HTBLog");
+	for (i = 0; i < g_sCtrl.ui32PIDCount; i++)
+	{
+		eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_ENABLE_PID, g_sCtrl.aui32EnablePID[i]);
+		PVR_LOG_IF_ERROR(eError, "HTBLog");
+	}
+	/* Else should never be hit as we set the spd when the power state is updated */
+	if (0 != g_sCtrl.ui32SyncMarker && 0 != g_sCtrl.ui32SyncCalcClkSpd)
+	{
+		eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
+				g_sCtrl.ui32SyncMarker,
+				((IMG_UINT32)((g_sCtrl.ui64SyncOSTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncOSTS&0xffffffff)),
+				((IMG_UINT32)((g_sCtrl.ui64SyncCRTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncCRTS&0xffffffff)),
+				g_sCtrl.ui32SyncCalcClkSpd);
+		PVR_LOG_IF_ERROR(eError, "HTBLog");
+	}
+
+	return eError;
+}
+
+
+/*************************************************************************/ /*!
+ @Function      HTBSyncPartitionMarker
+ @Description   Write an HTB sync partition marker to the HTB log
+
+ @Input         ui33Marker      Marker value
+
+*/ /**************************************************************************/
+void
+HTBSyncPartitionMarker_Impl(
+	const IMG_UINT32 ui32Marker
+)
+{
+	g_sCtrl.ui32SyncMarker = ui32Marker;
+	if ( g_hTLStream )
+	{
+		PVRSRV_ERROR eError;
+		IMG_UINT64 ui64Time;
+		OSClockMonotonicns64(&ui64Time);
+
+		/* Else should never be hit as we set the spd when the power state is updated */
+		if (0 != g_sCtrl.ui32SyncCalcClkSpd)
+		{
+			eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
+					ui32Marker,
+					((IMG_UINT32)((g_sCtrl.ui64SyncOSTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncOSTS&0xffffffff)),
+					((IMG_UINT32)((g_sCtrl.ui64SyncCRTS>>32)&0xffffffff)), ((IMG_UINT32)(g_sCtrl.ui64SyncCRTS&0xffffffff)),
+					g_sCtrl.ui32SyncCalcClkSpd);
+			PVR_WARN_IF_ERROR(eError, "HTBLog");
+		}
+	}
+}
+
+/*************************************************************************/ /*!
+ @Function      HTBSyncPartitionMarkerRepeat
+ @Description   Write a HTB sync partition marker to the HTB log, given
+                the previous values to repeat.
+
+ @Input         ui33Marker      Marker value
+ @Input         ui64SyncOSTS    previous OSTS
+ @Input         ui64SyncCRTS    previous CRTS
+ @Input         ui32ClkSpeed    previous Clock speed
+
+*/ /**************************************************************************/
+void
+HTBSyncPartitionMarkerRepeat_Impl(
+	const IMG_UINT32 ui32Marker,
+	const IMG_UINT64 ui64SyncOSTS,
+	const IMG_UINT64 ui64SyncCRTS,
+	const IMG_UINT32 ui32ClkSpeed
+)
+{
+	if ( g_hTLStream )
+	{
+		PVRSRV_ERROR eError;
+		IMG_UINT64 ui64Time;
+		OSClockMonotonicns64(&ui64Time);
+
+		/* Else should never be hit as we set the spd when the power state is updated */
+		if (0 != ui32ClkSpeed)
+		{
+			eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
+					ui32Marker,
+					((IMG_UINT32)((ui64SyncOSTS>>32)&0xffffffffU)), ((IMG_UINT32)(ui64SyncOSTS&0xffffffffU)),
+					((IMG_UINT32)((ui64SyncCRTS>>32)&0xffffffffU)), ((IMG_UINT32)(ui64SyncCRTS&0xffffffffU)),
+					ui32ClkSpeed);
+			PVR_WARN_IF_ERROR(eError, "HTBLog");
+		}
+	}
+}
+
+/*************************************************************************/ /*!
+ @Function      HTBSyncScale
+ @Description   Write FW-Host synchronisation data to the HTB log when clocks
+                change or are re-calibrated
+
+ @Input         bLogValues      IMG_TRUE if value should be immediately written
+                                out to the log
+
+ @Input         ui32OSTS        OS Timestamp
+
+ @Input         ui32CRTS        Rogue timestamp
+
+ @Input         ui32CalcClkSpd  Calculated clock speed
+
+*/ /**************************************************************************/
+void
+HTBSyncScale_Impl(
+	const IMG_BOOL bLogValues,
+	const IMG_UINT64 ui64OSTS,
+	const IMG_UINT64 ui64CRTS,
+	const IMG_UINT32 ui32CalcClkSpd
+)
+{
+	g_sCtrl.ui64SyncOSTS = ui64OSTS;
+	g_sCtrl.ui64SyncCRTS = ui64CRTS;
+	g_sCtrl.ui32SyncCalcClkSpd = ui32CalcClkSpd;
+	if (g_hTLStream && bLogValues)
+	{
+		PVRSRV_ERROR eError;
+		IMG_UINT64 ui64Time;
+		OSClockMonotonicns64(&ui64Time);
+		eError = HTBLog(0, 0, ui64Time, HTB_SF_CTRL_FWSYNC_MARK_SCALE,
+				g_sCtrl.ui32SyncMarker,
+				((IMG_UINT32)((ui64OSTS>>32)&0xffffffff)), ((IMG_UINT32)(ui64OSTS&0xffffffff)),
+				((IMG_UINT32)((ui64CRTS>>32)&0xffffffff)), ((IMG_UINT32)(ui64CRTS&0xffffffff)),
+				ui32CalcClkSpd);
+		/*
+		 * Don't spam the log with non-failure cases
+		 */
+		PVR_WARN_IF_ERROR(eError, "HTBLog");
+	}
+}
+
+/*************************************************************************/ /*!
+ @Function      HTBLogSimple
+ @Description   Record a Host Trace Buffer log event with implicit PID and
+                Timestamp
+ @Input         SF              The log event ID
+ @Input         ...             Log parameters
+ @Return        PVRSRV_OK       Success.
+*/ /**************************************************************************/
+IMG_INTERNAL PVRSRV_ERROR
+HTBLogSimple_Impl(IMG_UINT32 SF, ...)
+{
+	PVRSRV_ERROR eError;
+	IMG_UINT64 ui64TimeStamp;
+	va_list args;
+	va_start(args, SF);
+	OSClockMonotonicns64(&ui64TimeStamp);
+	eError = HTBLogKM(OSGetCurrentProcessID(), OSGetCurrentThreadID(), ui64TimeStamp,
+			SF, args);
+	va_end(args);
 	return eError;
 }
 

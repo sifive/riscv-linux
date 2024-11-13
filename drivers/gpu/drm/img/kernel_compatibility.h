@@ -46,6 +46,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <linux/version.h>
 #include <linux/compiler.h>
 
+/* Explicitly error out if DDK is built against out-of-support Linux kernel */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#error Linux kernels older than 4.9.0 are not supported
+#endif
+
 /*
  * Stop supporting an old kernel? Remove the top block.
  * New incompatible kernel?       Append a new block at the bottom.
@@ -57,239 +62,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * last file included, as it can affect definitions/declarations in files
  * included after it.
  */
-
-/* Linux 3.6 introduced seq_vprintf(). Earlier versions don't have this
- * so we work around the limitation by vsnprintf() + seq_puts().
- */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0))
-#define seq_vprintf(seq_file, fmt, args) \
-do { \
-	char aszBuffer[512]; /* maximum message buffer size */ \
-	vsnprintf(aszBuffer, sizeof(aszBuffer), fmt, args); \
-	seq_puts(seq_file, aszBuffer); \
-} while (0)
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)) */
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 7, 0))
-
-/* Linux 3.7 split VM_RESERVED into VM_DONTDUMP and VM_DONTEXPAND */
-#define VM_DONTDUMP VM_RESERVED
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 7, 0)) */
-
-/*
- * Note: this fix had to be written backwards because get_unused_fd_flags
- * was already defined but not exported on kernels < 3.7
- *
- * When removing support for kernels < 3.7, this block should be removed
- * and all `get_unused_fd()` should be manually replaced with
- * `get_unused_fd_flags(0)`
- */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0))
-
-/* Linux 3.19 removed get_unused_fd() */
-/* get_unused_fd_flags was introduced in 3.7 */
-#define get_unused_fd() get_unused_fd_flags(0)
-
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)) */
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0))
-
-/*
- * Headers shouldn't normally be included by this file but this is a special
- * case as it's not obvious from the name that devfreq_add_device needs this
- * include.
- */
-#include <linux/string.h>
-
-#define devfreq_add_device(dev, profile, name, data) \
-	({ \
-		struct devfreq *__devfreq; \
-		if (name && !strcmp(name, "simple_ondemand")) \
-			__devfreq = devfreq_add_device(dev, profile, \
-							   &devfreq_simple_ondemand, data); \
-		else \
-			__devfreq = ERR_PTR(-EINVAL); \
-		__devfreq; \
-	})
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 0))
-
-#define DRIVER_RENDER 0
-#define DRM_RENDER_ALLOW 0
-
-/* Linux 3.12 introduced a new shrinker API */
-#define SHRINK_STOP (~0UL)
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
-
-#define dev_pm_opp_get_opp_count(dev) opp_get_opp_count(dev)
-#define dev_pm_opp_get_freq(opp) opp_get_freq(opp)
-#define dev_pm_opp_get_voltage(opp) opp_get_voltage(opp)
-#define dev_pm_opp_add(dev, freq, u_volt) opp_add(dev, freq, u_volt)
-#define dev_pm_opp_find_freq_ceil(dev, freq) opp_find_freq_ceil(dev, freq)
-
-#if defined(CONFIG_ARM)
-/* Linux 3.13 renamed ioremap_cached to ioremap_cache */
-#define ioremap_cache(cookie, size) ioremap_cached(cookie, size)
-#endif /* defined(CONFIG_ARM) */
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0))
-
-/* Linux 3.14 introduced a new set of sized min and max defines */
-#ifndef U32_MAX
-#define U32_MAX ((u32)UINT_MAX)
-#endif
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0))
-
-/* Linux 3.17 changed the 3rd argument from a `struct page ***pages` to
- * `struct page **pages` */
-#define map_vm_area(area, prot, pages) map_vm_area(area, prot, &pages)
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0))
-
-/*
- * Linux 4.7 removed this function but its replacement was available since 3.19.
- */
-#define drm_crtc_send_vblank_event(crtc, e) drm_send_vblank_event((crtc)->dev, drm_crtc_index(crtc), e)
-
-/* seq_has_overflowed() was introduced in 3.19 but the structure elements
- * have been available since 2.x
- */
-#include <linux/seq_file.h>
-static inline bool seq_has_overflowed(struct seq_file *m)
-{
-	return m->count == m->size;
-}
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0))
-
-#define debugfs_create_file_size(name, mode, parent, data, fops, file_size) \
-	({ \
-		struct dentry *de; \
-		de = debugfs_create_file(name, mode, parent, data, fops); \
-		if (de) \
-			de->d_inode->i_size = file_size; \
-		de; \
-	})
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)) */
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0))
-#define drm_fb_helper_unregister_fbi(fb_helper) \
-	({ \
-		if ((fb_helper) && (fb_helper)->fbdev) \
-			unregister_framebuffer((fb_helper)->fbdev); \
-	})
-#endif
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-
-/* Linux 4.4 renamed GFP_WAIT to GFP_RECLAIM */
-#define __GFP_RECLAIM __GFP_WAIT
-
-#if !defined(CHROMIUMOS_KERNEL) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0))
-#define dev_pm_opp_of_add_table(dev) of_init_opp_table(dev)
-#define dev_pm_opp_of_remove_table(dev) of_free_opp_table(dev)
-#else
-#define sync_fence_create(data_name, sync_pt) sync_fence_create(data_name, &(sync_pt)->base)
-#endif
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)) && \
-	(!defined(CHROMIUMOS_KERNEL) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0)))
-
-/* Linux 4.5 added a new printf-style parameter for debug messages */
-
-#define drm_encoder_init(dev, encoder, funcs, encoder_type, name, ...) \
-	drm_encoder_init(dev, encoder, funcs, encoder_type)
-
-#define drm_universal_plane_init(dev, plane, possible_crtcs, funcs, formats, format_count, format_modifiers, type, name, ...) \
-	({ (void) format_modifiers; drm_universal_plane_init(dev, plane, possible_crtcs, funcs, formats, format_count, type); })
-
-#define drm_crtc_init_with_planes(dev, crtc, primary, cursor, funcs, name, ...) \
-	drm_crtc_init_with_planes(dev, crtc, primary, cursor, funcs)
-
-#elif (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
-
-#define drm_universal_plane_init(dev, plane, possible_crtcs, funcs, formats, format_count, format_modifiers, type, name, ...) \
-	({ (void) format_modifiers; drm_universal_plane_init(dev, plane, possible_crtcs, funcs, formats, format_count, type, name, ##__VA_ARGS__); })
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0))
-
-/*
- * Linux 4.6 removed the first two parameters, the "struct task_struct" type
- * pointer "current" is defined in asm/current.h, which makes it pointless
- * to pass it on every function call.
-*/
-#define get_user_pages(start, nr_pages, gup_flags, pages, vmas) \
-	get_user_pages(current, current->mm, start, nr_pages, gup_flags & FOLL_WRITE, gup_flags & FOLL_FORCE, pages, vmas)
-
-#elif (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-
-/* Linux 4.9 replaced the write/force parameters with "gup_flags" */
-#define get_user_pages(start, nr_pages, gup_flags, pages, vmas) \
-	get_user_pages(start, nr_pages, gup_flags & FOLL_WRITE, gup_flags & FOLL_FORCE, pages, vmas)
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)) */
-
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)) && \
-	(!defined(CHROMIUMOS_KERNEL) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0)))
-
-/*
- * Linux 4.6 removed the start and end arguments as it now always maps
- * the entire DMA-BUF.
- * Additionally, dma_buf_end_cpu_access() now returns an int error.
- */
-#define dma_buf_begin_cpu_access(DMABUF, DIRECTION) dma_buf_begin_cpu_access(DMABUF, 0, DMABUF->size, DIRECTION)
-#define dma_buf_end_cpu_access(DMABUF, DIRECTION) ({ dma_buf_end_cpu_access(DMABUF, 0, DMABUF->size, DIRECTION); 0; })
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)) && \
-		  (!defined(CHROMIUMOS_KERNEL) || (LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0))) */
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
-
-/* Linux 4.7 removed the first arguments as it's never been used */
-#define drm_gem_object_lookup(filp, handle) drm_gem_object_lookup((filp)->minor->dev, filp, handle)
-
-/* Linux 4.7 replaced nla_put_u64 with nla_put_u64_64bit */
-#define nla_put_u64_64bit(skb, attrtype, value, padattr) nla_put_u64(skb, attrtype, value)
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)) */
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-
-/* Linux 4.9 changed the second argument to a drm_file pointer */
-#define drm_vma_node_is_allowed(node, file_priv) drm_vma_node_is_allowed(node, (file_priv)->filp)
-#define drm_vma_node_allow(node, file_priv) drm_vma_node_allow(node, (file_priv)->filp)
-#define drm_vma_node_revoke(node, file_priv) drm_vma_node_revoke(node, (file_priv)->filp)
-
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)) */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0))
 #define refcount_read(r) atomic_read(r)
@@ -326,6 +98,15 @@ static inline bool seq_has_overflowed(struct seq_file *m)
 #define drm_property_blob_put(obj)        drm_property_unreference_blob(obj)
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0)) */
+
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+
+#define drm_universal_plane_init(dev, plane, possible_crtcs, funcs, formats, format_count, format_modifiers, type, name, ...) \
+	({ (void) format_modifiers; drm_universal_plane_init(dev, plane, possible_crtcs, funcs, formats, format_count, type, name, ##__VA_ARGS__); })
+
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)) */
+
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))
 
@@ -451,6 +232,10 @@ __pvr_access_ok_compat(int type, const void __user * addr, unsigned long size)
 
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0))
+#define MODULE_IMPORT_NS(ns)
+#endif
+
 /*
  * Before v5.8, the "struct mm" has a semaphore named "mmap_sem" which is
  * renamed to "mmap_lock" in v5.8. Moreover, new APIs are provided to
@@ -523,6 +308,76 @@ struct dma_buf_map {
 #define uaccess_disable_privileged() uaccess_disable()
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
+#define pde_data PDE_DATA
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0))
+#define kthread_complete_and_exit(comp, ret) complete_and_exit(comp, ret);
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0))
+#define iosys_map dma_buf_map
+#define iosys_map_set_vaddr dma_buf_map_set_vaddr
+#define iosys_map_set_vaddr_iomem dma_buf_map_set_vaddr_iomem
+#define iosys_map_clear dma_buf_map_clear
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+
+#define register_shrinker(shrinker, name) \
+	register_shrinker(shrinker)
+
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+#define DRM_PLANE_NO_SCALING DRM_PLANE_HELPER_NO_SCALING
+#define drm_plane_helper_destroy drm_primary_helper_destroy
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0))
+#define genl_split_ops genl_ops
+#define COMPAT_FB_INFO fbdev
+#define drm_fb_helper_alloc_info drm_fb_helper_alloc_fbi
+#define drm_fb_helper_unregister_info drm_fb_helper_unregister_fbi
+#else
+#define COMPAT_FB_INFO info
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)) || \
+        ((LINUX_VERSION_CODE < KERNEL_VERSION(6, 3, 0)) && !defined(ANDROID))
+static inline void pvr_vm_flags_set(struct vm_area_struct *vma,
+				vm_flags_t flags)
+{
+	vma->vm_flags |= flags;
+}
+static inline void pvr_vm_flags_init(struct vm_area_struct *vma,
+				vm_flags_t flags)
+{
+	vma->vm_flags = flags;
+}
+static inline void pvr_vm_flags_clear(struct vm_area_struct *vma,
+				vm_flags_t flags)
+{
+	vma->vm_flags &= ~flags;
+}
+#else
+#define pvr_vm_flags_set  vm_flags_set
+#define pvr_vm_flags_init vm_flags_init
+#define pvr_vm_flags_clear vm_flags_clear
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6, 3, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0))
+#define pvr_class_create(name) class_create(THIS_MODULE, name)
+#else
+#define pvr_class_create(name) class_create(name)
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
+#define thermal_tripless_zone_device_register(type, devdata, ops, tzp) \
+	thermal_zone_device_register((type), 0, 0, (devdata), (ops), (tzp), 0, 0)
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)) */
+
 #if defined(__GNUC__)
 #define GCC_VERSION_AT_LEAST(major, minor) \
 	(__GNUC__ > (major) || \
@@ -531,8 +386,15 @@ struct dma_buf_map {
 #define GCC_VERSION_AT_LEAST(major, minor) 0
 #endif
 
+#if defined(__clang__)
+#define CLANG_VERSION_AT_LEAST(major) \
+	(__clang_major__ >= (major))
+#else
+#define CLANG_VERSION_AT_LEAST(major) 0
+#endif
+
 #if !defined(__fallthrough)
-	#if GCC_VERSION_AT_LEAST(7, 0)
+	#if GCC_VERSION_AT_LEAST(7, 0) || CLANG_VERSION_AT_LEAST(10)
 		#define __fallthrough __attribute__((__fallthrough__))
 	#else
 		#define __fallthrough

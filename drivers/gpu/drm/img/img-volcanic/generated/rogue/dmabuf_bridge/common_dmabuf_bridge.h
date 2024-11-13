@@ -55,8 +55,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #define PVRSRV_BRIDGE_DMABUF_CMD_FIRST			0
 #define PVRSRV_BRIDGE_DMABUF_PHYSMEMIMPORTDMABUF			PVRSRV_BRIDGE_DMABUF_CMD_FIRST+0
-#define PVRSRV_BRIDGE_DMABUF_PHYSMEMIMPORTDMABUFLOCKED			PVRSRV_BRIDGE_DMABUF_CMD_FIRST+1
-#define PVRSRV_BRIDGE_DMABUF_PHYSMEMEXPORTDMABUF			PVRSRV_BRIDGE_DMABUF_CMD_FIRST+2
+#define PVRSRV_BRIDGE_DMABUF_PHYSMEMEXPORTDMABUF			PVRSRV_BRIDGE_DMABUF_CMD_FIRST+1
+#define PVRSRV_BRIDGE_DMABUF_PHYSMEMEXPORTGEMHANDLE			PVRSRV_BRIDGE_DMABUF_CMD_FIRST+2
 #define PVRSRV_BRIDGE_DMABUF_PHYSMEMIMPORTSPARSEDMABUF			PVRSRV_BRIDGE_DMABUF_CMD_FIRST+3
 #define PVRSRV_BRIDGE_DMABUF_CMD_LAST			(PVRSRV_BRIDGE_DMABUF_CMD_FIRST+3)
 
@@ -83,28 +83,6 @@ typedef struct PVRSRV_BRIDGE_OUT_PHYSMEMIMPORTDMABUF_TAG
 } __packed PVRSRV_BRIDGE_OUT_PHYSMEMIMPORTDMABUF;
 
 /*******************************************
-            PhysmemImportDmaBufLocked
- *******************************************/
-
-/* Bridge in structure for PhysmemImportDmaBufLocked */
-typedef struct PVRSRV_BRIDGE_IN_PHYSMEMIMPORTDMABUFLOCKED_TAG
-{
-	const IMG_CHAR *puiName;
-	IMG_INT ifd;
-	IMG_UINT32 ui32NameSize;
-	PVRSRV_MEMALLOCFLAGS_T uiFlags;
-} __packed PVRSRV_BRIDGE_IN_PHYSMEMIMPORTDMABUFLOCKED;
-
-/* Bridge out structure for PhysmemImportDmaBufLocked */
-typedef struct PVRSRV_BRIDGE_OUT_PHYSMEMIMPORTDMABUFLOCKED_TAG
-{
-	IMG_DEVMEM_ALIGN_T uiAlign;
-	IMG_DEVMEM_SIZE_T uiSize;
-	IMG_HANDLE hPMRPtr;
-	PVRSRV_ERROR eError;
-} __packed PVRSRV_BRIDGE_OUT_PHYSMEMIMPORTDMABUFLOCKED;
-
-/*******************************************
             PhysmemExportDmaBuf
  *******************************************/
 
@@ -120,6 +98,23 @@ typedef struct PVRSRV_BRIDGE_OUT_PHYSMEMEXPORTDMABUF_TAG
 	PVRSRV_ERROR eError;
 	IMG_INT iFd;
 } __packed PVRSRV_BRIDGE_OUT_PHYSMEMEXPORTDMABUF;
+
+/*******************************************
+            PhysmemExportGemHandle
+ *******************************************/
+
+/* Bridge in structure for PhysmemExportGemHandle */
+typedef struct PVRSRV_BRIDGE_IN_PHYSMEMEXPORTGEMHANDLE_TAG
+{
+	IMG_HANDLE hPMR;
+} __packed PVRSRV_BRIDGE_IN_PHYSMEMEXPORTGEMHANDLE;
+
+/* Bridge out structure for PhysmemExportGemHandle */
+typedef struct PVRSRV_BRIDGE_OUT_PHYSMEMEXPORTGEMHANDLE_TAG
+{
+	PVRSRV_ERROR eError;
+	IMG_UINT32 ui32Handle;
+} __packed PVRSRV_BRIDGE_OUT_PHYSMEMEXPORTGEMHANDLE;
 
 /*******************************************
             PhysmemImportSparseDmaBuf

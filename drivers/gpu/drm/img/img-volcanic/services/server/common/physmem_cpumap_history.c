@@ -428,7 +428,7 @@ void InsertMappingRecord(const IMG_CHAR *pszAnnotation,
 	psRecord->etype = MAP;
 	psRecord->pfnRecordString = MapRecordString;
 
-	OSStringLCopy(psRecord->u.sMapData.aszAnnotation, pszAnnotation, MAX_MAPPING_ANNOT_STR);
+	OSStringSafeCopy(psRecord->u.sMapData.aszAnnotation, pszAnnotation, MAX_MAPPING_ANNOT_STR);
 	psRecord->u.sMapData.uiPID = uiPID;
 	psRecord->u.sMapData.pvAddress = pvAddress;
 	psRecord->u.sMapData.ui32CPUCacheFlags = ui32CPUCacheFlags;

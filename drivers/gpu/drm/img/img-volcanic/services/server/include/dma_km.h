@@ -77,7 +77,9 @@ PVRSRV_ERROR DmaTransfer(CONNECTION_DATA *psConnection,
 			IMG_UINT32 uiFlags,
 			PVRSRV_TIMELINE iUpdateTimeline);
 
-PVRSRV_ERROR PVRSRVInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode);
-void PVRSRVDeInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode);
+PVRSRV_ERROR PVRSRVInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode,
+								 CONNECTION_DATA *psConnectionData);
+void PVRSRVDeInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode,
+						   CONNECTION_DATA *psConnectionData);
 
 #endif /* DMA_KM_H */

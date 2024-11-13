@@ -56,6 +56,8 @@ X(EnableTrustedDeviceAceConfig,     BOOL,           GPUVIRT_VAL, PVRSRV_APPHINT_
 X(CleanupThreadPriority,            UINT32,         NEVER,       PVRSRV_APPHINT_CLEANUPTHREADPRIORITY,         NO_PARAM_TABLE,   ALWAYS   ) \
 X(WatchdogThreadPriority,           UINT32,         NEVER,       PVRSRV_APPHINT_WATCHDOGTHREADPRIORITY,        NO_PARAM_TABLE,   ALWAYS   ) \
 X(HWPerfClientBufferSize,           UINT32,         ALWAYS,      PVRSRV_APPHINT_HWPERFCLIENTBUFFERSIZE,        NO_PARAM_TABLE,   ALWAYS   ) \
+X(DevmemHistoryBufSizeLog2,         UINT32,         ALWAYS,      PVRSRV_APPHINT_DEVMEM_HISTORY_BUFSIZE_LOG2,   NO_PARAM_TABLE,   ALWAYS   ) \
+X(DevmemHistoryMaxEntries,          UINT32,         ALWAYS,      PVRSRV_APPHINT_DEVMEM_HISTORY_MAX_ENTRIES,    NO_PARAM_TABLE,   ALWAYS   )
 
 /*
 *******************************************************************************
@@ -72,13 +74,15 @@ X(DisableClockGating,               BOOL,           ALWAYS,      PVRSRV_APPHINT_
 X(DisableDMOverlap,                 BOOL,           ALWAYS,      PVRSRV_APPHINT_DISABLEDMOVERLAP,              NO_PARAM_TABLE,   ALWAYS   ) \
 \
 X(EnableRandomContextSwitch,        BOOL,           VALIDATION,  PVRSRV_APPHINT_ENABLERANDOMCONTEXTSWITCH,     NO_PARAM_TABLE,   ALWAYS   ) \
-X(EnableSoftResetContextSwitch,     BOOL,           ALWAYS,      PVRSRV_APPHINT_ENABLESOFTRESETCNTEXTSWITCH,   NO_PARAM_TABLE,   ALWAYS   ) \
+X(EnableSoftResetContextSwitch,     BOOL,           ALWAYS,      PVRSRV_APPHINT_ENABLESOFTRESETCONTEXTSWITCH,  NO_PARAM_TABLE,   ALWAYS   ) \
 X(EnableFWContextSwitch,            UINT32,         ALWAYS,      PVRSRV_APPHINT_ENABLEFWCONTEXTSWITCH,         NO_PARAM_TABLE,   ALWAYS   ) \
 X(FWContextSwitchProfile,           UINT32,         VALIDATION,  PVRSRV_APPHINT_FWCONTEXTSWITCHPROFILE,        NO_PARAM_TABLE,   ALWAYS   ) \
 \
 X(EnableRDPowerIsland,              UINT32,         ALWAYS,      PVRSRV_APPHINT_ENABLERDPOWERISLAND,           NO_PARAM_TABLE,   ALWAYS   ) \
 \
-X(DriverMode,                       UINT32,         ALWAYS,      PVRSRV_APPHINT_DRIVERMODE,                    NO_PARAM_TABLE,   ALWAYS   ) \
+X(DriverMode,                       STRING,         ALWAYS,      PVRSRV_APPHINT_DRIVERMODE,                    NO_PARAM_TABLE,   ALWAYS   ) \
+X(AutoVzGPUPowerdown,               BOOL,           ALWAYS,      PVRSRV_APPHINT_AUTOVZGPUPOWERDOWN,            NO_PARAM_TABLE,   ALWAYS   ) \
+X(GuestFWHeapStride,                UINT64,         ALWAYS,      PVRSRV_APPHINT_GUESTFWHEAPSTRIDE,             NO_PARAM_TABLE,   ALWAYS   ) \
 \
 X(FirmwarePerf,                     UINT32,         VALIDATION,  PVRSRV_APPHINT_FIRMWAREPERF,                  NO_PARAM_TABLE,   ALWAYS   ) \
 \
@@ -86,7 +90,6 @@ X(HWPerfFWBufSizeInKB,              UINT32,         PDUMP,       PVRSRV_APPHINT_
 X(HWPerfHostBufSizeInKB,            UINT32,         VALIDATION,  PVRSRV_APPHINT_HWPERFHOSTBUFSIZEINKB,         NO_PARAM_TABLE,   ALWAYS   ) \
 X(HWPerfHostThreadTimeoutInMS,      UINT32,         VALIDATION,  PVRSRV_APPHINT_HWPERFHOSTTHREADTIMEOUTINMS,   NO_PARAM_TABLE,   ALWAYS   ) \
 \
-X(JonesDisableMask,                 UINT32,         VALIDATION,  PVRSRV_APPHINT_JONESDISABLEMASK,              NO_PARAM_TABLE,   ALWAYS   ) \
 X(NewFilteringMode,                 BOOL,           VALIDATION,  PVRSRV_APPHINT_NEWFILTERINGMODE,              NO_PARAM_TABLE,   ALWAYS   ) \
 X(TruncateMode,                     UINT32,         VALIDATION,  PVRSRV_APPHINT_TRUNCATEMODE,                  NO_PARAM_TABLE,   ALWAYS   ) \
 X(EmuMaxFreq,                       UINT32,         ALWAYS,      PVRSRV_APPHINT_EMUMAXFREQ,                    NO_PARAM_TABLE,   ALWAYS   ) \
@@ -96,10 +99,11 @@ X(RGXBVNC,                          STRING,         ALWAYS,      PVRSRV_APPHINT_
 X(FWContextSwitchCrossDM,           UINT32,         ALWAYS,      0,                                            NO_PARAM_TABLE,   ALWAYS   ) \
 X(ValidateIrq,                      BOOL,           VALIDATION,  PVRSRV_APPHINT_VALIDATEIRQ,                   NO_PARAM_TABLE,   ALWAYS   ) \
 \
-X(TPUTrilinearFracMaskPDM,          UINT32,         VALIDATION,  0xF,                                          NO_PARAM_TABLE,   ALWAYS   ) \
-X(TPUTrilinearFracMaskVDM,          UINT32,         VALIDATION,  0xF,                                          NO_PARAM_TABLE,   ALWAYS   ) \
-X(TPUTrilinearFracMaskCDM,          UINT32,         VALIDATION,  0xF,                                          NO_PARAM_TABLE,   ALWAYS   ) \
-X(TPUTrilinearFracMaskTDM,          UINT32,         VALIDATION,  0xF,                                          NO_PARAM_TABLE,   ALWAYS   ) \
+X(TPUTrilinearFracMaskPDM,          UINT32,         VALIDATION,  0x7,                                          NO_PARAM_TABLE,   ALWAYS   ) \
+X(TPUTrilinearFracMaskVDM,          UINT32,         VALIDATION,  0x7,                                          NO_PARAM_TABLE,   ALWAYS   ) \
+X(TPUTrilinearFracMaskCDM,          UINT32,         VALIDATION,  0x7,                                          NO_PARAM_TABLE,   ALWAYS   ) \
+X(TPUTrilinearFracMaskTDM,          UINT32,         VALIDATION,  0x7,                                          NO_PARAM_TABLE,   ALWAYS   ) \
+X(TPUTrilinearFracMaskRDM,          UINT32,         VALIDATION,  0x7,                                          NO_PARAM_TABLE,   ALWAYS   ) \
 X(HTBufferSizeInKB,                 UINT32,         ALWAYS,      PVRSRV_APPHINT_HTBUFFERSIZE,                  NO_PARAM_TABLE,   ALWAYS   ) \
 X(FWTraceBufSizeInDWords,           UINT32,         ALWAYS,      PVRSRV_APPHINT_FWTRACEBUFSIZEINDWORDS,        NO_PARAM_TABLE,   ALWAYS   ) \
 \
@@ -116,7 +120,26 @@ X(RiscvDmiTest,                     BOOL,           VALIDATION,  PVRSRV_APPHINT_
 X(DevMemFWHeapPolicy,               UINT32,         ALWAYS,      PVRSRV_APPHINT_FIRMWARE_HEAP_POLICY,          NO_PARAM_TABLE,   ALWAYS   ) \
 \
 X(EnableAPMAll,                     UINT32,         VALIDATION,  PVRSRV_APPHINT_ENABLEAPM,                     NO_PARAM_TABLE,   ALWAYS   ) \
-X(KernelCCBSizeLog2,                UINT32,         VALIDATION,  PVRSRV_APPHINT_KCCB_SIZE_LOG2,                NO_PARAM_TABLE,   ALWAYS   )
+X(KernelCCBSizeLog2,                UINT32,         VALIDATION,  PVRSRV_APPHINT_KCCB_SIZE_LOG2,                NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(SyncCheckpointPoolMaxLog2,        UINT32,         ALWAYS,      PVRSRV_APPHINT_CHECKPOINTPOOLMAXLOG2,         NO_PARAM_TABLE,   ALWAYS   ) \
+X(SyncCheckpointPoolInitLog2,       UINT32,         ALWAYS,      PVRSRV_APPHINT_CHECKPOINTPOOLINITLOG2,        NO_PARAM_TABLE,   ALWAYS   ) \
+X(PhysHeapMinMemOnConnection,       UINT32,         ALWAYS,      PVRSRV_APPHINT_PHYSHEAPMINMEMONCONNECTION,    NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(RestrictGpuLocalPhysHeapSizeMB,   UINT32,         VALIDATION,  0,                                            NO_PARAM_TABLE,   ALWAYS   ) \
+X(PhysHeapHybridDefault2CpuLocal,   BOOL,           ALWAYS,      0,                                            NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(DebugDumpFWTLogType,              UINT32,         ALWAYS,      PVRSRV_APPHINT_DEBUGDUMPFWTLOGTYPE,           NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(EnableIdleCycleStealing,          UINT32,         VALIDATION,  PVRSRV_APPHINT_ENABLEIDLECYCLESTEALING,       NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(FaultDetectionTimeInterval,       UINT32,         VALIDATION,  PVRSRV_APPHINT_FAULTDETECTIONTIMEINTERVAL_USEC, NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(ICSTimeIntervalThreshold,         UINT32,         VALIDATION,  PVRSRV_APPHINT_ICSTIMEINTERVAL_THRESHOLD,     NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(ICSTestModeOn,                    BOOL,           VALIDATION,  0,                                            NO_PARAM_TABLE,   ALWAYS   ) \
+\
+X(FaultInjection,                   UINT32,         VALIDATION,  0,                                            NO_PARAM_TABLE,   ALWAYS   )
 
 /*
 *******************************************************************************
@@ -149,7 +172,7 @@ X(CheckMList,                       BOOL,           ALWAYS,      PVRSRV_APPHINT_
 X(EnableLogGroup,                   UINT32Bitfield, ALWAYS,      PVRSRV_APPHINT_ENABLELOGGROUP,                fwt_loggroup_tbl, ALWAYS   ) \
 X(FirmwareLogType,                  UINT32List,     ALWAYS,      PVRSRV_APPHINT_FIRMWARELOGTYPE,               fwt_logtype_tbl,  ALWAYS   ) \
 X(HWRDebugDumpLimit,                UINT32,         ALWAYS,      PVRSRV_APPHINT_HWRDEBUGDUMPLIMIT,             NO_PARAM_TABLE,   ALWAYS   ) \
-X(TimeCorrClock,                    UINT32List,     ALWAYS,      PVRSRV_APPHINT_TIMECORRCLOCK,                 timecorr_clk_tbl, ALWAYS   ) \
+X(SecondaryOSClockSource,           UINT32List,     ALWAYS,      PVRSRV_APPHINT_SECONDARYOSCLOCKSOURCE,        timecorr_clk_tbl, ALWAYS   ) \
 X(HWPerfFWFilter,                   UINT64,         ALWAYS,      PVRSRV_APPHINT_HWPERFFWFILTER,                NO_PARAM_TABLE,   ALWAYS   ) \
 /* Device host config */ \
 X(EnableAPM,                        UINT32,         ALWAYS,      PVRSRV_APPHINT_ENABLEAPM,                     NO_PARAM_TABLE,   ALWAYS   ) \
@@ -217,13 +240,8 @@ X(NEVER)
 	#define APPHINT_ENABLED_CLASS_PDUMP IMG_FALSE
 	#define apphint_modparam_class_PDUMP(a, b, c)
 #endif
-#if defined(SUPPORT_VALIDATION)
-	#define APPHINT_ENABLED_CLASS_VALIDATION IMG_TRUE
-	#define apphint_modparam_class_VALIDATION(a, b, c) apphint_modparam_enable(a, b, c)
-#else
 	#define APPHINT_ENABLED_CLASS_VALIDATION IMG_FALSE
 	#define apphint_modparam_class_VALIDATION(a, b, c)
-#endif
 #if defined(SUPPORT_GPUVIRT_VALIDATION)
 	#define APPHINT_ENABLED_CLASS_GPUVIRT_VAL IMG_TRUE
 	#define apphint_modparam_class_GPUVIRT_VAL(a, b, c) apphint_modparam_enable(a, b, c)
@@ -253,7 +271,7 @@ X(NEVER)
 #else
 #define APPHNT_BLDVAR_ENABLESIGNATURECHECKS     IMG_FALSE
 #endif
-#if defined(DEBUG) || defined(SUPPORT_VALIDATION)
+#if defined(DEBUG)
 #define APPHNT_BLDVAR_ENABLEPAGEFAULTDEBUG      IMG_TRUE
 #else
 #define APPHNT_BLDVAR_ENABLEPAGEFAULTDEBUG      IMG_FALSE

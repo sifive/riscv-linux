@@ -52,7 +52,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define RGX_PDSCODEDATA_HEAP_IDENT          "PDS Code and Data"         /*!< RGX PDS Code/Data Heap Identifier */
 #define RGX_USCCODE_HEAP_IDENT              "USC Code"                  /*!< RGX USC Code Heap Identifier */
 #define RGX_VK_CAPT_REPLAY_HEAP_IDENT       "Vulkan Capture Replay"     /*!< RGX Vulkan capture replay buffer Heap Identifier */
-#define RGX_SIGNALS_HEAP_IDENT              "Signals"                   /*!< Signals Heap Identifier */
 #define RGX_FBCDC_HEAP_IDENT                "FBCDC"                     /*!< RGX FBCDC State Table Heap Identifier */
 #define RGX_FBCDC_LARGE_HEAP_IDENT          "Large FBCDC"               /*!< RGX Large FBCDC State Table Heap Identifier */
 #define RGX_CMP_MISSION_RMW_HEAP_IDENT      "Compute Mission RMW"       /*!< Compute Mission RMW Heap Identifier */

@@ -129,7 +129,7 @@ int mtk_mfg_enable(struct mtk_mfg *mfg)
 	int ret;
 
 	ret = pm_runtime_get_sync(mfg->dev);
-	if (ret)
+	if (ret < 0)
 		return ret;
 
 	ret = mtk_mfg_enable_clock(mfg);

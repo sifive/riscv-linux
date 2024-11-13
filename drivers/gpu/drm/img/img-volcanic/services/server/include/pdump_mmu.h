@@ -99,6 +99,9 @@ PDumpMMUDumpPxEntries(PPVRSRV_DEVICE_NODE psDeviceNode,
                       IMG_UINT64 uiPxEProtMask,
                       IMG_UINT64 uiDataValidEnable,
                       IMG_UINT32 ui32Flags,
+                      IMG_UINT32 ui32VAParity,
+                      IMG_UINT32 ui32ParityShift,
+                      IMG_UINT64 ui64ParityMask,
                       PDUMP_MMU_TYPE eMMUType);
 
 PVRSRV_ERROR

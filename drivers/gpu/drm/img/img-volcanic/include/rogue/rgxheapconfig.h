@@ -46,12 +46,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "rgxdefs_km.h"
 
-
-#define RGX_HEAP_SIZE_4KiB       IMG_UINT64_C(0x0000001000)
-#define RGX_HEAP_SIZE_64KiB      IMG_UINT64_C(0x0000010000)
-#define RGX_HEAP_SIZE_256KiB     IMG_UINT64_C(0x0000040000)
-
-#define RGX_HEAP_SIZE_1MiB       IMG_UINT64_C(0x0000100000)
+#define RGX_HEAP_SIZE_32KiB      IMG_UINT64_C(0x0000008000)
 #define RGX_HEAP_SIZE_2MiB       IMG_UINT64_C(0x0000200000)
 #define RGX_HEAP_SIZE_4MiB       IMG_UINT64_C(0x0000400000)
 #define RGX_HEAP_SIZE_16MiB      IMG_UINT64_C(0x0001000000)
@@ -101,7 +96,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 	heaps should be added to this file, like BRN_63142 below.
 	NOTE: All regular heaps below greater than 1GB require a BRN_65273 WA heap.
 
-	Base addresses have to be a multiple of 4MiB
 	Heaps must not start at 0x0000000000, as this is reserved for internal
 	use within device memory layer.
 	Range comments, those starting in column 0 below are a section heading of
@@ -117,17 +111,21 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /* 0x00_0000_0000 ************************************************************/
 
-/* 0x00_0000_0000 - 0x00_0040_0000 **/
-	/* 0 MiB to 4 MiB, size of 4 MiB : RESERVED **/
+/* 0x00_0000_0000 - 0x00_0020_0000 **/
+	/* 0 MiB to 2 MiB, size of 2 MiB : RESERVED (only when General SVM
+	 *                                           doesn't exist) **/
 
 	/* BRN_65273 TQ3DPARAMETERS base 0x0000010000 */
 	/* BRN_65273 GENERAL base        0x65C0000000 */
 	/* BRN_65273 GENERAL_NON4K base  0x73C0000000 */
 
-/* 0x00_0040_0000 - 0x7F_FFC0_0000 **/
-	/* 4 MiB to 512 GiB, size of 512 GiB less 4 MiB : GENERAL_SVM_HEAP **/
-	#define RGX_GENERAL_SVM_HEAP_BASE           IMG_UINT64_C(0x0000400000)
-	#define RGX_GENERAL_SVM_HEAP_SIZE           (RGX_HEAP_SIZE_512GiB - RGX_HEAP_SIZE_4MiB)
+/* 0x00_0000_8000 - 0x7F_FFFF_8000 **/
+	/* MAX(32 KiB, PAGE_SIZE) to 512 GiB, size of 512 GiB less MAX(32 KiB, PAGE_SIZE) : GENERAL_SVM_HEAP **/
+
+	/* The MAX is determined at runtime (PAGE_SIZE isn't available on all platforms)
+	 * so the #define's must NOT be used directly. Use the heap config after initialisation. */
+	#define RGX_GENERAL_SVM_HEAP_BASE           IMG_UINT64_C(0x0000008000)
+	#define RGX_GENERAL_SVM_HEAP_SIZE           (RGX_HEAP_SIZE_512GiB - RGX_HEAP_SIZE_32KiB)
 
 
 /* 0x80_0000_0000 ************************************************************/
@@ -217,12 +215,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 /* 0xE9_4000_0000 - 0xE9_FFFF_FFFF **/
 	/* 933 GiB to 936 GiB, size of 3 GiB : FREE **/
 
-/* 0xEA_0000_0000 - 0xEA_0000_0FFF **/
-	/* 936 GiB to 937 GiB, size of min heap size : SIGNALS_HEAP **/
-	/* CDM Signals heap (31 signals less one reserved for Services).
-	 * Size 960B rounded up to minimum heap size */
-	#define RGX_SIGNALS_HEAP_BASE               IMG_UINT64_C(0xEA00000000)
-	#define RGX_SIGNALS_HEAP_SIZE               DEVMEM_HEAP_MINIMUM_SIZE
+/* 0xEA_0000_0000 - 0xEA_001F_FFFF **/
+	/* 936 GiB to 937 GiB, size of 1 GiB : FREE **/
 
 /* 0xEA_4000_0000 - 0xEA_FFFF_FFFF **/
 	/* 937 GiB to 940 GiB, size of 3 GiB : FREE **/

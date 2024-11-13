@@ -76,19 +76,9 @@ IMG_INTERNAL PVRSRV_ERROR BridgePDumpSignatureBuffer(IMG_HANDLE hBridge, IMG_UIN
 IMG_INTERNAL PVRSRV_ERROR BridgePDumpComputeCRCSignatureCheck(IMG_HANDLE hBridge,
 							      IMG_UINT32 ui32PDumpFlags)
 {
-#if defined(SUPPORT_VALIDATION)
-	PVRSRV_ERROR eError;
-
-	eError =
-	    PVRSRVPDumpComputeCRCSignatureCheckKM(NULL, (PVRSRV_DEVICE_NODE *) ((void *)hBridge),
-						  ui32PDumpFlags);
-
-	return eError;
-#else
 	PVR_UNREFERENCED_PARAMETER(ui32PDumpFlags);
 
 	return PVRSRV_ERROR_NOT_IMPLEMENTED;
-#endif
 }
 
 IMG_INTERNAL PVRSRV_ERROR BridgePDumpCRCSignatureCheck(IMG_HANDLE hBridge,

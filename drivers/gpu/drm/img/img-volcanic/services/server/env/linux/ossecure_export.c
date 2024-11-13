@@ -101,7 +101,7 @@ PVRSRV_ERROR OSSecureExport(const IMG_CHAR *pszName,
 	psSecureFileData->pfnReleaseFunc = pfnReleaseFunc;
 
 	/* Allocate a fd number */
-	secure_fd = get_unused_fd();
+	secure_fd = get_unused_fd_flags(0);
 	if (secure_fd < 0)
 	{
 		eError = PVRSRV_ERROR_OUT_OF_MEMORY;

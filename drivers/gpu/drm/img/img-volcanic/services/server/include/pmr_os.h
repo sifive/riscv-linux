@@ -59,4 +59,23 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 PVRSRV_ERROR
 OSMMapPMRGeneric(PMR *psPMR, PMR_MMAP_DATA pOSMMapData);
 
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+
+/*************************************************************************/ /*!
+ * @Function    OSLinuxPMRUnmapPageInPMR
+ *
+ * @Description Distributes calls in the CPU mmap module to unmap a given PMR
+ *              page offset into all associated mappings.
+ *
+ * @Input       psPMR                The PMR to be mapped.
+ * @Input       psMappingListHead    List of Linux mappings to adjust.
+ * @Input       ui32LogicalPgOffset  The logical page offset into the
+ *                                   PMR.
+ *
+ * @Return      None
+*/ /**************************************************************************/
+void
+OSLinuxPMRUnmapPageInPMR(PMR *psPMR, DLLIST_NODE *psMappingListHead, IMG_UINT32 ui32LogicalPgOffset);
+#endif
+
 #endif /* !defined(PMR_OS_H) */

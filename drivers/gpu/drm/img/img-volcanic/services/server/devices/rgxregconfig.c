@@ -57,7 +57,7 @@ PVRSRV_ERROR PVRSRVRGXSetRegConfigTypeKM(CONNECTION_DATA * psDevConnection,
 #if defined(SUPPORT_USER_REGISTER_CONFIGURATION)
 	PVRSRV_ERROR          eError      = PVRSRV_OK;
 	PVRSRV_RGXDEV_INFO    *psDevInfo  = psDeviceNode->pvDevice;
-	RGX_REG_CONFIG        *psRegCfg   = &psDevInfo->sRegCongfig;
+	RGX_REG_CONFIG        *psRegCfg   = &psDevInfo->sRegConfig;
 	RGXFWIF_REG_CFG_TYPE  eRegCfgType = (RGXFWIF_REG_CFG_TYPE) ui8RegCfgType;
 
 	PVR_UNREFERENCED_PARAMETER(psDevConnection);
@@ -83,6 +83,8 @@ PVRSRV_ERROR PVRSRVRGXSetRegConfigTypeKM(CONNECTION_DATA * psDevConnection,
 	return eError;
 #else
 	PVR_UNREFERENCED_PARAMETER(psDevConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+	PVR_UNREFERENCED_PARAMETER(ui8RegCfgType);
 
 	PVR_DPF((PVR_DBG_ERROR,
 		 "%s: Feature disabled. Compile with SUPPORT_USER_REGISTER_CONFIGURATION",
@@ -101,11 +103,11 @@ PVRSRV_ERROR PVRSRVRGXAddRegConfigKM(CONNECTION_DATA * psConnection,
 	PVRSRV_ERROR		eError = PVRSRV_OK;
 	RGXFWIF_KCCB_CMD	sRegCfgCmd;
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
-	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegCongfig;
+	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegConfig;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	OSLockAcquire(psRegCfg->hLock);
 
@@ -154,6 +156,10 @@ PVRSRV_ERROR PVRSRVRGXAddRegConfigKM(CONNECTION_DATA * psConnection,
 	return eError;
 #else
 	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+	PVR_UNREFERENCED_PARAMETER(ui32RegAddr);
+	PVR_UNREFERENCED_PARAMETER(ui64RegValue);
+	PVR_UNREFERENCED_PARAMETER(ui64RegMask);
 
 	PVR_DPF((PVR_DBG_ERROR,
 		 "%s: Feature disabled. Compile with SUPPORT_USER_REGISTER_CONFIGURATION",
@@ -169,11 +175,11 @@ PVRSRV_ERROR PVRSRVRGXClearRegConfigKM(CONNECTION_DATA * psConnection,
 	PVRSRV_ERROR		eError = PVRSRV_OK;
 	RGXFWIF_KCCB_CMD	sRegCfgCmd;
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
-	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegCongfig;
+	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegConfig;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	OSLockAcquire(psRegCfg->hLock);
 
@@ -210,11 +216,13 @@ PVRSRV_ERROR PVRSRVRGXClearRegConfigKM(CONNECTION_DATA * psConnection,
 
 	return eError;
 #else
+
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+
 	PVR_DPF((PVR_DBG_ERROR,
 		 "%s: Feature disabled. Compile with SUPPORT_USER_REGISTER_CONFIGURATION",
 		 __func__));
-
-	PVR_UNREFERENCED_PARAMETER(psConnection);
 
 	return PVRSRV_ERROR_FEATURE_DISABLED;
 #endif
@@ -227,11 +235,11 @@ PVRSRV_ERROR PVRSRVRGXEnableRegConfigKM(CONNECTION_DATA * psConnection,
 	PVRSRV_ERROR		eError = PVRSRV_OK;
 	RGXFWIF_KCCB_CMD	sRegCfgCmd;
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
-	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegCongfig;
+	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegConfig;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	OSLockAcquire(psRegCfg->hLock);
 
@@ -259,6 +267,7 @@ PVRSRV_ERROR PVRSRVRGXEnableRegConfigKM(CONNECTION_DATA * psConnection,
 	return eError;
 #else
 	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
 
 	PVR_DPF((PVR_DBG_ERROR,
 		 "%s: Feature disabled. Compile with SUPPORT_USER_REGISTER_CONFIGURATION",
@@ -274,11 +283,11 @@ PVRSRV_ERROR PVRSRVRGXDisableRegConfigKM(CONNECTION_DATA * psConnection,
 	PVRSRV_ERROR		eError = PVRSRV_OK;
 	RGXFWIF_KCCB_CMD	sRegCfgCmd;
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
-	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegCongfig;
+	RGX_REG_CONFIG		*psRegCfg = &psDevInfo->sRegConfig;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	OSLockAcquire(psRegCfg->hLock);
 
@@ -305,10 +314,13 @@ PVRSRV_ERROR PVRSRVRGXDisableRegConfigKM(CONNECTION_DATA * psConnection,
 
 	return eError;
 #else
+
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+
 	PVR_DPF((PVR_DBG_ERROR,
 		 "%s: Feature disabled. Compile with SUPPORT_USER_REGISTER_CONFIGURATION",
 		 __func__));
-	PVR_UNREFERENCED_PARAMETER(psConnection);
 
 	return PVRSRV_ERROR_FEATURE_DISABLED;
 #endif

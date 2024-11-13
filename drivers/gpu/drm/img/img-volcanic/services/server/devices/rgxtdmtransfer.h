@@ -49,7 +49,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgxdevice.h"
 #include "rgxfwutils.h"
 #include "rgx_fwif_resetframework.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "pvr_notifier.h"
 
 #include "sync_server.h"
@@ -68,14 +68,14 @@ PVRSRV_ERROR PVRSRVRGXTDMCreateTransferContextKM(
 	IMG_UINT32					ui32PackedCCBSizeU88,
 	IMG_UINT32                  ui32ContextFlags,
 	IMG_UINT64					ui64RobustnessAddress,
+	IMG_UINT32                  ui32MaxDeadlineMS,
 	RGX_SERVER_TQ_TDM_CONTEXT **ppsTransferContext);
 
 
 PVRSRV_ERROR PVRSRVRGXTDMGetSharedMemoryKM(
 	CONNECTION_DATA           * psConnection,
 	PVRSRV_DEVICE_NODE        * psDeviceNode,
-	PMR                      ** ppsCLIPMRMem,
-	PMR                      ** ppsUSCPMRMem);
+	PMR                      ** ppsCLIPMRMem);
 
 
 PVRSRV_ERROR PVRSRVRGXTDMReleaseSharedMemoryKM(PMR * psUSCPMRMem);
@@ -95,6 +95,28 @@ PVRSRV_ERROR PVRSRVRGXTDMSubmitTransferKM(
 	PVRSRV_TIMELINE             iUpdateTimeline,
 	PVRSRV_FENCE              * piUpdateFence,
 	IMG_CHAR                    szUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH],
+	IMG_UINT32                  ui32FWCommandSize,
+	IMG_UINT8                 * pui8FWCommand,
+	IMG_UINT32                  ui32ExtJobRef,
+	IMG_UINT32                  ui32SyncPMRCount,
+	IMG_UINT32                * pui32SyncPMRFlags,
+	PMR                      ** ppsSyncPMRs,
+	IMG_UINT32					ui32TDMCharacteristic1,
+	IMG_UINT32					ui32TDMCharacteristic2,
+	IMG_UINT64					ui64DeadlineInus);
+
+PVRSRV_ERROR PVRSRVRGXTDMSubmitTransfer3KM(
+	RGX_SERVER_TQ_TDM_CONTEXT * psTransferContext,
+	IMG_UINT32                  ui32PDumpFlags,
+	IMG_UINT32                  ui32ClientUpdateCount,
+	SYNC_PRIMITIVE_BLOCK     ** pauiClientUpdateUFODevVarBlock,
+	IMG_UINT32                * paui32ClientUpdateSyncOffset,
+	IMG_UINT32                * paui32ClientUpdateValue,
+	PVRSRV_FENCE                iCheckFence,
+	PVRSRV_TIMELINE             iUpdateTimeline,
+	PVRSRV_FENCE              * piUpdateFence,
+	IMG_CHAR                    szUpdateFenceName[PVRSRV_SYNC_NAME_LENGTH],
+	PVRSRV_FENCE                iExportFenceToSignal,
 	IMG_UINT32                  ui32FWCommandSize,
 	IMG_UINT8                 * pui8FWCommand,
 	IMG_UINT32                  ui32ExtJobRef,

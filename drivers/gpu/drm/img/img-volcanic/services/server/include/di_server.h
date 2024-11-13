@@ -43,7 +43,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef DI_SERVER_H
 #define DI_SERVER_H
 
-#if defined(__linux__)
+#if defined(__KERNEL__) && defined(__linux__)
  #include <linux/version.h>
 
  #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
@@ -53,7 +53,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) */
 #else
  #include <stdarg.h>
-#endif /* __linux__ */
+#endif /* __KERNEL__ && __linux__ */
 
 #include "di_common.h"
 #include "pvrsrv_error.h"
@@ -181,8 +181,8 @@ void DIWrite(const OSDI_IMPL_ENTRY *psEntry, const void *pvData,
  * @Input psEntry pointer to OSDI_IMPL_ENTRY object
  * @Input pszFmt NUL-terminated format string
  */
-void DIPrintf(const OSDI_IMPL_ENTRY *psEntry, const IMG_CHAR *pszFmt, ...)
-	__printf(2, 3);
+__printf(2, 3)
+void DIPrintf(const OSDI_IMPL_ENTRY *psEntry, const IMG_CHAR *pszFmt, ...);
 
 /*! @Function DIVPrintf
  *
@@ -194,6 +194,7 @@ void DIPrintf(const OSDI_IMPL_ENTRY *psEntry, const IMG_CHAR *pszFmt, ...)
  * @Input pszFmt NUL-terminated format string
  * @Input pArgs vs_list object
  */
+__printf(2, 0)
 void DIVPrintf(const OSDI_IMPL_ENTRY *psEntry, const IMG_CHAR *pszFmt,
                va_list pArgs);
 
