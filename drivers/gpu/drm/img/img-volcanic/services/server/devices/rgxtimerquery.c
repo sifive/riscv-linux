@@ -73,6 +73,8 @@ PVRSRVRGXBeginTimerQueryKM(CONNECTION_DATA    * psConnection,
 	psDevInfo->pui64StartTimeById[ui32QueryId] = 0UL;
 	psDevInfo->pui64EndTimeById[ui32QueryId]   = 0UL;
 	OSWriteMemoryBarrier(&psDevInfo->pui64EndTimeById[ui32QueryId]);
+	RGXFwSharedMemCacheOpValue(psDevInfo->pui64StartTimeById[ui32QueryId], FLUSH);
+	RGXFwSharedMemCacheOpValue(psDevInfo->pui64EndTimeById[ui32QueryId], FLUSH);
 
 	/* save of the active query index */
 	psDevInfo->ui32ActiveQueryId = ui32QueryId;
@@ -135,6 +137,8 @@ PVRSRVRGXQueryTimerKM(CONNECTION_DATA    * psConnection,
 #endif
 
 	ui32Scheduled = psDevInfo->aui32ScheduledOnId[ui32QueryId];
+
+	RGXFwSharedMemCacheOpValue(psDevInfo->pui32CompletedById[ui32QueryId], INVALIDATE);
 	ui32Completed = psDevInfo->pui32CompletedById[ui32QueryId];
 
 	/* if there was no kick since the Begin() on this id we return 0-s as Begin cleared
@@ -143,6 +147,8 @@ PVRSRVRGXQueryTimerKM(CONNECTION_DATA    * psConnection,
 	 */
 	if (ui32Completed >= ui32Scheduled)
 	{
+		RGXFwSharedMemCacheOpValue(psDevInfo->pui64StartTimeById[ui32QueryId], INVALIDATE);
+		RGXFwSharedMemCacheOpValue(psDevInfo->pui64EndTimeById[ui32QueryId], INVALIDATE);
 		* pui64StartTime = psDevInfo->pui64StartTimeById[ui32QueryId];
 		* pui64EndTime   = psDevInfo->pui64EndTimeById[ui32QueryId];
 
@@ -164,31 +170,6 @@ PVRSRVRGXQueryTimerKM(CONNECTION_DATA    * psConnection,
 /******************************************************************************
  NOT BRIDGED/EXPORTED FUNCS
 ******************************************************************************/
-/* writes a time stamp command in the client CCB */
-void
-RGXWriteTimestampCommand(void                  ** ppvPtr,
-                         RGXFWIF_CCB_CMD_TYPE     eCmdType,
-                         PRGXFWIF_TIMESTAMP_ADDR  pAddr)
-{
-	RGXFWIF_CCB_CMD_HEADER * psHeader;
-	PRGXFWIF_TIMESTAMP_ADDR * psTimestampAddr;
-
-	psHeader = (RGXFWIF_CCB_CMD_HEADER *) (*ppvPtr);
-
-	PVR_ASSERT(eCmdType == RGXFWIF_CCB_CMD_TYPE_PRE_TIMESTAMP
-	           || eCmdType == RGXFWIF_CCB_CMD_TYPE_POST_TIMESTAMP);
-
-	psHeader->eCmdType    = eCmdType;
-	psHeader->ui32CmdSize = (sizeof(RGXFWIF_DEV_VIRTADDR) + RGXFWIF_FWALLOC_ALIGN - 1) & ~(RGXFWIF_FWALLOC_ALIGN  - 1);
-
-	(*ppvPtr) = IMG_OFFSET_ADDR(*ppvPtr, sizeof(RGXFWIF_CCB_CMD_HEADER));
-
-	psTimestampAddr = (PRGXFWIF_TIMESTAMP_ADDR *) *ppvPtr;
-	psTimestampAddr->ui32Addr = pAddr.ui32Addr;
-
-	(*ppvPtr) = IMG_OFFSET_ADDR(*ppvPtr, psHeader->ui32CmdSize);
-}
-
 
 void
 RGX_GetTimestampCmdHelper(PVRSRV_RGXDEV_INFO      * psDevInfo,

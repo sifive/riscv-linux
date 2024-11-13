@@ -53,6 +53,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "osfunc.h"
 #include "vmm_pvz_server.h"
 #include "vz_vm.h"
+#if defined(PDUMP)
+#include "devicemem_pdump.h"
+#endif
 
 PVRSRV_ERROR
 PVRSRVRGXFWDebugQueryFWLogKM(
@@ -63,13 +66,13 @@ PVRSRVRGXFWDebugQueryFWLogKM(
 	PVRSRV_RGXDEV_INFO *psDevInfo;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_IMPLEMENTED);
 
 	if (!psDeviceNode || !pui32RGXFWLogType)
 	{
 		return PVRSRV_ERROR_INVALID_PARAMS;
 	}
 
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_IMPLEMENTED);
 	psDevInfo = psDeviceNode->pvDevice;
 
 	if (!psDevInfo || !psDevInfo->psRGXFWIfTraceBufCtl)
@@ -77,6 +80,7 @@ PVRSRVRGXFWDebugQueryFWLogKM(
 		return PVRSRV_ERROR_INVALID_PARAMS;
 	}
 
+	RGXFwSharedMemCacheOpValue(psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType, INVALIDATE);
 	*pui32RGXFWLogType = psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType;
 	return PVRSRV_OK;
 }
@@ -91,14 +95,22 @@ PVRSRVRGXFWDebugSetFWLogKM(
 	RGXFWIF_KCCB_CMD sLogTypeUpdateCmd;
 	PVRSRV_DEV_POWER_STATE ePowerState;
 	PVRSRV_ERROR eError = PVRSRV_OK;
-	PVRSRV_RGXDEV_INFO* psDevInfo = psDeviceNode->pvDevice;
+	PVRSRV_RGXDEV_INFO* psDevInfo;
 	IMG_UINT32 ui32OldRGXFWLogTpe;
 	IMG_UINT32 ui32kCCBCommandSlot;
 	IMG_BOOL bWaitForFwUpdate = IMG_FALSE;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
 
+	if (!psDeviceNode)
+	{
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
+
+	psDevInfo = psDeviceNode->pvDevice;
+	RGXFwSharedMemCacheOpValue(psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType, INVALIDATE);
 	ui32OldRGXFWLogTpe = psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType;
 
 	/* check log type is valid */
@@ -114,6 +126,7 @@ PVRSRVRGXFWDebugSetFWLogKM(
 	 */
 	psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType = ui32RGXFWLogType;
 	OSMemoryBarrier(&psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType);
+	RGXFwSharedMemCacheOpValue(psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType, FLUSH);
 
 	/* Allocate firmware trace buffer resource(s) if not already done */
 	if (RGXTraceBufferIsInitRequired(psDevInfo))
@@ -142,6 +155,7 @@ PVRSRVRGXFWDebugSetFWLogKM(
 		         __func__));
 		psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType = ui32OldRGXFWLogTpe;
 		OSMemoryBarrier(&psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType);
+		RGXFwSharedMemCacheOpValue(psDevInfo->psRGXFWIfTraceBufCtl->ui32LogType, FLUSH);
 
 		OSLockRelease(psDevInfo->hRGXFWIfBufInitLock);
 
@@ -202,31 +216,34 @@ PVRSRV_ERROR
 PVRSRVRGXFWDebugMapGuestHeapKM(
 	CONNECTION_DATA *psConnection,
 	PVRSRV_DEVICE_NODE *psDeviceNode,
-	IMG_UINT32 ui32OSid,
+	IMG_UINT32 ui32DriverID,
 	IMG_UINT64 ui64GuestHeapBase)
 {
+#if defined(ENABLE_PVRDEBUG_PRIVILEGED_CMDS)
 	PVRSRV_ERROR eError;
-	IMG_UINT32 ui32DeviceID = psDeviceNode->sDevId.i32OsDeviceID;
+	IMG_UINT32 ui32DeviceID = psDeviceNode->sDevId.ui32InternalID;
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	if (PVRSRV_VZ_MODE_IS(HOST))
+	if (PVRSRV_VZ_MODE_IS(HOST, DEVNODE, psDeviceNode))
 	{
 		if (ui64GuestHeapBase == IMG_UINT64_MAX)
 		{
-			/* unmap heap and set OSID to offline */
-			eError = PvzServerUnmapDevPhysHeap(ui32OSid, ui32DeviceID);
-			eError = PvzServerOnVmOffline(ui32OSid, ui32DeviceID);
+			/* unmap heap and set DriverID to offline */
+			eError = PvzServerUnmapDevPhysHeap(ui32DriverID, ui32DeviceID);
+			PVR_LOG_RETURN_IF_ERROR(eError, "PvzServerUnmapDevPhysHeap()");
+			eError = PvzServerOnVmOffline(ui32DriverID, ui32DeviceID);
 		}
 		else
 		{
-			/* set OSID online if necessary and map firmware heap */
-			if (!IsVmOnline(ui32OSid, ui32DeviceID))
+			/* set DriverID online if necessary and map firmware heap */
+			if (!IsVmOnline(ui32DriverID, ui32DeviceID))
 			{
-				eError = PvzServerOnVmOnline(ui32OSid, ui32DeviceID);
+				eError = PvzServerOnVmOnline(ui32DriverID, ui32DeviceID);
+				PVR_LOG_RETURN_IF_ERROR(eError, "PvzServerOnVmOnline()");
 			}
 
-			eError = PvzServerMapDevPhysHeap(ui32OSid, ui32DeviceID, RGX_FIRMWARE_RAW_HEAP_SIZE, ui64GuestHeapBase);
+			eError = PvzServerMapDevPhysHeap(ui32DriverID, ui32DeviceID, RGX_FIRMWARE_RAW_HEAP_SIZE, ui64GuestHeapBase);
 		}
 	}
 	else
@@ -236,34 +253,289 @@ PVRSRVRGXFWDebugMapGuestHeapKM(
 	}
 
 	return eError;
+#else
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+	PVR_UNREFERENCED_PARAMETER(ui32DriverID);
+	PVR_UNREFERENCED_PARAMETER(ui64GuestHeapBase);
+
+	return PVRSRV_ERROR_NOT_SUPPORTED;
+#endif
 }
 
 PVRSRV_ERROR
-PVRSRVRGXFWDebugSetOSidPriorityKM(
+PVRSRVRGXFWDebugSetDriverTimeSliceIntervalKM(
 	CONNECTION_DATA *psConnection,
 	PVRSRV_DEVICE_NODE *psDeviceNode,
-	IMG_UINT32  ui32OSid,
-	IMG_UINT32  ui32OSidPriority)
+	IMG_UINT32  ui32TSIntervalMs)
 {
+	PVRSRV_ERROR eError = PVRSRV_OK;
 	PVRSRV_RGXDEV_INFO* psDevInfo = psDeviceNode->pvDevice;
+	RGXFWIF_KCCB_CMD sVzTSIntervalCmd = { 0 };
+
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	return RGXFWChangeOSidPriority(psDevInfo, ui32OSid, ui32OSidPriority);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
+
+	if (psDevInfo->psRGXFWIfRuntimeCfg == NULL)
+	{
+		return PVRSRV_ERROR_NOT_INITIALISED;
+	}
+
+	sVzTSIntervalCmd.eCmdType = RGXFWIF_KCCB_CMD_VZ_DRV_TIME_SLICE_INTERVAL;
+	psDevInfo->psRGXFWIfRuntimeCfg->ui32TSIntervalMs = ui32TSIntervalMs;
+	OSWriteMemoryBarrier(&psDevInfo->psRGXFWIfRuntimeCfg->ui32TSIntervalMs);
+
+#if defined(PDUMP)
+	PDUMPCOMMENT(psDevInfo->psDeviceNode,
+				 "Updating the timeslice interval inside RGXFWIfRuntimeCfg");
+	DevmemPDumpLoadMemValue32(psDevInfo->psRGXFWIfRuntimeCfgMemDesc,
+							  offsetof(RGXFWIF_RUNTIME_CFG, ui32TSIntervalMs),
+							  ui32TSIntervalMs,
+							  PDUMP_FLAGS_CONTINUOUS);
+#endif
+
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		eError = RGXScheduleCommand(psDevInfo,
+									RGXFWIF_DM_GP,
+									&sVzTSIntervalCmd,
+									PDUMP_FLAGS_CONTINUOUS);
+		if (eError != PVRSRV_ERROR_RETRY)
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	return eError;
+}
+
+PVRSRV_ERROR
+PVRSRVRGXFWDebugSetDriverTimeSliceKM(
+	CONNECTION_DATA *psConnection,
+	PVRSRV_DEVICE_NODE *psDeviceNode,
+	IMG_UINT32  ui32DriverID,
+	IMG_UINT32  ui32TSPercentage)
+{
+	PVRSRV_ERROR eError = PVRSRV_OK;
+	RGXFWIF_KCCB_CMD sVzTimeSliceCmd = { 0 };
+	PVRSRV_RGXDEV_INFO *psDevInfo;
+	RGXFWIF_RUNTIME_CFG *psRuntimeCfg;
+	IMG_INT32 ui32TSPercentageMax = 0;
+	IMG_UINT32 ui32DriverIDLoop;
+
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
+
+	if (ui32DriverID >= RGX_NUM_DRIVERS_SUPPORTED)
+	{
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	psDevInfo = psDeviceNode->pvDevice;
+	PVR_RETURN_IF_FALSE(psDevInfo != NULL, PVRSRV_ERROR_NOT_INITIALISED);
+
+	psRuntimeCfg = psDevInfo->psRGXFWIfRuntimeCfg;
+	PVR_RETURN_IF_FALSE(psRuntimeCfg != NULL, PVRSRV_ERROR_NOT_INITIALISED);
+
+	/*
+	 * Each time slice is a number between 0 -> 100.
+	 * Use '0' to disable time slice based CSW for the driver.
+	 */
+	 /* Check if the sum exceeds PVRSRV_VZ_TIME_SLICE_MAX */
+	if (ui32TSPercentage)
+	{
+		PVR_RETURN_IF_FALSE(ui32TSPercentage <= PVRSRV_VZ_TIME_SLICE_MAX, PVRSRV_ERROR_INVALID_PARAMS);
+
+		FOREACH_SUPPORTED_DRIVER(ui32DriverIDLoop)
+		{
+			if (ui32DriverID != ui32DriverIDLoop)
+			{
+				ui32TSPercentageMax += psRuntimeCfg->aui32TSPercentage[ui32DriverIDLoop];
+			}
+			else
+			{
+				ui32TSPercentageMax += ui32TSPercentage;
+			}
+
+			PVR_RETURN_IF_FALSE(ui32TSPercentageMax <= PVRSRV_VZ_TIME_SLICE_MAX, PVRSRV_ERROR_INVALID_PARAMS);
+		}
+	}
+
+	sVzTimeSliceCmd.eCmdType = RGXFWIF_KCCB_CMD_VZ_DRV_TIME_SLICE;
+	psDevInfo->psRGXFWIfRuntimeCfg->aui32TSPercentage[ui32DriverID] = ui32TSPercentage;
+	OSWriteMemoryBarrier(&psDevInfo->psRGXFWIfRuntimeCfg->aui32TSPercentage[ui32DriverID]);
+	RGXFwSharedMemCacheOpValue(psDevInfo->psRGXFWIfRuntimeCfg->aui32TSPercentage[ui32DriverID], FLUSH);
+
+#if defined(PDUMP)
+	PDUMPCOMMENT(psDevInfo->psDeviceNode,
+				 "Updating the timeslice of DriverID %u inside RGXFWIfRuntimeCfg", ui32DriverID);
+	DevmemPDumpLoadMemValue32(psDevInfo->psRGXFWIfRuntimeCfgMemDesc,
+							  offsetof(RGXFWIF_RUNTIME_CFG, aui32TSPercentage) + (ui32DriverID * sizeof(ui32TSPercentage)),
+							  ui32TSPercentage,
+							  PDUMP_FLAGS_CONTINUOUS);
+#endif
+
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		eError = RGXScheduleCommand(psDevInfo,
+									RGXFWIF_DM_GP,
+									&sVzTimeSliceCmd,
+									PDUMP_FLAGS_CONTINUOUS);
+		if (eError != PVRSRV_ERROR_RETRY)
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	return eError;
+}
+
+PVRSRV_ERROR
+PVRSRVRGXFWDebugSetDriverPriorityKM(
+	CONNECTION_DATA *psConnection,
+	PVRSRV_DEVICE_NODE *psDeviceNode,
+	IMG_UINT32  ui32DriverID,
+	IMG_INT32   i32DriverPriority)
+{
+	PVRSRV_ERROR eError;
+	PVRSRV_RGXDEV_INFO* psDevInfo = psDeviceNode->pvDevice;
+	RGXFWIF_KCCB_CMD sVzPriorityCmd = { 0 };
+
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
+
+	if (psDevInfo->psRGXFWIfRuntimeCfg == NULL)
+	{
+		return PVRSRV_ERROR_NOT_INITIALISED;
+	}
+
+	if (ui32DriverID >= RGX_NUM_DRIVERS_SUPPORTED)
+	{
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	if ((i32DriverPriority & ~RGXFW_VZ_PRIORITY_MASK) != 0)
+	{
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	sVzPriorityCmd.eCmdType = RGXFWIF_KCCB_CMD_VZ_DRV_ARRAY_CHANGE;
+	psDevInfo->psRGXFWIfRuntimeCfg->ai32DriverPriority[ui32DriverID] = i32DriverPriority;
+	OSWriteMemoryBarrier(&psDevInfo->psRGXFWIfRuntimeCfg->ai32DriverPriority[ui32DriverID]);
+	RGXFwSharedMemCacheOpValue(psDevInfo->psRGXFWIfRuntimeCfg->ai32DriverPriority[ui32DriverID], FLUSH);
+
+#if defined(PDUMP)
+	PDUMPCOMMENT(psDevInfo->psDeviceNode,
+				 "Updating the priority of DriverID %u inside RGXFWIfRuntimeCfg", ui32DriverID);
+	DevmemPDumpLoadMemValue32(psDevInfo->psRGXFWIfRuntimeCfgMemDesc,
+							  offsetof(RGXFWIF_RUNTIME_CFG, ai32DriverPriority) + (ui32DriverID * sizeof(i32DriverPriority)),
+							  i32DriverPriority,
+							  PDUMP_FLAGS_CONTINUOUS);
+#endif
+
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		eError = RGXScheduleCommand(psDevInfo,
+									RGXFWIF_DM_GP,
+									&sVzPriorityCmd,
+									PDUMP_FLAGS_CONTINUOUS);
+		if (eError != PVRSRV_ERROR_RETRY)
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	return eError;
+}
+
+PVRSRV_ERROR
+PVRSRVRGXFWDebugSetDriverIsolationGroupKM(
+	CONNECTION_DATA *psConnection,
+	PVRSRV_DEVICE_NODE *psDeviceNode,
+	IMG_UINT32  ui32DriverID,
+	IMG_UINT32  ui32DriverIsolationGroup)
+{
+	PVRSRV_ERROR eError;
+	PVRSRV_RGXDEV_INFO* psDevInfo = psDeviceNode->pvDevice;
+	RGXFWIF_KCCB_CMD sVzIsolationGroupCmd = { 0 };
+
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
+
+	if (psDevInfo->psRGXFWIfRuntimeCfg == NULL)
+	{
+		return PVRSRV_ERROR_NOT_INITIALISED;
+	}
+
+	if (ui32DriverID >= RGX_NUM_DRIVERS_SUPPORTED)
+	{
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	sVzIsolationGroupCmd.eCmdType = RGXFWIF_KCCB_CMD_VZ_DRV_ARRAY_CHANGE;
+	psDevInfo->psRGXFWIfRuntimeCfg->aui32DriverIsolationGroup[ui32DriverID] = ui32DriverIsolationGroup;
+	OSWriteMemoryBarrier(&psDevInfo->psRGXFWIfRuntimeCfg->aui32DriverIsolationGroup[ui32DriverID]);
+	RGXFwSharedMemCacheOpValue(psDevInfo->psRGXFWIfRuntimeCfg->aui32DriverIsolationGroup[ui32DriverID], FLUSH);
+
+#if defined(PDUMP)
+	PDUMPCOMMENT(psDevInfo->psDeviceNode,
+				 "Updating the isolation group of DriverID%u inside RGXFWIfRuntimeCfg", ui32DriverID);
+	DevmemPDumpLoadMemValue32(psDevInfo->psRGXFWIfRuntimeCfgMemDesc,
+							  offsetof(RGXFWIF_RUNTIME_CFG, aui32DriverIsolationGroup) + (ui32DriverID * sizeof(ui32DriverIsolationGroup)),
+							  ui32DriverIsolationGroup,
+							  PDUMP_FLAGS_CONTINUOUS);
+#endif
+
+	LOOP_UNTIL_TIMEOUT_US(MAX_HW_TIME_US)
+	{
+		eError = RGXScheduleCommand(psDevInfo,
+				RGXFWIF_DM_GP,
+				&sVzIsolationGroupCmd,
+				PDUMP_FLAGS_CONTINUOUS);
+		if (eError != PVRSRV_ERROR_RETRY)
+		{
+			break;
+		}
+		OSWaitus(MAX_HW_TIME_US/WAIT_TRY_COUNT);
+	} END_LOOP_UNTIL_TIMEOUT_US();
+
+	return eError;
 }
 
 PVRSRV_ERROR
 PVRSRVRGXFWDebugSetOSNewOnlineStateKM(
 	CONNECTION_DATA *psConnection,
 	PVRSRV_DEVICE_NODE *psDeviceNode,
-	IMG_UINT32  ui32OSid,
+	IMG_UINT32  ui32DriverID,
 	IMG_UINT32  ui32OSNewState)
 {
+#if defined(ENABLE_PVRDEBUG_PRIVILEGED_CMDS)
 	PVRSRV_RGXDEV_INFO* psDevInfo = psDeviceNode->pvDevice;
 	RGXFWIF_OS_STATE_CHANGE eState;
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
+	if (ui32DriverID >= RGX_NUM_DRIVERS_SUPPORTED)
+	{
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
 	eState = (ui32OSNewState) ? (RGXFWIF_OS_ONLINE) : (RGXFWIF_OS_OFFLINE);
-	return RGXFWSetFwOsState(psDevInfo, ui32OSid, eState);
+	return RGXFWSetFwOsState(psDevInfo, ui32DriverID, eState);
+#else
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+	PVR_UNREFERENCED_PARAMETER(ui32DriverID);
+	PVR_UNREFERENCED_PARAMETER(ui32OSNewState);
+
+	return PVRSRV_ERROR_NOT_SUPPORTED;
+#endif
 }
 
 PVRSRV_ERROR
@@ -328,8 +600,67 @@ PVRSRVRGXFWDebugInjectFaultKM(
 	CONNECTION_DATA *psConnection,
 	PVRSRV_DEVICE_NODE *psDeviceNode)
 {
+#if defined(ENABLE_PVRDEBUG_PRIVILEGED_CMDS)
 	PVRSRV_RGXDEV_INFO* psDevInfo = psDeviceNode->pvDevice;
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
 	return RGXFWInjectFault(psDevInfo);
+#else
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+
+	return PVRSRV_ERROR_NOT_SUPPORTED;
+#endif
+}
+
+PVRSRV_ERROR
+PVRSRVRGXFWDebugPowerOffKM(
+	CONNECTION_DATA *psConnection,
+	PVRSRV_DEVICE_NODE *psDeviceNode)
+{
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
+#if defined(ENABLE_PVRDEBUG_PRIVILEGED_CMDS)
+#if defined(SUPPORT_AUTOVZ)
+	psDeviceNode->bAutoVzFwIsUp = IMG_FALSE;
+#endif
+
+	return PVRSRVSetDeviceSystemPowerState(psDeviceNode,
+					       PVRSRV_SYS_POWER_STATE_OFF,
+					       PVRSRV_POWER_FLAGS_NONE);
+#else
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+
+	return PVRSRV_ERROR_NOT_SUPPORTED;
+#endif
+}
+
+PVRSRV_ERROR
+PVRSRVRGXFWDebugPowerOnKM(
+	CONNECTION_DATA *psConnection,
+	PVRSRV_DEVICE_NODE *psDeviceNode)
+{
+#if defined(ENABLE_PVRDEBUG_PRIVILEGED_CMDS)
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
+	return PVRSRVSetDeviceSystemPowerState(psDeviceNode,
+					       PVRSRV_SYS_POWER_STATE_ON,
+					       PVRSRV_POWER_FLAGS_NONE);
+#else
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
+
+	return PVRSRV_ERROR_NOT_SUPPORTED;
+#endif
+}
+
+PVRSRV_ERROR
+PVRSRVRGXFWDebugSetVzConnectionCooldownPeriodInSecKM(
+	CONNECTION_DATA *psConnection,
+	PVRSRV_DEVICE_NODE *psDeviceNode,
+	IMG_UINT32  ui32VzConnectionCooldownPeriodInSec)
+{
+	PVRSRV_RGXDEV_INFO* psDevInfo = psDeviceNode->pvDevice;
+	PVR_UNREFERENCED_PARAMETER(psConnection);
+
+	return RGXFWSetVzConnectionCooldownPeriod(psDevInfo, ui32VzConnectionCooldownPeriodInSec);
 }

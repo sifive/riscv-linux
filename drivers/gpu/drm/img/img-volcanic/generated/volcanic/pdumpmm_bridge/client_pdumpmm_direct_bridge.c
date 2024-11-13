@@ -224,12 +224,12 @@ IMG_INTERNAL PVRSRV_ERROR BridgeDevmemIntPDumpSaveToFileVirtual(IMG_HANDLE hBrid
 {
 	PVRSRV_ERROR eError;
 	DEVMEMINT_CTX *psDevmemServerContextInt;
-	PVR_UNREFERENCED_PARAMETER(hBridge);
 
 	psDevmemServerContextInt = (DEVMEMINT_CTX *) hDevmemServerContext;
 
 	eError =
-	    DevmemIntPDumpSaveToFileVirtual(psDevmemServerContextInt,
+	    DevmemIntPDumpSaveToFileVirtual(NULL, (PVRSRV_DEVICE_NODE *) ((void *)hBridge),
+					    psDevmemServerContextInt,
 					    sAddress,
 					    uiSize,
 					    ui32ArraySize,

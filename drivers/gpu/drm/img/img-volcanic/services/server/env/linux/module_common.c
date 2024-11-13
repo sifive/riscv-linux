@@ -80,6 +80,14 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pvr_ion_stats.h"
 
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+#include "physmem_osmem_linux.h"
+#endif
+#endif
+
+#include "dkf_server.h"
+
 #if defined(SUPPORT_DISPLAY_CLASS)
 /* Display class interface */
 #include "kerneldisplay.h"
@@ -104,7 +112,7 @@ EXPORT_SYMBOL(PVRSRVCheckStatus);
  * Required by LMA DC drivers, and some non-DC LMA display drivers.
  */
 #include "physheap.h"
-EXPORT_SYMBOL(PhysHeapAcquireByUsage);
+EXPORT_SYMBOL(PhysHeapAcquireByID);
 EXPORT_SYMBOL(PhysHeapRelease);
 EXPORT_SYMBOL(PhysHeapGetType);
 EXPORT_SYMBOL(PhysHeapGetCpuPAddr);
@@ -118,9 +126,6 @@ EXPORT_SYMBOL(PVRSRVGetDeviceInstance);
 
 #if defined(SUPPORT_RGX)
 #include "rgxapi_km.h"
-#if defined(SUPPORT_SHARED_SLC)
-EXPORT_SYMBOL(RGXInitSLC);
-#endif
 EXPORT_SYMBOL(RGXHWPerfConnect);
 EXPORT_SYMBOL(RGXHWPerfDisconnect);
 EXPORT_SYMBOL(RGXHWPerfControl);
@@ -149,8 +154,14 @@ CONNECTION_DATA *LinuxServicesConnectionFromFile(struct file *pFile)
 {
 	if (pFile)
 	{
-		struct drm_file *psDRMFile = pFile->private_data;
-		PVRSRV_CONNECTION_PRIV *psConnectionPriv = (PVRSRV_CONNECTION_PRIV*)psDRMFile->driver_priv;
+		struct drm_file *psDRMFile;
+		PVRSRV_CONNECTION_PRIV *psConnectionPriv;
+
+		psDRMFile = pFile->private_data;
+		PVR_LOG_RETURN_IF_FALSE(psDRMFile != NULL, "psDRMFile is NULL", NULL);
+
+		psConnectionPriv = (PVRSRV_CONNECTION_PRIV*)psDRMFile->driver_priv;
+		PVR_LOG_RETURN_IF_FALSE(psConnectionPriv != NULL, "psConnectionPriv is NULL", NULL);
 
 		return (CONNECTION_DATA*)psConnectionPriv->pvConnectionData;
 	}
@@ -190,6 +201,14 @@ int PVRSRVDriverInit(void)
 	{
 		return -ENOMEM;
 	}
+
+#if defined(SUPPORT_LINUX_FDINFO)
+	error = PVRDKFInit();
+	if (error != PVRSRV_OK)
+	{
+		return -ENODEV;
+	}
+#endif	/* SUPPORT_LINUX_FDINFO */
 
 	error = PVRSRVCommonDriverInit();
 	if (error != PVRSRV_OK)
@@ -288,11 +307,15 @@ void PVRSRVDriverDeinit(void)
 	pvr_sync_deinit();
 #endif
 
-	PVRSRVCommonDriverDeInit();
-
 #if defined(SUPPORT_RGX)
 	PVRGpuTraceSupportDeInit();
 #endif
+
+	PVRSRVCommonDriverDeInit();
+
+#if defined(SUPPORT_LINUX_FDINFO)
+	PVRDKFDeInit();
+#endif	/* SUPPORT_LINUX_FDINFO */
 
 	PVROSFuncDeInit();
 }
@@ -325,7 +348,7 @@ int PVRSRVDeviceInit(PVRSRV_DEVICE_NODE *psDeviceNode)
 		{
 			PVR_DPF((PVR_DBG_WARNING,
 				 "%s: failed to initialise PVR GPU Tracing on device%d (%d)",
-				 __func__, psDeviceNode->sDevId.i32OsDeviceID, error));
+				 __func__, psDeviceNode->sDevId.i32KernelDeviceID, error));
 		}
 	}
 #endif
@@ -350,8 +373,8 @@ void PVRSRVDeviceDeinit(PVRSRV_DEVICE_NODE *psDeviceNode)
 	pvr_sync_device_deinit(psDeviceNode->psDevConfig->pvOSDevice);
 #endif
 
-#if defined(SUPPORT_DMA_TRANSFER)
-	PVRSRVDeInitialiseDMA(psDeviceNode);
+#if defined(SUPPORT_NATIVE_FENCE_SYNC) || defined(SUPPORT_BUFFER_SYNC)
+	pvr_fence_cleanup();
 #endif
 }
 
@@ -408,7 +431,7 @@ int PVRSRVDeviceSuspend(struct drm_device *psDev)
 
 	if (PVRSRVSetDeviceSystemPowerState(psDeviceNode,
 										PVRSRV_SYS_POWER_STATE_OFF,
-										PVRSRV_POWER_FLAGS_SUSPEND_REQ) != PVRSRV_OK)
+										PVRSRV_POWER_FLAGS_OSPM_SUSPEND_REQ) != PVRSRV_OK)
 	{
 		/* Ignore return error as we're already returning an error here. */
 		(void) LinuxBridgeUnblockClientsAccess(psDevPriv);
@@ -432,7 +455,7 @@ int PVRSRVDeviceResume(struct drm_device *psDev)
 
 	if (PVRSRVSetDeviceSystemPowerState(psDeviceNode,
 										PVRSRV_SYS_POWER_STATE_ON,
-										PVRSRV_POWER_FLAGS_RESUME_REQ) != PVRSRV_OK)
+										PVRSRV_POWER_FLAGS_OSPM_RESUME_REQ) != PVRSRV_OK)
 	{
 		return -EINVAL;
 	}
@@ -503,13 +526,14 @@ int PVRSRVDeviceServicesOpen(PVRSRV_DEVICE_NODE *psDeviceNode,
 			mutex_unlock(&sDeviceInitMutex);
 			goto fail_alloc_connection_priv;
 		}
+		psConnectionPriv->ui32Type = DKF_CONNECTION_FLAG_SERVICES;
 	}
 	else
 	{
 		psConnectionPriv = (PVRSRV_CONNECTION_PRIV*)psDRMFile->driver_priv;
 	}
 
-	if (psDeviceNode->eDevState == PVRSRV_DEVICE_STATE_INIT)
+	if (psDeviceNode->eDevState == PVRSRV_DEVICE_STATE_CREATED)
 	{
 		eError = PVRSRVCommonDeviceInitialise(psDeviceNode);
 		if (eError != PVRSRV_OK)
@@ -528,6 +552,7 @@ int PVRSRVDeviceServicesOpen(PVRSRV_DEVICE_NODE *psDeviceNode,
 	mutex_unlock(&sDeviceInitMutex);
 
 	sPrivData.psDevNode = psDeviceNode;
+	sPrivData.psDRMFile = psDRMFile;
 
 	/*
 	 * Here we pass the file pointer which will passed through to our
@@ -547,15 +572,6 @@ int PVRSRVDeviceServicesOpen(PVRSRV_DEVICE_NODE *psDeviceNode,
 #endif
 	psDRMFile->driver_priv = (void*)psConnectionPriv;
 
-#if defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD)
-	eError = PVRSRVGpuTraceWorkPeriodEventStatsRegister(
-			&psConnectionPriv->pvGpuWorkPeriodEventStats);
-	if (eError != PVRSRV_OK)
-	{
-		iErr = -ENOMEM;
-		goto fail_connect;
-	}
-#endif /* defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD) */
 	goto out;
 
 fail_connect:
@@ -578,6 +594,7 @@ out:
 static int PVRSRVDeviceSyncOpen(PVRSRV_DEVICE_NODE *psDeviceNode,
                                 struct drm_file *psDRMFile)
 {
+#if defined(SUPPORT_NATIVE_FENCE_SYNC)
 	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
 	CONNECTION_DATA *psConnection = NULL;
 	ENV_CONNECTION_PRIVATE_DATA sPrivData;
@@ -622,7 +639,10 @@ static int PVRSRVDeviceSyncOpen(PVRSRV_DEVICE_NODE *psDeviceNode,
 	psConnectionPriv->pvSyncConnectionData = (void*)psConnection;
 #endif
 
+	psConnectionPriv->ui32Type = DKF_CONNECTION_FLAG_SYNC;
+
 	sPrivData.psDevNode = psDeviceNode;
+	sPrivData.psDRMFile = psDRMFile;
 
 	/* Call environment specific connection data init function */
 	eError = OSConnectionPrivateDataInit(&psConnection->hOsPrivateData, &sPrivData);
@@ -665,6 +685,11 @@ fail_alloc_connection:
 	kfree(psConnectionPriv);
 out:
 	return iErr;
+#else /* if defined(SUPPORT_NATIVE_FENCE_SYNC) */
+	/* Ioctl should not be being called (no DDK support for native sync) */
+	PVR_DPF((PVR_DBG_ERROR, "%s: only supported when SUPPORT_NATIVE_FENCE_SYNC=1", __func__));
+	return -ENOTTY;
+#endif /* if defined(SUPPORT_NATIVE_FENCE_SYNC) */
 }
 
 /**************************************************************************/ /*!
@@ -686,15 +711,6 @@ void PVRSRVDeviceRelease(PVRSRV_DEVICE_NODE *psDeviceNode,
 
 		if (psConnectionPriv->pvConnectionData)
 		{
-#if defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD)
-			if (psConnectionPriv->pvGpuWorkPeriodEventStats)
-			{
-				PVRSRVGpuTraceWorkPeriodEventStatsUnregister(
-						psConnectionPriv->pvGpuWorkPeriodEventStats);
-				psConnectionPriv->pvGpuWorkPeriodEventStats = NULL;
-			}
-#endif /* defined(PVRSRV_ANDROID_TRACE_GPU_WORK_PERIOD) */
-
 #if (PVRSRV_DEVICE_INIT_MODE == PVRSRV_LINUX_DEV_INIT_ON_CONNECT)
 			if (psConnectionPriv->pfDeviceRelease)
 			{
@@ -710,6 +726,12 @@ void PVRSRVDeviceRelease(PVRSRV_DEVICE_NODE *psDeviceNode,
 #endif
 #endif
 		}
+
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+		LinuxDeregisterMigrateCallbacks(psDRMFile->filp);
+#endif
+#endif
 
 		kfree(psDRMFile->driver_priv);
 		psDRMFile->driver_priv = NULL;
@@ -733,8 +755,26 @@ drm_pvr_srvkm_init(struct drm_device *dev, void *arg, struct drm_file *psDRMFile
 		case PVR_SRVKM_SERVICES_INIT:
 		{
 			iErr = PVRSRVDeviceServicesOpen(priv->dev_node, psDRMFile);
+			if (iErr)
+			{
+				PVR_DPF((PVR_DBG_ERROR, "%s: PVRSRVDeviceServicesOpen() failed(%d)",
+						__func__, iErr));
+				break;
+			}
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+			iErr = LinuxRegisterMigrateCallbacks(psDRMFile->filp);
+#endif
+#endif
 			break;
 		}
+#if defined(SUPPORT_LINUX_OSPAGE_MIGRATION)
+		case PVR_SRVKM_SERVICES_PAGE_MIGRATE_INIT:
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+			iErr = LinuxRegisterMigrateCallbacks(psDRMFile->filp);
+#endif
+#endif
+			break;
 		default:
 		{
 			PVR_DPF((PVR_DBG_ERROR, "%s: invalid init_module (%d)",

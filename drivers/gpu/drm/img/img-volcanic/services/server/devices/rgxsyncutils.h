@@ -46,7 +46,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "rgxdevice.h"
 #include "sync_server.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "rgx_fwif_km.h"
 
 typedef struct _RGX_SYNC_DATA_

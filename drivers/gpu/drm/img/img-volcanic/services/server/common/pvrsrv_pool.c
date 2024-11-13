@@ -213,7 +213,7 @@ PVRSRV_ERROR PVRSRVPoolGet(PVRSRV_POOL *psPool,
 		psPool->uiNumFree--;
 	}
 
-#if defined(DEBUG) || defined(SUPPORT_VALIDATION)
+#if defined(DEBUG)
 	/* Don't poison the IN buffer as that is copied from client and would be
 	 * waste of cycles.
 	 */

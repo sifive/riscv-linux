@@ -68,14 +68,14 @@ void OSCPUCacheFlushRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
 				sCPUPhysEnd);
 
 	}
-//#if !defined(NO_HARDWARE)
-//	else
-//	{
-//		PVR_DPF((PVR_DBG_WARNING,
-//		         "%s: System doesn't implement cache maintenance. Skipping!",
-//		         __func__));
-//	}
-//#endif
+#if !defined(NO_HARDWARE)
+	else
+	{
+		PVR_DPF((PVR_DBG_WARNING,
+		         "%s: System doesn't implement cache maintenance. Skipping!",
+		         __func__));
+	}
+#endif
 }
 
 void OSCPUCacheCleanRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
@@ -142,7 +142,7 @@ void OSCPUCacheInvalidateRangeKM(PVRSRV_DEVICE_NODE *psDevNode,
 #endif
 }
 
-OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(void)
+OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(PVRSRV_DEVICE_NODE *psDevNode)
 {
 	/*
 	 * Need to obtain psDevNode here and do the following:
@@ -154,27 +154,20 @@ OS_CACHE_OP_ADDR_TYPE OSCPUCacheOpAddressType(void)
 	 * Return BOTH for now on.
 	 *
 	 */
+	PVR_UNREFERENCED_PARAMETER(psDevNode);
 	return OS_CACHE_OP_ADDR_TYPE_BOTH;
 }
 
 void OSUserModeAccessToPerfCountersEn(void)
 {
-//#if !defined(NO_HARDWARE)
-//	PVR_DPF((PVR_DBG_WARNING, "%s: Not implemented!", __func__));
-//	PVR_ASSERT(0);
-//#endif
-	PVR_DPF((PVR_DBG_WARNING, "%s: 20240529 Not implemented!", __func__));
+#if !defined(NO_HARDWARE)
+	PVR_DPF((PVR_DBG_WARNING, "%s: Not implemented!", __func__));
+	PVR_ASSERT(0);
+#endif
 }
 
 IMG_BOOL OSIsWriteCombineUnalignedSafe(void)
 {
-//#if !defined(NO_HARDWARE)
-//	PVR_DPF((PVR_DBG_WARNING,
-//	         "%s: Not implemented (assuming false)!",
-//	         __func__));
-//	PVR_ASSERT(0);
-//	return IMG_FALSE;
-//#else
+    // EIC770X support unaligned access.
 	return IMG_TRUE;
-//#endif
 }

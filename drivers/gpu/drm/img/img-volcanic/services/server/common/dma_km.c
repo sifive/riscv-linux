@@ -130,49 +130,163 @@ static void Cleanup(void* pvCleanupData, IMG_BOOL bAdvanceTimeline)
 #endif /* !defined(NO_HARDWARE) */
 
 IMG_EXPORT PVRSRV_ERROR
-PVRSRVInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode)
+PVRSRVInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode, CONNECTION_DATA *psConnectionData)
 {
 	PVRSRV_DEVICE_CONFIG *psDevConfig = psDeviceNode->psDevConfig;
+	PVRSRV_ERROR eError;
 
-	if (psDevConfig->bHasDma)
+	if (!psDevConfig->bHasDma)
 	{
+		return PVRSRV_OK;
+	}
 
-		PVR_ASSERT(psDevConfig->pfnSlaveDMAGetChan != NULL);
-		PVR_ASSERT(psDevConfig->pfnSlaveDMAFreeChan != NULL);
-		PVR_ASSERT(psDevConfig->pszDmaTxChanName != NULL);
-		PVR_ASSERT(psDevConfig->pszDmaRxChanName != NULL);
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psDevConfig->pfnSlaveDMAGetChan, "pfnSlaveDMAGetChan");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psDevConfig->pfnSlaveDMAFreeChan, "pfnSlaveDMAFreeChan");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psDevConfig->pszDmaTxChanName, "pszDmaTxChanName");
+	PVR_LOG_RETURN_IF_INVALID_PARAM(psDevConfig->pszDmaRxChanName, "pszDmaRxChanName");
 
+	eError = OSEventObjectCreate("Dma transfer cleanup event object",
+								 &psConnectionData->hDmaEventObject);
+	PVR_LOG_GOTO_IF_ERROR(eError, "OSEventObjectCreate", dma_init_error1);
+
+	OSLockAcquire(psDeviceNode->hConnectionsLock);
+
+	if (psDeviceNode->ui32RefCountDMA == 0)
+	{
 		psDeviceNode->hDmaTxChan =
 			psDevConfig->pfnSlaveDMAGetChan(psDevConfig,
-											 psDevConfig->pszDmaTxChanName);
+											psDevConfig->pszDmaTxChanName);
 		if (!psDeviceNode->hDmaTxChan)
 		{
-			return PVRSRV_ERROR_RESOURCE_UNAVAILABLE;
+			PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_RESOURCE_UNAVAILABLE, dma_init_error2);
 		}
 		psDeviceNode->hDmaRxChan =
 			psDevConfig->pfnSlaveDMAGetChan(psDevConfig,
-											 psDevConfig->pszDmaRxChanName);
+											psDevConfig->pszDmaRxChanName);
 		if (!psDeviceNode->hDmaRxChan)
 		{
-			psDevConfig->pfnSlaveDMAFreeChan(psDevConfig, psDeviceNode->hDmaTxChan);
-			return PVRSRV_ERROR_RESOURCE_UNAVAILABLE;
+			PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_RESOURCE_UNAVAILABLE, dma_init_error3);
 		}
-		psDeviceNode->bHasSystemDMA = true;
+
+		eError = OSLockCreate(&psDeviceNode->hDmaTxLock);
+		PVR_LOG_GOTO_IF_ERROR(eError, "OSLockCreate(hDmaTxLock)", dma_init_error_txlock);
+
+		eError = OSLockCreate(&psDeviceNode->hDmaRxLock);
+		PVR_LOG_GOTO_IF_ERROR(eError, "OSLockCreate(hDmaRxLock)", dma_init_error_rxlock);
 	}
 
+	psDeviceNode->ui32RefCountDMA++;
+
+	OSLockRelease(psDeviceNode->hConnectionsLock);
+
+	OSAtomicWrite(&psConnectionData->ui32NumDmaTransfersInFlight, 0);
+	psConnectionData->bAcceptDmaRequests = IMG_TRUE;
+
 	return PVRSRV_OK;
+
+dma_init_error_rxlock:
+	OSLockDestroy(psDeviceNode->hDmaTxLock);
+dma_init_error_txlock:
+	psDevConfig->pfnSlaveDMAFreeChan(psDevConfig, psDeviceNode->hDmaRxChan);
+dma_init_error3:
+	psDevConfig->pfnSlaveDMAFreeChan(psDevConfig, psDeviceNode->hDmaTxChan);
+dma_init_error2:
+	OSLockRelease(psDeviceNode->hConnectionsLock);
+	OSEventObjectDestroy(psConnectionData->hDmaEventObject);
+dma_init_error1:
+	return eError;
+}
+
+static void WaitForOutstandingDma(CONNECTION_DATA *psConnectionData)
+{
+
+	PVRSRV_ERROR eError;
+	IMG_HANDLE hEvent;
+	IMG_UINT32 ui32Tries = 100;
+
+#if defined(DMA_VERBOSE)
+	PVR_DPF((PVR_DBG_ERROR,
+					"Waiting on %d DMA transfers in flight...", OSAtomicRead(&psConnectionData->ui32NumDmaTransfersInFlight)));
+#endif
+
+	eError = OSEventObjectOpen(psConnectionData->hDmaEventObject, &hEvent);
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Failed to open event object", __func__));
+		return;
+	}
+
+	while (OSAtomicRead(&psConnectionData->ui32NumDmaTransfersInFlight) != 0)
+	{
+		/*
+		#define DMA_TRANSFER_TIMEOUT_US (5000000ULL)
+
+		This currently doesn't work properly. Wait time is not as requested.
+		Using OSSleepms instead
+
+		OSEventObjectWaitKernel(hEvent, DMA_TRANSFER_TIMEOUT_US);
+		*/
+		OSSleepms(50);
+		if (!ui32Tries)
+		{
+			PVR_DPF((PVR_DBG_ERROR, "%s: Timeout while waiting on outstanding DMA transfers!", __func__));
+			break;
+		}
+
+		ui32Tries--;
+	}
+
+	OSEventObjectClose(hEvent);
 }
 
 IMG_EXPORT void
-PVRSRVDeInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode)
+PVRSRVDeInitialiseDMA(PVRSRV_DEVICE_NODE *psDeviceNode, CONNECTION_DATA *psConnectionData)
 {
-	if (psDeviceNode->bHasSystemDMA)
+	PVRSRV_DEVICE_CONFIG *psDevConfig = psDeviceNode->psDevConfig;
+
+	if (!psDevConfig->bHasDma)
 	{
-		PVRSRV_DEVICE_CONFIG *psDevConfig = psDeviceNode->psDevConfig;
+		return;
+	}
+
+	OSLockAcquire(psDeviceNode->hDmaTxLock);
+	OSLockAcquire(psDeviceNode->hDmaRxLock);
+
+	psConnectionData->bAcceptDmaRequests = IMG_FALSE;
+
+	OSLockRelease(psDeviceNode->hDmaRxLock);
+	OSLockRelease(psDeviceNode->hDmaTxLock);
+
+	WaitForOutstandingDma(psConnectionData);
+
+	OSLockAcquire(psDeviceNode->hConnectionsLock);
+
+	if (psDeviceNode->ui32RefCountDMA == 0)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Invalid ref count (%d)", __func__, psDeviceNode->ui32RefCountDMA));
+		OSLockRelease(psDeviceNode->hConnectionsLock);
+		return;
+	}
+
+	if (--psDeviceNode->ui32RefCountDMA == 0)
+	{
+		if (psDeviceNode->hDmaRxLock != NULL)
+		{
+			OSLockDestroy(psDeviceNode->hDmaRxLock);
+		}
+
+		if (psDeviceNode->hDmaTxLock != NULL)
+		{
+			OSLockDestroy(psDeviceNode->hDmaTxLock);
+		}
 
 		psDevConfig->pfnSlaveDMAFreeChan(psDevConfig, psDeviceNode->hDmaRxChan);
 		psDevConfig->pfnSlaveDMAFreeChan(psDevConfig, psDeviceNode->hDmaTxChan);
 	}
+
+	OSLockRelease(psDeviceNode->hConnectionsLock);
+
+	OSEventObjectDestroy(psConnectionData->hDmaEventObject);
 }
 
 IMG_EXPORT PVRSRV_ERROR
@@ -186,7 +300,7 @@ DmaDeviceParams(CONNECTION_DATA *psConnection,
 	*ui32DmaBuffAlign = psDevConfig->ui32DmaAlignment;
 	*ui32DmaTransferMult = psDevConfig->ui32DmaTransferUnit;
 
-	 return PVRSRV_OK;
+	return PVRSRV_OK;
 }
 
 IMG_EXPORT PVRSRV_ERROR
@@ -213,7 +327,8 @@ DmaSparseMappingTable(PMR *psPMR,
 								 ui32SizeInPages,
 								 uiOffset,
 								 psDevPhyAddr,
-								 pbValid);
+								 pbValid,
+								 CPU_USE);
 		PVR_LOG_GOTO_IF_ERROR(eError, "PMR_DevPhysAddr", err3);
 
 		PMRUnlockSysPhysAddresses(psPMR);
@@ -269,12 +384,46 @@ DmaTransfer(CONNECTION_DATA *psConnection,
 	void* pvChan = NULL;
 	SERVER_CLEANUP_DATA* psServerData;
 	void*  pvOSData;
+	POS_LOCK hChanLock = uiFlags & (DMA_FLAG_MEM_TO_DEV) ? psDevNode->hDmaTxLock : psDevNode->hDmaRxLock;
 
-	OSLockAcquire(psConnection->hDmaReqLock);
+	for (i=0; i<uiNumDMAs; i++)
+	{
+		PMR* psPMR = ppsPMR[i];
+		PMR_FLAGS_T uiPMRFlags = PMR_Flags(psPMR);
+		IMG_BOOL bIsPrivate = PhysHeapGetFlags(PMR_PhysHeap(psPMR)) & PHYS_HEAP_USAGE_GPU_PRIVATE;
+		IMG_BOOL bWrite = uiFlags & DMA_FLAG_MEM_TO_DEV;
+
+		if (PMR_GetType(psPMR) == PMR_TYPE_OSMEM)
+		{
+			PVR_LOG_GOTO_WITH_ERROR("PMR is type OSMEM, expected device memory.", eError, PVRSRV_ERROR_NOT_SUPPORTED, error_return);
+		}
+
+		if (!bIsPrivate)
+		{
+			if (( bWrite && !PVRSRV_CHECK_CPU_WRITEABLE(uiPMRFlags)) ||
+			    (!bWrite && !PVRSRV_CHECK_CPU_READABLE(uiPMRFlags)))
+			{
+				PVR_LOG_GOTO_WITH_ERROR("Incorrect CPU access parameters on PMR", eError, PVRSRV_ERROR_INVALID_PARAMS, error_return);
+			}
+		}
+		else
+		{
+			/* Treat GPU private PMRs differently since they can't be mapped by the client.
+			   Check access permissions based on GPU flags. */
+			if (( bWrite && !PVRSRV_CHECK_GPU_WRITEABLE(uiPMRFlags)) ||
+			    (!bWrite && !PVRSRV_CHECK_GPU_READABLE(uiPMRFlags))  ||
+			     uiPMRFlags & PVRSRV_MEMALLOCFLAG_DEVICE_FLAG(PMMETA_PROTECT))
+			{
+				PVR_LOG_GOTO_WITH_ERROR("Incorrect GPU access parameters on PMR", eError, PVRSRV_ERROR_INVALID_PARAMS, error_return);
+			}
+		}
+	}
+
+	OSLockAcquire(hChanLock);
 
 	if (!psConnection->bAcceptDmaRequests)
 	{
-		OSLockRelease(psConnection->hDmaReqLock);
+		OSLockRelease(hChanLock);
 		return PVRSRV_OK;
 	}
 
@@ -333,7 +482,8 @@ DmaTransfer(CONNECTION_DATA *psConnection,
 								 ui32SizeInPages,
 								 puiOffset[i],
 								 psDevPhyAddr,
-								 pbValid);
+								 pbValid,
+								 CPU_USE);
 		PVR_LOG_GOTO_IF_ERROR(eError, "PMR_DevPhysAddr", loop_e4);
 
 		psDevConfig->pfnDevPhysAddr2DmaAddr(psDevConfig,
@@ -394,7 +544,7 @@ loop_e0:
 		/* One of the transfers could not be programmed, roll back */
 		OSDmaForceCleanup(psDevNode, pvChan, pvOSData, psServerData, Cleanup);
 	}
-	OSLockRelease(psConnection->hDmaReqLock);
+	OSLockRelease(hChanLock);
 	return eError;
 
 e3:
@@ -407,7 +557,8 @@ e2:
 e1:
 	OSFreeMem(psServerData);
 e0:
-	OSLockRelease(psConnection->hDmaReqLock);
+	OSLockRelease(hChanLock);
+error_return:
 	return eError;
 #endif
 }

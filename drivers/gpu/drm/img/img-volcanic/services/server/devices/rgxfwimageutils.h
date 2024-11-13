@@ -134,7 +134,8 @@ PVRSRV_ERROR RGXGetFWImageAllocSize(const void *hPrivate,
                                     IMG_DEVMEM_SIZE_T *puiFWCodeAllocSize,
                                     IMG_DEVMEM_SIZE_T *puiFWDataAllocSize,
                                     IMG_DEVMEM_SIZE_T *puiFWCorememCodeAllocSize,
-                                    IMG_DEVMEM_SIZE_T *puiFWCorememDataAllocSize);
+                                    IMG_DEVMEM_SIZE_T *puiFWCorememDataAllocSize,
+                                    RGX_FW_INFO_HEADER *psFWInfoHeader);
 
 /*!
 *******************************************************************************

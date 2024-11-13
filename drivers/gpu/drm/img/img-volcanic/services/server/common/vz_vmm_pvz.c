@@ -49,7 +49,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvrsrv.h"
 #include "vz_vmm_pvz.h"
 
-#if (RGX_NUM_OS_SUPPORTED > 1)
+#if (RGX_NUM_DRIVERS_SUPPORTED > 1)
 static PVRSRV_ERROR
 PvzConnectionValidate(void)
 {
@@ -63,8 +63,7 @@ PvzConnectionValidate(void)
 	if (psVmmPvz == NULL)
 	{
 		PVR_DPF((PVR_DBG_ERROR,
-				"%s: %s PVZ config: Unable to acquire PVZ connection",
-				__func__, PVRSRV_VZ_MODE_IS(GUEST) ? "Guest" : "Host"));
+				"%s: Unable to acquire PVZ connection", __func__));
 		eError = PVRSRV_ERROR_INVALID_PVZ_CONFIG;
 		goto e0;
 	}
@@ -76,8 +75,8 @@ PvzConnectionValidate(void)
 	 *
 	 *  This setup uses carve-out memory, has no hypercall mechanism & does not support
 	 *  out-of-order initialisation of host/guest VMs/drivers. The host driver has all
-	 *  the information needed to initialize all OSIDs firmware state when it's loaded
-	 *  and its PVZ layer must mark all guest OSIDs as being online as part of its PVZ
+	 *  the information needed to initialize all Drivers firmware state when it's loaded
+	 *  and its PVZ layer must mark all guest Drivers as being online as part of its PVZ
 	 *  initialisation. Having no out-of-order initialisation support, the guest driver
 	 *  can only submit a workload to the device after the host driver has completely
 	 *  initialized the firmware, the VZ hypervisor/VM setup must guarantee this.
@@ -89,44 +88,32 @@ PvzConnectionValidate(void)
 	 *
 	 *  This setup uses guest memory, has PVZ hypercall mechanism & supports out-of-order
 	 *  initialisation of host/guest VMs/drivers. The host driver initializes only its
-	 *  own OSID-0 firmware state when its loaded and each guest driver will use its PVZ
+	 *  own Driver-0 firmware state when its loaded and each guest driver will use its PVZ
 	 *  interface to hypercall to the host driver to both synchronise its initialisation
 	 *  so it does not submit any workload to the firmware before the host driver has
-	 *  had a chance to initialize the firmware and to also initialize its own OSID-x
+	 *  had a chance to initialize the firmware and to also initialize its own Driver-x
 	 *  firmware state.
 	 */
 	PVR_LOG(("Using dynamic PVZ bootstrap setup"));
-
-	if (!PVRSRV_VZ_MODE_IS(GUEST)           &&
-			 (psVmmPvz->sServerFuncTab.pfnMapDevPhysHeap      == NULL ||
-			  psVmmPvz->sServerFuncTab.pfnUnmapDevPhysHeap    == NULL))
-	{
-		PVR_DPF((PVR_DBG_ERROR, "%s: Host PVZ config: Functions for mapping a Guest's heaps not implemented\n", __func__));
-		eError = PVRSRV_ERROR_INVALID_PVZ_CONFIG;
-	}
 #endif
 
 	PvzConnectionRelease(psVmmPvz);
 e0:
 	return eError;
 }
-#endif /* (RGX_NUM_OS_SUPPORTED > 1) */
+#endif /* (RGX_NUM_DRIVERS_SUPPORTED > 1) */
 
-PVRSRV_ERROR PvzConnectionInit(void)
+PVRSRV_ERROR PvzConnectionInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
 	PVRSRV_ERROR eError;
-	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
 
-#if (RGX_NUM_OS_SUPPORTED == 1)
-#if !defined(PVRSRV_NEED_PVR_DPF)
-	PVR_UNREFERENCED_PARAMETER(psPVRSRVData);
-# endif
-	PVR_DPF((PVR_DBG_ERROR, "This kernel driver does not support virtualization. Please rebuild with RGX_NUM_OS_SUPPORTED > 1"));
-	PVR_DPF((PVR_DBG_ERROR,	"Halting initialisation, cannot transition to %s mode",
-			psPVRSRVData->eDriverMode == DRIVER_MODE_HOST ? "host" : "guest"));
+#if (RGX_NUM_DRIVERS_SUPPORTED == 1)
+	PVR_UNREFERENCED_PARAMETER(psDevConfig);
+	PVR_DPF((PVR_DBG_ERROR, "This kernel driver does not support virtualization. Please rebuild with RGX_NUM_DRIVERS_SUPPORTED > 1"));
 	eError = PVRSRV_ERROR_NOT_SUPPORTED;
 	goto e0;
 #else
+	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
 
 	if ((psPVRSRVData->hPvzConnection != NULL) &&
 		(psPVRSRVData->hPvzConnectionLock != NULL))
@@ -141,7 +128,7 @@ PVRSRV_ERROR PvzConnectionInit(void)
 	PVR_LOG_GOTO_IF_ERROR(eError, "OSLockCreate", e0);
 
 	/* Create VM manager para-virtualization connection */
-	eError = VMMCreatePvzConnection((VMM_PVZ_CONNECTION **)&psPVRSRVData->hPvzConnection);
+	eError = VMMCreatePvzConnection((VMM_PVZ_CONNECTION **)&psPVRSRVData->hPvzConnection, psDevConfig);
 	if (eError != PVRSRV_OK)
 	{
 		OSLockDestroy(psPVRSRVData->hPvzConnectionLock);
@@ -159,22 +146,40 @@ e0:
 	return eError;
 }
 
-void PvzConnectionDeInit(void)
+void PvzConnectionDeInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
 	PVRSRV_DATA *psPVRSRVData = PVRSRVGetPVRSRVData();
+	PVRSRV_DEVICE_NODE *psDN;
+	IMG_BOOL bCanDestroyPvzData = IMG_TRUE;
 
-	if ((psPVRSRVData->hPvzConnection == NULL) &&
-		(psPVRSRVData->hPvzConnectionLock == NULL))
+	OSWRLockAcquireRead(psPVRSRVData->hDeviceNodeListLock);
+	for (psDN = psPVRSRVData->psDeviceNodeList; psDN != NULL; psDN = psDN->psNext)
 	{
-		PVR_DPF((PVR_DBG_MESSAGE, "PVzConnection already deinitialised."));
-		return;
+		if ((psDN->psDevConfig != psDevConfig) &&
+			(!PVRSRV_VZ_MODE_IS(NATIVE, DEVNODE, psDN)))
+		{
+			/* if any other virtual devices are present keep the pvz data */
+			bCanDestroyPvzData = IMG_FALSE;
+			break;
+		}
 	}
+	OSWRLockReleaseRead(psPVRSRVData->hDeviceNodeListLock);
 
-	VMMDestroyPvzConnection(psPVRSRVData->hPvzConnection);
-	psPVRSRVData->hPvzConnection = NULL;
+	if (bCanDestroyPvzData)
+	{
+		if ((psPVRSRVData->hPvzConnection == NULL) &&
+			(psPVRSRVData->hPvzConnectionLock == NULL))
+		{
+			PVR_DPF((PVR_DBG_MESSAGE, "PVzConnection already deinitialised."));
+			return;
+		}
 
-	OSLockDestroy(psPVRSRVData->hPvzConnectionLock);
-	psPVRSRVData->hPvzConnectionLock = NULL;
+		VMMDestroyPvzConnection(psPVRSRVData->hPvzConnection, psDevConfig);
+		psPVRSRVData->hPvzConnection = NULL;
+
+		OSLockDestroy(psPVRSRVData->hPvzConnectionLock);
+		psPVRSRVData->hPvzConnectionLock = NULL;
+	}
 }
 
 VMM_PVZ_CONNECTION* PvzConnectionAcquire(void)

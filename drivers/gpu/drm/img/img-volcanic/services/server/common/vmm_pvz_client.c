@@ -79,18 +79,18 @@ PvzClientMapDevPhysHeap(PVRSRV_DEVICE_CONFIG *psDevConfig)
 	PVRSRV_ERROR eError;
 	IMG_DEV_PHYADDR sDevPAddr;
 	VMM_PVZ_CONNECTION *psVmmPvz;
-	PHYS_HEAP *psFwPhysHeap = psDevConfig->psDevNode->apsPhysHeap[PVRSRV_PHYS_HEAP_FW_MAIN];
+	PHYS_HEAP *psFwPhysHeap = psDevConfig->psDevNode->apsPhysHeap[FIRST_PHYSHEAP_MAPPED_TO_FW_MAIN_DEVMEM];
 
 	eError = PhysHeapGetDevPAddr(psFwPhysHeap, &sDevPAddr);
 
 #if defined(PVR_PMR_TRANSLATE_UMA_ADDRESSES)
-{
-	IMG_DEV_PHYADDR sDevPAddrTranslated;
+	{
+		IMG_DEV_PHYADDR sDevPAddrTranslated;
 
-	/* If required, perform a software translation between CPU and Device physical addresses. */
-	PhysHeapCpuPAddrToDevPAddr(psFwPhysHeap, 1, &sDevPAddrTranslated, (IMG_CPU_PHYADDR *)&sDevPAddr);
-	sDevPAddr.uiAddr = sDevPAddrTranslated.uiAddr;
-}
+		/* If required, perform a software translation between CPU and Device physical addresses. */
+		PhysHeapCpuPAddrToDevPAddr(psFwPhysHeap, 1, &sDevPAddrTranslated, (IMG_CPU_PHYADDR *)&sDevPAddr);
+		sDevPAddr.uiAddr = sDevPAddrTranslated.uiAddr;
+	}
 #endif
 
 	PVR_LOG_RETURN_IF_ERROR(eError, "PhysHeapGetDevPAddr");

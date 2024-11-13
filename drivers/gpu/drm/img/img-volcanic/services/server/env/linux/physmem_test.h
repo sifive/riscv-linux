@@ -42,10 +42,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #ifndef SRVSRV_PHYSMEM_TEST_H
 #define SRVSRV_PHYSMEM_TEST_H
+
+#include "device.h"
+
 /*
  * PhysMemTest
  */
 PVRSRV_ERROR
-PhysMemTest(void *pvDevConfig, IMG_UINT32 ui32MemTestPasses);
+PhysMemTest(PVRSRV_DEVICE_NODE *psDeviceNode, void *pvDevConfig, IMG_UINT32 ui32MemTestPasses);
 
 #endif /* SRVSRV_PHYSMEM_TEST_H */

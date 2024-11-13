@@ -62,7 +62,7 @@ typedef IMG_HANDLE PVRSRVTL_SD;
 
 /*! Packet lengths are always rounded up to a multiple of 8 bytes */
 #define PVRSRVTL_PACKET_ALIGNMENT		8U
-#define PVRSRVTL_ALIGN(x)				(((x)+PVRSRVTL_PACKET_ALIGNMENT-1U) & ~(PVRSRVTL_PACKET_ALIGNMENT-1U))
+#define PVRSRVTL_ALIGN(x)				PVR_ALIGN(x, PVRSRVTL_PACKET_ALIGNMENT)
 
 
 /*! A packet is made up of a header structure followed by the data bytes.

@@ -48,10 +48,7 @@ struct mtk_mfg {
 	struct clk *top_mmpll;
 	struct clk *clk26m;
 
-#if (defined(CHROMIUMOS_KERNEL) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0))) || \
-	(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	struct thermal_zone_device *tz;
-#endif
 };
 
 struct mtk_mfg *mtk_mfg_create(struct device *dev);

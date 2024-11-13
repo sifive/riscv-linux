@@ -373,6 +373,9 @@ PVRSRV_ERROR PDumpMMUDumpPxEntries(PVRSRV_DEVICE_NODE *psDeviceNode,
 				   IMG_UINT64 uiPxEProtMask,
 				   IMG_UINT64 uiDataValidEnable,
 				   IMG_UINT32 ui32Flags,
+				   IMG_UINT32 ui32VAParity,
+				   IMG_UINT32 ui32ParityShift,
+				   IMG_UINT64 ui64ParityMask,
 				   PDUMP_MMU_TYPE eMMUType)
 {
 	PVRSRV_ERROR eErr = PVRSRV_OK;
@@ -434,6 +437,7 @@ PVRSRV_ERROR PDumpMMUDumpPxEntries(PVRSRV_DEVICE_NODE *psDeviceNode,
 	     uiPxEIdx < uiFirstEntry + uiNumEntries;
 	     uiPxEIdx++)
 	{
+		IMG_BOOL bLastEntry = (uiPxEIdx == uiFirstEntry + uiNumEntries - 1);
 		/* Calc the symbolic address offset of the PxE location
 		   This is what we have to add to the table address to get to a certain entry */
 		ui32SymAddrOffset = (uiPxEIdx*uiBytesPerEntry);
@@ -479,9 +483,13 @@ PVRSRV_ERROR PDumpMMUDumpPxEntries(PVRSRV_DEVICE_NODE *psDeviceNode,
 			                             ui32SymAddrOffset, IMG_FALSE,
 			                             uiBytesPerEntry, pvRawBytes,
 			                             ui32Flags);
-			if (eErr == PVRSRV_OK)
+			if (bLastEntry && eErr == PVRSRV_OK)
 			{
 				goto done;
+			}
+			else if (eErr == PVRSRV_OK)
+			{
+				continue;
 			}
 			else
 			{
@@ -540,6 +548,35 @@ PVRSRV_ERROR PDumpMMUDumpPxEntries(PVRSRV_DEVICE_NODE *psDeviceNode,
 				                     pszSymbolicAddr,
 				                     uiSymbolicAddrOffset);
 			}
+			PVR_GOTO_IF_ERROR(eErr, ErrUnlock);
+			PDumpWriteScript(psDeviceNode, hScript, ui32Flags);
+
+			/* OR a parity bit */
+			if (ui64ParityMask)
+			{
+				IMG_UINT32 uiStateWord =
+					((0x1U << PDUMP_SET_PARITY_STATE_WORD_VERSION_SHIFT) & PDUMP_SET_PARITY_STATE_WORD_VERSION_MASK) |
+					((ui32ParityShift << PDUMP_SET_PARITY_STATE_WORD_PARITY_SHIFT_SHIFT) & PDUMP_SET_PARITY_STATE_WORD_PARITY_SHIFT_MASK) |
+					((ui32VAParity << PDUMP_SET_PARITY_STATE_WORD_VA_PARITY_SHIFT) & PDUMP_SET_PARITY_STATE_WORD_VA_PARITY_MASK);
+
+				eErr = PDumpSNPrintf(hScript,
+				                     ui32MaxLen,
+				                     "CMD:SetParity :%s:%s%016"IMG_UINT64_FMTSPECX":0x%08X :%s:%s:0x%"IMG_UINT64_FMTSPECX" 0x%08X\n",
+				                     /* Dest PTE entry tag */
+				                     pszPDumpDevName,
+				                     pszMMUPX,
+				                     ui64PxSymAddr,
+				                     ui32SymAddrOffset,
+				                     /* Source tag to calc PA parity from */
+				                     pszMemspaceName,
+				                     pszSymbolicAddr,
+				                     uiSymbolicAddrOffset,
+				                     /* State word */
+				                     uiStateWord);
+
+				PVR_GOTO_IF_ERROR(eErr, ErrUnlock);
+				PDumpWriteScript(psDeviceNode, hScript, ui32Flags);
+			}
 		}
 		else
 		{
@@ -568,10 +605,11 @@ PVRSRV_ERROR PDumpMMUDumpPxEntries(PVRSRV_DEVICE_NODE *psDeviceNode,
 			{
 				pszMMUPX = MMUPX_FMT(eMMULevel);
 			}
+
+			PVR_GOTO_IF_ERROR(eErr, ErrUnlock);
+			PDumpWriteScript(psDeviceNode, hScript, ui32Flags);
 		}
 
-		PVR_GOTO_IF_ERROR(eErr, ErrUnlock);
-		PDumpWriteScript(psDeviceNode, hScript, ui32Flags);
 
 		/* Now shift it to the right place, if necessary: */
 		/* Now shift that value down, by the "Align shift"

@@ -55,12 +55,12 @@ IMG_UINT64 *cpu_cache_flush_addr = NULL;
 extern void eswin_l2_flush64(phys_addr_t addr, size_t size);
 #else
 void eswin_l2_flush64(phys_addr_t addr, size_t size) {
-	arch_sync_dma_for_device(addr, size, DMA_TO_DEVICE);
+        arch_sync_dma_for_device(addr, size, DMA_TO_DEVICE);
 };
 #endif
 void riscv_invalidate_addr(phys_addr_t addr, size_t size,IMG_BOOL virtual) {
 
- printk(KERN_ALERT "eswin:%s not implement now start 0x%llx size=0x%lx\n",__func__,addr,size);
+ printk(KERN_ALERT "eswin:%s not implement now start 0x%x size=0x%x\n",__func__,addr,size);	
 }
 void riscv_flush_addr(IMG_UINT64 cpuaddr,IMG_UINT64 bytes_size, IMG_BOOL virtual)
 {
@@ -178,17 +178,20 @@ static PHYS_HEAP_FUNCTIONS gsPhysHeapFuncs =
 	UMAPhysHeapCpuPAddrToDevPAddr,
 	/* pfnDevPAddrToCpuPAddr */
 	UMAPhysHeapDevPAddrToCpuPAddr,
+	/* pfnGetRegionId */
+	NULL,
 };
 
 static PVRSRV_ERROR PhysHeapsCreate(PHYS_HEAP_CONFIG **ppasPhysHeapsOut,
-									IMG_UINT32 *puiPhysHeapCountOut)
+									IMG_UINT32 *puiPhysHeapCountOut,
+                                    PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
 	PHYS_HEAP_CONFIG *pasPhysHeaps;
 	IMG_UINT32 ui32NextHeapID = 0;
 	IMG_UINT32 uiHeapCount = 1;
     
 
-	uiHeapCount += !PVRSRV_VZ_MODE_IS(NATIVE) ? 1:0;
+	uiHeapCount += !PVRSRV_VZ_MODE_IS(NATIVE, DEVCFG, psDevConfig) ? 1:0;
 
 	pasPhysHeaps = OSAllocZMem(sizeof(*pasPhysHeaps) * uiHeapCount);
 	if (!pasPhysHeaps)
@@ -197,17 +200,19 @@ static PVRSRV_ERROR PhysHeapsCreate(PHYS_HEAP_CONFIG **ppasPhysHeapsOut,
 	}
 
 	pasPhysHeaps[ui32NextHeapID].ui32UsageFlags = PHYS_HEAP_USAGE_GPU_LOCAL;
-	pasPhysHeaps[ui32NextHeapID].pszPDumpMemspaceName = "SYSMEM";
+    //eswin fixme: not sure if following states are okay!
+	pasPhysHeaps[ui32NextHeapID].uConfig.sUMA.pszPDumpMemspaceName = "SYSMEM";
 	pasPhysHeaps[ui32NextHeapID].eType = PHYS_HEAP_TYPE_UMA;
-	pasPhysHeaps[ui32NextHeapID].psMemFuncs = &gsPhysHeapFuncs;
+	pasPhysHeaps[ui32NextHeapID].uConfig.sUMA.psMemFuncs = &gsPhysHeapFuncs;
 	ui32NextHeapID++;
 
-	if (! PVRSRV_VZ_MODE_IS(NATIVE))
+	if (! PVRSRV_VZ_MODE_IS(NATIVE, DEVCFG, psDevConfig))
 	{
 		pasPhysHeaps[ui32NextHeapID].ui32UsageFlags = PHYS_HEAP_USAGE_GPU_LOCAL;
-		pasPhysHeaps[ui32NextHeapID].pszPDumpMemspaceName = "SYSMEM";
+        //eswin fixme: not sure if following states are okay!
+        pasPhysHeaps[ui32NextHeapID].uConfig.sUMA.pszPDumpMemspaceName = "SYSMEM";
 		pasPhysHeaps[ui32NextHeapID].eType = PHYS_HEAP_TYPE_UMA;
-		pasPhysHeaps[ui32NextHeapID].psMemFuncs = &gsPhysHeapFuncs;
+        pasPhysHeaps[ui32NextHeapID].uConfig.sUMA.psMemFuncs = &gsPhysHeapFuncs;
 		ui32NextHeapID++;
 	}
 
@@ -226,6 +231,7 @@ void SysDevDeInit(PVRSRV_DEVICE_CONFIG *psDevConfig)
 {
         int ret;
 
+        printk(KERN_WARNING "eswin zdbg1107 %s\n", __func__);
 	PhysHeapsDestroy(psDevConfig->pasPhysHeaps);
 
 	/* eswin, assert the reset */
@@ -339,8 +345,8 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 
 	psRGXData = (RGX_DATA *)((IMG_CHAR *)psDevConfig + sizeof(*psDevConfig));
 	psRGXTimingInfo = (RGX_TIMING_INFORMATION *)((IMG_CHAR *)psRGXData + sizeof(*psRGXData));
-
-	eError = PhysHeapsCreate(&pasPhysHeaps, &uiPhysHeapCount);
+    psDevConfig->eDriverMode = DRIVER_MODE_NATIVE;
+	eError = PhysHeapsCreate(&pasPhysHeaps, &uiPhysHeapCount, psDevConfig);
 	if (eError)
 	{
 		goto ErrorFreeDevConfig;
@@ -367,6 +373,7 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 
 	// get gpu clk, it is supposed to be 800MHz
 	rgx_freq = clk_get_rate(psDevConfig->aclk);
+	printk(KERN_ALERT "%s:%d, zdbg1107 eswin print : read back aclk  %dHZ \n", __func__, __LINE__, rgx_freq);
 
 	ret = clk_prepare_enable(psDevConfig->aclk);
 	if (ret)
@@ -518,7 +525,9 @@ static PVRSRV_ERROR DeviceConfigCreate(void *pvOSDevice, PVRSRV_DEVICE_CONFIG **
 
 	psDevConfig->eDefaultHeap = PVRSRV_PHYS_HEAP_GPU_LOCAL;
 
-	if (! PVRSRV_VZ_MODE_IS(NATIVE))
+    //eswin fixme: DRIVER_MODE_NATIVE okay?
+    psDevConfig->eDriverMode = DRIVER_MODE_NATIVE;
+	if (! PVRSRV_VZ_MODE_IS(NATIVE, DEVCFG, psDevConfig))
 	{
 		/* Virtualization support services needs to know which heap ID corresponds to FW */
 		// psDevConfig->aui32PhysHeapID[PVRSRV_DEVICE_PHYS_HEAP_FW_LOCAL] = PHYS_HEAP_IDX_VIRTFW;

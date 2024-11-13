@@ -78,17 +78,27 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #undef PDUMP_TRACE
 
 #if defined(PDUMP_TRACE)
-#define PDUMP_HERE_VAR  IMG_UINT32 here = 0;
+#define PDUMP_HERE_VAR  __maybe_unused IMG_UINT32 here = 0;
 #define PDUMP_HERE(a)	{ here = (a); if (ui32Flags & PDUMP_FLAGS_DEBUG) PVR_DPF((PVR_DBG_WARNING, "HERE %d", (a))); }
 #define PDUMP_HEREA(a)	{ here = (a); PVR_DPF((PVR_DBG_WARNING, "HERE ALWAYS %d", (a))); }
 #else
-#define PDUMP_HERE_VAR  IMG_UINT32 here = 0;
+#define PDUMP_HERE_VAR  __maybe_unused IMG_UINT32 here = 0;
 #define PDUMP_HERE(a)	here = (a);
 #define PDUMP_HEREA(a)	here = (a);
 #endif
 
 #define PDUMP_PD_UNIQUETAG	(IMG_HANDLE)0
 #define PDUMP_PT_UNIQUETAG	(IMG_HANDLE)0
+
+/* Defines for CMD:SetParity's state word */
+#define PDUMP_SET_PARITY_STATE_WORD_VERSION_SHIFT		(0U)
+#define PDUMP_SET_PARITY_STATE_WORD_VERSION_MASK		(0x00000007U)
+
+#define PDUMP_SET_PARITY_STATE_WORD_PARITY_SHIFT_SHIFT	(3U)
+#define PDUMP_SET_PARITY_STATE_WORD_PARITY_SHIFT_MASK	(0x000001F8U)
+
+#define PDUMP_SET_PARITY_STATE_WORD_VA_PARITY_SHIFT		(9U)
+#define PDUMP_SET_PARITY_STATE_WORD_VA_PARITY_MASK		(0x00000200U)
 
 /* Invalid value for PDump block number */
 #define PDUMP_BLOCKNUM_INVALID      IMG_UINT32_MAX
@@ -102,6 +112,7 @@ typedef enum _PDUMP_TRANSITION_EVENT_
 	PDUMP_TRANSITION_EVENT_BLOCK_FINISHED,    /* Block mode event, current PDump-block has finished */
 	PDUMP_TRANSITION_EVENT_BLOCK_STARTED,     /* Block mode event, new PDump-block has started */
 	PDUMP_TRANSITION_EVENT_RANGE_ENTERED,     /* Transition into capture range */
+	PDUMP_TRANSITION_EVENT_RANGE_APPEND,      /* Append to an already entered capture range */
 	PDUMP_TRANSITION_EVENT_RANGE_EXITED,      /* Transition out of capture range */
 } PDUMP_TRANSITION_EVENT;
 
@@ -213,6 +224,7 @@ typedef PVRSRV_ERROR (*PFN_PDUMP_TRANSITION_FENCE_SYNC)(void *pvData, PDUMP_TRAN
 /* Shared across pdump_x files */
 PVRSRV_ERROR PDumpInitCommon(void);
 void PDumpDeInitCommon(void);
+PVRSRV_ERROR PDumpValidateUMFlags(PDUMP_FLAGS_T uiFlags);
 PVRSRV_ERROR PDumpReady(void);
 void PDumpGetParameterZeroPageInfo(PDUMP_FILEOFFSET_T *puiZeroPageOffset,
                                    size_t *puiZeroPageSize,
@@ -226,8 +238,8 @@ PVRSRV_ERROR PDumpSetFrameKM(CONNECTION_DATA *psConnection,
                              PVRSRV_DEVICE_NODE *psDeviceNode,
                              IMG_UINT32 ui32Frame);
 PVRSRV_ERROR PDumpGetFrameKM(CONNECTION_DATA *psConnection,
-                             PVRSRV_DEVICE_NODE * psDeviceNode,
-                             IMG_UINT32* pui32Frame);
+                             PVRSRV_DEVICE_NODE *psDeviceNode,
+                             IMG_UINT32 *pui32Frame);
 PVRSRV_ERROR PDumpCommentKM(CONNECTION_DATA *psConnection,
                             PVRSRV_DEVICE_NODE *psDeviceNode,
                             IMG_UINT32 ui32CommentSize,
@@ -240,7 +252,8 @@ PVRSRV_ERROR PDumpSetDefaultCaptureParamsKM(CONNECTION_DATA *psConnection,
                                             IMG_UINT32 ui32Start,
                                             IMG_UINT32 ui32End,
                                             IMG_UINT32 ui32Interval,
-                                            IMG_UINT32 ui32MaxParamFileSize);
+                                            IMG_UINT32 ui32MaxParamFileSize,
+                                            IMG_UINT32 ui32AutoTermTimeout);
 
 
 PVRSRV_ERROR PDumpReg32(PVRSRV_DEVICE_NODE *psDeviceNode,
@@ -641,13 +654,15 @@ PDumpWriteSymbAddress(PVRSRV_DEVICE_NODE *psDeviceNode,
 
 /* Register the connection with the PDump subsystem */
 PVRSRV_ERROR
-PDumpRegisterConnection(void *hSyncPrivData,
+PDumpRegisterConnection(PVRSRV_DEVICE_NODE *psDeviceNode,
+                        void *hSyncPrivData,
                         PFN_PDUMP_SYNCBLOCKS pfnPDumpSyncBlocks,
                         PDUMP_CONNECTION_DATA **ppsPDumpConnectionData);
 
 /* Unregister the connection with the PDump subsystem */
 void
-PDumpUnregisterConnection(PDUMP_CONNECTION_DATA *psPDumpConnectionData);
+PDumpUnregisterConnection(PVRSRV_DEVICE_NODE *psDeviceNode,
+                          PDUMP_CONNECTION_DATA *psPDumpConnectionData);
 
 /* Register for notification of PDump Transition into/out of capture range */
 PVRSRV_ERROR
@@ -813,10 +828,11 @@ PDumpStopInitPhase(PVRSRV_DEVICE_NODE *psDeviceNode)
 #endif
 static INLINE PVRSRV_ERROR
 PDumpSetFrameKM(CONNECTION_DATA *psConnection,
-                PVRSRV_DEVICE_NODE *psDevNode,
+                PVRSRV_DEVICE_NODE *psDeviceNode,
                 IMG_UINT32 ui32Frame)
 {
 	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
 	PVR_UNREFERENCED_PARAMETER(ui32Frame);
 	return PVRSRV_OK;
 }
@@ -827,9 +843,10 @@ PDumpSetFrameKM(CONNECTION_DATA *psConnection,
 static INLINE PVRSRV_ERROR
 PDumpGetFrameKM(CONNECTION_DATA *psConnection,
                 PVRSRV_DEVICE_NODE *psDeviceNode,
-                IMG_UINT32* pui32Frame)
+                IMG_UINT32 *pui32Frame)
 {
 	PVR_UNREFERENCED_PARAMETER(psConnection);
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
 	PVR_UNREFERENCED_PARAMETER(pui32Frame);
 	return PVRSRV_OK;
 }
@@ -863,7 +880,8 @@ PDumpSetDefaultCaptureParamsKM(CONNECTION_DATA *psConnection,
                                IMG_UINT32 ui32Start,
                                IMG_UINT32 ui32End,
                                IMG_UINT32 ui32Interval,
-                               IMG_UINT32 ui32MaxParamFileSize)
+                               IMG_UINT32 ui32MaxParamFileSize,
+                               IMG_UINT32 ui32AutoTermTimeout)
 {
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
@@ -872,6 +890,7 @@ PDumpSetDefaultCaptureParamsKM(CONNECTION_DATA *psConnection,
 	PVR_UNREFERENCED_PARAMETER(ui32End);
 	PVR_UNREFERENCED_PARAMETER(ui32Interval);
 	PVR_UNREFERENCED_PARAMETER(ui32MaxParamFileSize);
+	PVR_UNREFERENCED_PARAMETER(ui32AutoTermTimeout);
 
 	return PVRSRV_OK;
 }
@@ -1011,10 +1030,12 @@ PDumpDataDescriptor(PVRSRV_DEVICE_NODE *psDeviceNode,
 #pragma inline(PDumpRegisterConnection)
 #endif
 static INLINE PVRSRV_ERROR
-PDumpRegisterConnection(void *hSyncPrivData,
+PDumpRegisterConnection(PVRSRV_DEVICE_NODE *psDeviceNode,
+                        void *hSyncPrivData,
                         PFN_PDUMP_SYNCBLOCKS pfnPDumpSyncBlocks,
                         PDUMP_CONNECTION_DATA **ppsPDumpConnectionData)
 {
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
 	PVR_UNREFERENCED_PARAMETER(hSyncPrivData);
 	PVR_UNREFERENCED_PARAMETER(pfnPDumpSyncBlocks);
 	PVR_UNREFERENCED_PARAMETER(ppsPDumpConnectionData);
@@ -1026,8 +1047,10 @@ PDumpRegisterConnection(void *hSyncPrivData,
 #pragma inline(PDumpUnregisterConnection)
 #endif
 static INLINE void
-PDumpUnregisterConnection(PDUMP_CONNECTION_DATA *psPDumpConnectionData)
+PDumpUnregisterConnection(PVRSRV_DEVICE_NODE *psDeviceNode,
+                          PDUMP_CONNECTION_DATA *psPDumpConnectionData)
 {
+	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
 	PVR_UNREFERENCED_PARAMETER(psPDumpConnectionData);
 }
 

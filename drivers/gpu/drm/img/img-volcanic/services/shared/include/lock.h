@@ -48,11 +48,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * with macros. This allows us to use the kernel lockdep feature for lock
  * debugging. */
 #include "lock_types.h"
+#include "pvr_debug.h"
 
 #if defined(__linux__) && defined(__KERNEL__)
 
 #include "allocmem.h"
 #include <linux/atomic.h>
+#include <linux/version.h>
 
 #define OSLockCreateNoStats(phLock) ({ \
 	PVRSRV_ERROR e = PVRSRV_ERROR_OUT_OF_MEMORY; \
@@ -74,6 +76,16 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define OSLockIsLocked(hLock) ((mutex_is_locked((hLock)) == 1) ? IMG_TRUE : IMG_FALSE)
 #define OSTryLockAcquire(hLock) ((mutex_trylock(hLock) == 1) ? IMG_TRUE : IMG_FALSE)
 
+#if defined(DEBUG)
+#if defined(CONFIG_LOCKDEP)
+#define OSLockHeldAssert(hLock) ({ lockdep_assert_held((hLock)); })
+#else
+#define OSLockHeldAssert(hLock) ({ PVR_ASSERT(OSLockIsLocked((hLock)) == IMG_TRUE); })
+#endif
+#else
+#define OSLockHeldAssert(hLock)
+#endif
+
 #define OSSpinLockCreate(_ppsLock) ({ \
 	PVRSRV_ERROR e = PVRSRV_ERROR_OUT_OF_MEMORY; \
 	*(_ppsLock) = OSAllocMem(sizeof(spinlock_t)); \
@@ -90,7 +102,7 @@ typedef unsigned long OS_SPINLOCK_FLAGS;
 #define OSAtomicWrite(pCounter, i)	atomic_set(pCounter, i)
 
 /* The following atomic operations, in addition to being SMP-safe, also
-   imply a memory barrier around the operation  */
+   imply a memory barrier around the operation */
 #define OSAtomicIncrement(pCounter) atomic_inc_return(pCounter)
 #define OSAtomicDecrement(pCounter) atomic_dec_return(pCounter)
 #define OSAtomicCompareExchange(pCounter, oldv, newv) atomic_cmpxchg(pCounter,oldv,newv)
@@ -114,7 +126,11 @@ static inline IMG_INT OSAtomicOr(ATOMIC_T *pCounter, IMG_INT iVal)
 }
 
 #define OSAtomicAdd(pCounter, incr) atomic_add_return(incr,pCounter)
-#define OSAtomicAddUnless(pCounter, incr, test) atomic_add_unless(pCounter, (incr), (test))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+#define OSAtomicAddUnless(pCounter, incr, test) atomic_fetch_add_unless(pCounter, (incr), (test))
+#else
+#define OSAtomicAddUnless(pCounter, incr, test) __atomic_add_unless(pCounter,incr,test)
+#endif
 
 #define OSAtomicSubtract(pCounter, incr) atomic_add_return(-(incr),pCounter)
 #define OSAtomicSubtractUnless(pCounter, incr, test) OSAtomicAddUnless(pCounter, -(incr), (test))
@@ -136,7 +152,7 @@ static inline IMG_INT OSAtomicOr(ATOMIC_T *pCounter, IMG_INT iVal)
  */ /**************************************************************************/
 IMG_INTERNAL
 PVRSRV_ERROR OSLockCreate(POS_LOCK *phLock);
-#if defined(INTEGRITY_OS)
+#if defined(INTEGRITY_OS) || defined(__QNXNTO__)
 #define OSLockCreateNoStats OSLockCreate
 #endif
 
@@ -149,7 +165,7 @@ PVRSRV_ERROR OSLockCreate(POS_LOCK *phLock);
 IMG_INTERNAL
 void OSLockDestroy(POS_LOCK hLock);
 
-#if defined(INTEGRITY_OS)
+#if defined(INTEGRITY_OS) || defined(__QNXNTO__)
 #define OSLockDestroyNoStats OSLockDestroy
 #endif
 /**************************************************************************/ /*!
@@ -210,6 +226,8 @@ void OSLockRelease(POS_LOCK hLock);
  */ /**************************************************************************/
 IMG_INTERNAL
 IMG_BOOL OSLockIsLocked(POS_LOCK hLock);
+
+#define OSLockHeldAssert(hLock) PVR_ASSERT(OSLockIsLocked((hLock)) == IMG_TRUE)
 
 #if defined(__linux__)
 
@@ -280,7 +298,7 @@ IMG_INTERNAL
 void OSAtomicWrite(ATOMIC_T *pCounter, IMG_INT32 v);
 
 /* For the following atomic operations, in addition to being SMP-safe,
-   should also  have a memory barrier around each operation  */
+   should also  have a memory barrier around each operation */
 /*************************************************************************/ /*!
 @Function       OSAtomicIncrement
 @Description    Increment the value of a variable atomically.
@@ -428,4 +446,82 @@ typedef unsigned long OS_SPINLOCK_FLAGS;
 #endif /* defined(__linux__) */
 #endif /* defined(__linux__) && defined(__KERNEL__) */
 
-#endif	/* LOCK_H */
+static inline PVRSRV_ERROR OSAtomicAddUnlessOverflow(ATOMIC_T *pCounter, IMG_INT iAdd, IMG_INT iMax)
+{
+	IMG_INT iCurrent;
+	IMG_INT iOld, iNew;
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
+	/* Should be using subtract function */
+	if (iAdd <= 0)
+	{
+		PVR_ASSERT(!"Attempt to add negative number, rejecting.");
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	iCurrent = OSAtomicRead(pCounter);
+
+	do
+	{
+		iOld = iCurrent;
+#if defined(__GNUC__) || defined(__clang__)
+		if (iAdd > (iMax - iCurrent) || __builtin_sadd_overflow(iCurrent, iAdd, &iNew))
+		{
+			/* We would overflow so return error and do nothing */
+			return PVRSRV_ERROR_ATOMIC_OVERFLOW;
+		}
+#else
+		if (iAdd > (iMax - iCurrent) || iAdd > (IMG_INT_MAX - iCurrent))
+		{
+			/* We would overflow so return error and do nothing */
+			return PVRSRV_ERROR_ATOMIC_OVERFLOW;
+		}
+		iNew = iCurrent + iAdd;
+#endif
+		iCurrent = OSAtomicCompareExchange(pCounter, iOld, iNew);
+	}
+	while (iOld != iCurrent);
+
+	return eError;
+}
+
+static inline PVRSRV_ERROR OSAtomicSubtractUnlessUnderflow(ATOMIC_T *pCounter, IMG_INT iSub, IMG_INT iMin)
+{
+	IMG_INT iCurrent;
+	IMG_INT iOld, iNew;
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
+	/* Should be using add function */
+	if (iSub <= 0)
+	{
+		PVR_ASSERT(!"Attempt to subtract negative number, rejecting.");
+		return PVRSRV_ERROR_INVALID_PARAMS;
+	}
+
+	iCurrent = OSAtomicRead(pCounter);
+
+	do
+	{
+		iOld = iCurrent;
+#if defined(__GNUC__) || defined(__clang__)
+		if (iSub < (iMin + iCurrent) || __builtin_ssub_overflow(iCurrent, iSub, &iNew))
+		{
+			/* We would underflow so return error and do nothing */
+			return PVRSRV_ERROR_ATOMIC_UNDERFLOW;
+		}
+#else
+		if (iCurrent < (iMin + iSub) || iCurrent < (IMG_INT_MIN + iSub))
+		{
+			/* We would underflow so return error and do nothing */
+			return PVRSRV_ERROR_ATOMIC_UNDERFLOW;
+		}
+		iNew = iCurrent - iSub;
+#endif
+		iCurrent = OSAtomicCompareExchange(pCounter, iOld, iNew);
+	}
+	while (iOld != iCurrent);
+
+	return eError;
+}
+
+#endif /* LOCK_H */

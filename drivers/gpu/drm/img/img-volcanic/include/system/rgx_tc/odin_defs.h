@@ -46,6 +46,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #define PCI_VENDOR_ID_ODIN                  (0x1AEE)
 #define DEVICE_ID_ODIN                      (0x1010)
+#define DEVICE_ID_VALI                      (0x2010)
 #define DEVICE_ID_TBA                       (0x1CF2)
 
 /* PCI BAR 0 contains the PDP regs and the Odin system regs */
@@ -72,7 +73,14 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 /* PCI BAR 2 contains the Device Under Test SOCIF 64MB region */
 #define ODN_DUT_SOCIF_BAR                   2
 #define ODN_DUT_SOCIF_OFFSET                0x000000000
+
+#if defined(RGX_NUM_DRIVERS_SUPPORTED) && (RGX_NUM_DRIVERS_SUPPORTED > 1)
+/* Reserve only the strictly required register range for each OSID */
+#define ODN_DUT_SOCIF_SIZE                  0x000010000 /* 64k */
+#else
+/* Grant the driver access to the entire register IO range */
 #define ODN_DUT_SOCIF_SIZE                  0x004000000 /* 64MB */
+#endif
 
 /* PCI BAR 4 contains the on-board 1GB DDR memory */
 #define ODN_DDR_BAR                         4
@@ -287,6 +295,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define ODN_INTERRUPT_ENABLE_CDMA2          (1 << (ODN_INTERRUPT_ENABLE_CDMA_SHIFT + 1))
 #define ODN_INTERRUPT_STATUS_CDMA2          (1 << (ODN_INTERRUPT_STATUS_CDMA_SHIFT + 1))
 #define ODN_INTERRUPT_CLEAR_CDMA2           (1 << (ODN_INTERRUPT_CLR_CDMA_SHIFT + 1))
+
+#define ODN_INTERRUPT_ENABLE_OSID(n)        (1 << (ODN_INTERRUPT_ENABLE_OS_IRQ_SHIFT + (n)))
+#define ODN_INTERRUPT_STATUS_OSID(n)        (1 << (ODN_INTERRUPT_STATUS_OS_IRQ_SHIFT + (n)))
+#define ODN_INTERRUPT_CLEAR_OSID(n)         (1 << (ODN_INTERRUPT_CLR_OS_IRQ_SHIFT + (n)))
 
 /*
    Other defines

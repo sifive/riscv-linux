@@ -66,21 +66,6 @@ PVRSRV_ERROR PVRSRVPDumpSignatureBufferKM(CONNECTION_DATA * psConnection,
                                           PVRSRV_DEVICE_NODE * psDeviceNode,
                                           IMG_UINT32 ui32PDumpFlags);
 
-#if defined(SUPPORT_VALIDATION)
-/*!
-*******************************************************************************
-
- @Function	PVRSRVPDumpComputeCRCSignatureCheckKM
-
- @Description
-
- @Return   PVRSRV_ERROR
-
-******************************************************************************/
-PVRSRV_ERROR PVRSRVPDumpComputeCRCSignatureCheckKM(CONNECTION_DATA * psConnection,
-                                                   PVRSRV_DEVICE_NODE * psDeviceNode,
-                                                   IMG_UINT32 ui32PDumpFlags);
-#endif
 
 /*!
 *******************************************************************************

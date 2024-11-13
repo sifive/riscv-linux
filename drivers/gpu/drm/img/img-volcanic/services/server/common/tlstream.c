@@ -49,6 +49,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "allocmem.h"
 #include "devicemem.h"
 #include "pvrsrv_error.h"
+#include "sysinfo.h"
 #include "osfunc.h"
 #include "log2.h"
 
@@ -57,7 +58,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pvrsrv.h"
 
-#define EVENT_OBJECT_TIMEOUT_US 1000000ULL
+#if !defined(EVENT_OBJECT_TIMEOUT_US)
+#error EVENT_OBJECT_TIMEOUT_US should be defined sysinfo.h
+#endif
+
 #define READ_PENDING_TIMEOUT_US 100000ULL
 
 /*! Compute maximum TL packet size for this stream. Max packet size will be
@@ -155,7 +159,8 @@ PVRSRV_ERROR TLAllocSharedMemIfNull(IMG_HANDLE hStream)
 	                                    PVRSRV_MEMALLOCFLAG_GPU_READABLE |
 	                                    PVRSRV_MEMALLOCFLAG_CPU_UNCACHED_WC |
 	                                    PVRSRV_MEMALLOCFLAG_KERNEL_CPU_MAPPABLE |
-	                                    PVRSRV_MEMALLOCFLAG_PHYS_HEAP_HINT(CPU_LOCAL); /* TL for now is only used by host driver, so cpulocal mem suffices */
+	                                    PVRSRV_MEMALLOCFLAG_PHYS_HEAP_HINT(CPU_LOCAL) |  /* TL for now is only used by host driver, so cpulocal mem suffices */
+	                                    PVRSRV_MEMALLOCFLAG_ZERO_ON_ALLOC;
 
 	/* Exit if memory has already been allocated. */
 	if (psStream->pbyBuffer != NULL)
@@ -163,7 +168,6 @@ PVRSRV_ERROR TLAllocSharedMemIfNull(IMG_HANDLE hStream)
 
 	OSSNPrintf(pszBufferLabel, sizeof(pszBufferLabel), "TLStreamBuf-%s",
 	           psStream->szName);
-
 
 	/* Use HostMemDeviceNode instead of psStream->psDevNode to benefit from faster
 	 * accesses to CPU local memory. When the framework to access CPU_LOCAL device
@@ -225,6 +229,8 @@ TLStreamCreate(IMG_HANDLE *phStream,
                IMG_UINT32 ui32StreamFlags,
                TL_STREAM_ONREADEROPENCB pfOnReaderOpenCB,
                void *pvOnReaderOpenUD,
+               TL_STREAM_ONREADERCLOSECB pfOnReaderCloseCB,
+               void *pvOnReaderCloseUD,
                TL_STREAM_SOURCECB pfProducerCB,
                void *pvProducerUD)
 {
@@ -273,7 +279,7 @@ TLStreamCreate(IMG_HANDLE *phStream,
 		goto e0;
 	}
 
-	OSStringLCopy(psTmp->szName, szStreamName, PRVSRVTL_MAX_STREAM_NAME_SIZE);
+	OSStringSafeCopy(psTmp->szName, szStreamName, PRVSRVTL_MAX_STREAM_NAME_SIZE);
 
 	if (ui32StreamFlags & TL_FLAG_FORCE_FLUSH)
 	{
@@ -306,6 +312,8 @@ TLStreamCreate(IMG_HANDLE *phStream,
 
 	psTmp->pfOnReaderOpenCallback = pfOnReaderOpenCB;
 	psTmp->pvOnReaderOpenUserData = pvOnReaderOpenUD;
+	psTmp->pfOnReaderCloseCallback = pfOnReaderCloseCB;
+	psTmp->pvOnReaderCloseUserData = pvOnReaderCloseUD;
 	/* Remember producer supplied CB and data for later */
 	psTmp->pfProducerCallback = (void(*)(void))pfProducerCB;
 	psTmp->pvProducerUserData = pvProducerUD;
@@ -394,6 +402,8 @@ e0:
 void TLStreamReset(IMG_HANDLE hStream)
 {
 	PTL_STREAM psStream = (PTL_STREAM) hStream;
+	IMG_HANDLE hEventWaitForWriterToComplete;
+	PVRSRV_ERROR eError;
 
 	PVR_ASSERT(psStream != NULL);
 
@@ -401,20 +411,25 @@ void TLStreamReset(IMG_HANDLE hStream)
 
 	while (psStream->ui32Pending != NOTHING_PENDING)
 	{
-		PVRSRV_ERROR eError;
-
 		/* We're in the middle of a write so we cannot reset the stream.
 		 * We are going to wait until the data is committed. Release lock while
 		 * we're here. */
 		OSLockRelease(psStream->hStreamWLock);
 
+		eError = OSEventObjectOpen(psStream->psNode->hReadEventObj,
+		                           &hEventWaitForWriterToComplete);
+		PVR_LOG_RETURN_VOID_IF_ERROR(eError, "OSEventObjectOpen");
+
 		/* Event when psStream->bNoSignalOnCommit is set we can still use
 		 * the timeout capability of event object API (time in us). */
-		eError = OSEventObjectWaitTimeout(psStream->psNode->hReadEventObj, 100);
+		eError = OSEventObjectWaitTimeout(hEventWaitForWriterToComplete, 100);
 		if (eError != PVRSRV_ERROR_TIMEOUT && eError != PVRSRV_OK)
 		{
-			PVR_LOG_RETURN_VOID_IF_ERROR(eError, "OSEventObjectWaitTimeout");
+			PVR_LOG_GOTO_IF_ERROR(eError, "OSEventObjectWaitTimeout", TimeoutError);
 		}
+
+		eError = OSEventObjectClose(hEventWaitForWriterToComplete);
+		PVR_LOG_RETURN_VOID_IF_ERROR(eError, "OSEventObjectClose");
 
 		OSLockAcquire(psStream->hStreamWLock);
 
@@ -431,6 +446,12 @@ void TLStreamReset(IMG_HANDLE hStream)
 	/* we know that ui32Pending already has correct value (no need to set) */
 
 	OSLockRelease(psStream->hStreamWLock);
+
+	return;
+
+TimeoutError:
+	eError = OSEventObjectClose(hEventWaitForWriterToComplete);
+	PVR_LOG_IF_ERROR(eError, "OSEventObjectClose");
 }
 
 PVRSRV_ERROR
@@ -1240,7 +1261,7 @@ TLStreamMarkEOS(IMG_HANDLE psStream, IMG_BOOL bRemoveOld)
 	}
 	else
 	{
-	eError = DoTLStreamReserve(psStream, &pData, 0, 0, PVRSRVTL_PACKETTYPE_MARKER_EOS, NULL, NULL);
+		eError = DoTLStreamReserve(psStream, &pData, 0, 0, PVRSRVTL_PACKETTYPE_MARKER_EOS, NULL, NULL);
 	}
 
 	if (PVRSRV_OK != eError)
@@ -1622,4 +1643,44 @@ TLStreamGetBufferPointer(PTL_STREAM psStream)
 	PVR_ASSERT(psStream);
 
 	PVR_DPF_RETURN_VAL(psStream->psStreamMemDesc);
+}
+
+/*
+ * Determine the maximum transfer size which will fit into the specified
+ * L2 consumer stream.
+ * This is a point-in-time snapshot which compares the given requested transfer
+ * size and returns the minimum of that vs the available buffer space within
+ * the L2 stream. This is the largest amount of data that can be successfully
+ * copied in the stream without truncation occurring.
+ * Worst-case scenario is that we copy fewer bytes than the maximum
+ * actually available, but we will never copy too much data.
+ */
+IMG_UINT32
+TLStreamGetMaxTransfer(IMG_UINT32 uiXferSize, IMG_HANDLE hConsumerStream)
+{
+	PTL_STREAM  psConsumer = (PTL_STREAM)hConsumerStream;
+	IMG_UINT32  ui32MaxTransfer = 0U;
+
+	IMG_UINT32  ui32Xfer;
+
+	/* Local copies */
+	IMG_UINT32	ui32Read = psConsumer->ui32Read;
+	IMG_UINT32	ui32Write = psConsumer->ui32Write;
+
+	if (ui32Write >= ui32Read)
+	{
+		/* Can transfer Write .. End-of-buffer + Read bytes at start */
+		ui32Xfer = psConsumer->ui32Size - ui32Write + ui32Read;
+	}
+	else
+	{
+		/* Can transfer Read - Write bytes maximum */
+		ui32Xfer = ui32Read - ui32Write;
+	}
+
+	PVR_ASSERT(ui32Xfer <= psConsumer->ui32Size);
+
+	ui32MaxTransfer = MIN(ui32Xfer, uiXferSize);
+
+	return ui32MaxTransfer;
 }

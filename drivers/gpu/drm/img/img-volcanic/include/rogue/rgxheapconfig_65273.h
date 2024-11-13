@@ -44,17 +44,22 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef RGXHEAPCONFIG_65273_H
 #define RGXHEAPCONFIG_65273_H
 
+#define RGX_HEAP_SIZE_64KiB      IMG_UINT64_C(0x0000010000)
+
 /*
 	RGX Device Virtual Address Space Definitions
 
-	This file defines the RGX virtual address replacement heaps that are used in
-	in application memory contexts for BRN_65273.
+	This file defines the RGX virtual address replacement heaps that are used
+	in application memory contexts when BRN_65273 is present. The addresses
+	used are specifically crafted to avoid the BRN - under no circumstances
+	can they be moved, altered in size or additional heaps added.
 
 	The heaps defined for BRN_65273 _replace_ the non-BRN equivalents when this
 	BRN WA is active on affected cores. This is different to most other BRNs
 	and hence has been given its own header file for clarity. The SVM_HEAP is
 	also disabled and unavailable when the WA is active. This is reflected
 	in the device connection capability bits returned to user space.
+
 	NOTE: All regular heaps in rgxheapconfig.h greater than 1GB require
 	      a BRN_65273 WA heap.
 

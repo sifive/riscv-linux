@@ -94,6 +94,8 @@ typedef struct _TL_STREAM_
 
 	void                    (*pfOnReaderOpenCallback)(void *pvArg); /*!< Optional on reader connect callback */
 	void                    *pvOnReaderOpenUserData;                /*!< On reader connect user data */
+	void                    (*pfOnReaderCloseCallback)(void *pvArg);/*!< Optional on reader disconnect callback */
+	void                    *pvOnReaderCloseUserData;               /*!< On reader disconnect user data */
 	void                    (*pfProducerCallback)(void);            /*!< Optional producer callback of type TL_STREAM_SOURCECB */
 	void                    *pvProducerUserData;                    /*!< Producer callback user data */
 

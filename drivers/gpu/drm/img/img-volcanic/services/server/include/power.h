@@ -66,18 +66,60 @@ typedef IMG_BOOL (*PFN_SYS_DEV_IS_DEFAULT_STATE_OFF)(PVRSRV_POWER_DEV *psPowerDe
   Typedef for a pointer to a Function that will be called before a transition
   from one power state to another. See also PFN_POST_POWER.
  */
-typedef PVRSRV_ERROR (*PFN_PRE_POWER) (IMG_HANDLE				hDevHandle,
-									   PVRSRV_DEV_POWER_STATE	eNewPowerState,
-									   PVRSRV_DEV_POWER_STATE	eCurrentPowerState,
-									   PVRSRV_POWER_FLAGS		ePwrFlags);
+typedef PVRSRV_ERROR (*PFN_PRE_POWER)(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                      PVRSRV_DEV_POWER_STATE eNewPowerState,
+                                      PVRSRV_DEV_POWER_STATE eCurrentPowerState,
+                                      PVRSRV_POWER_FLAGS ePwrFlags);
 /*!
   Typedef for a pointer to a Function that will be called after a transition
   from one power state to another. See also PFN_PRE_POWER.
  */
-typedef PVRSRV_ERROR (*PFN_POST_POWER) (IMG_HANDLE				hDevHandle,
-										PVRSRV_DEV_POWER_STATE	eNewPowerState,
-										PVRSRV_DEV_POWER_STATE	eCurrentPowerState,
-										PVRSRV_POWER_FLAGS		ePwrFlags);
+typedef PVRSRV_ERROR (*PFN_POST_POWER)(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                       PVRSRV_DEV_POWER_STATE eNewPowerState,
+                                       PVRSRV_DEV_POWER_STATE eCurrentPowerState,
+                                       PVRSRV_POWER_FLAGS ePwrFlags);
+
+/* Clock speed handler prototypes */
+
+/*!
+  Typedef for a pointer to a Function that will be called before a transition
+  from one clock speed to another. See also PFN_POST_CLOCKSPEED_CHANGE.
+ */
+typedef PVRSRV_ERROR (*PFN_PRE_CLOCKSPEED_CHANGE)(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                                  PVRSRV_DEV_POWER_STATE eCurrentPowerState);
+
+/*!
+  Typedef for a pointer to a Function that will be called after a transition
+  from one clock speed to another. See also PFN_PRE_CLOCKSPEED_CHANGE.
+ */
+typedef PVRSRV_ERROR (*PFN_POST_CLOCKSPEED_CHANGE)(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                                   PVRSRV_DEV_POWER_STATE eCurrentPowerState);
+
+/*!
+  Typedef for a pointer to a function that will be called to transition the
+  device to a forced idle state. Used in unison with (forced) power requests,
+  DVFS and cluster count changes.
+ */
+typedef PVRSRV_ERROR (*PFN_FORCED_IDLE_REQUEST)(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                                IMG_BOOL bDeviceOffPermitted);
+
+/*!
+  Typedef for a pointer to a function that will be called to cancel a forced
+  idle state and return the firmware back to a state where the hardware can be
+  scheduled.
+ */
+typedef PVRSRV_ERROR (*PFN_FORCED_IDLE_CANCEL_REQUEST)(PPVRSRV_DEVICE_NODE psDeviceNode);
+
+/*!
+  Typedef for a pointer to a function that will be called to cancel a forced
+  idle state and return the firmware back to a state where the hardware can be
+  scheduled. This function does not wait for a response from the FW.
+ */
+typedef PVRSRV_ERROR (*PFN_FORCED_IDLE_CANCEL_REQUEST_ASYNC)(PPVRSRV_DEVICE_NODE psDeviceNode);
+
+
+typedef PVRSRV_ERROR (*PFN_GPU_UNITS_POWER_CHANGE)(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                                   IMG_UINT32 ui32SESPowerState);
 
 const char *PVRSRVSysPowerStateToString(PVRSRV_SYS_POWER_STATE eState);
 const char *PVRSRVDevPowerStateToString(PVRSRV_DEV_POWER_STATE eState);
@@ -96,7 +138,13 @@ void PVRSRVPowerLockDeInit(PPVRSRV_DEVICE_NODE psDeviceNode);
  @Return	PVRSRV_ERROR_SYSTEM_STATE_POWERED_OFF or PVRSRV_OK
 
 ******************************************************************************/
+#if defined(DEBUG)
+PVRSRV_ERROR PVRSRVPowerLock_Debug(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                   const char *pszFile, const unsigned int ui32LineNum);
+#define PVRSRVPowerLock(DEV_NODE)	PVRSRVPowerLock_Debug(DEV_NODE, __FILE__, __LINE__)
+#else
 PVRSRV_ERROR PVRSRVPowerLock(PPVRSRV_DEVICE_NODE psDeviceNode);
+#endif
 
 /*!
 ******************************************************************************
@@ -122,7 +170,32 @@ void PVRSRVPowerUnlock(PPVRSRV_DEVICE_NODE psDeviceNode);
 		PVRSRV_OK
 
 ******************************************************************************/
+#if defined(DEBUG)
+PVRSRV_ERROR PVRSRVPowerTryLock_Debug(PPVRSRV_DEVICE_NODE psDeviceNode,
+                                      const char *pszFile, const unsigned int ui32LineNum);
+#define PVRSRVPowerTryLock(DEV_NODE)	PVRSRVPowerTryLock_Debug(DEV_NODE, __FILE__, __LINE__)
+#else
 PVRSRV_ERROR PVRSRVPowerTryLock(PPVRSRV_DEVICE_NODE psDeviceNode);
+#endif
+
+/*!
+******************************************************************************
+
+ @Function	PVRSRVPowerTryLockWaitForTimeout
+
+ @Description	Try to obtain the mutex for power transitions. Only allowed when
+		system power is on. The call blocks until either the lock is acquired,
+		or the timeout is reached.
+
+		*** Debug only. DO NOT use in core GPU functions which cannot fail. ***
+		If the power lock cannot be taken the device may be powered down at
+		any time in another worker thread.
+
+ @Return	PVRSRV_ERROR_RETRY or PVRSRV_ERROR_SYSTEM_STATE_POWERED_OFF or
+		PVRSRV_OK
+
+******************************************************************************/
+PVRSRV_ERROR PVRSRVPowerTryLockWaitForTimeout(PPVRSRV_DEVICE_NODE psDeviceNode);
 
 /*!
 ******************************************************************************
@@ -230,21 +303,22 @@ PVRSRV_ERROR PVRSRVSetSystemPowerState(PVRSRV_DEVICE_CONFIG * psDeviceConfig,
  @Input         pfnDevicePrePower : regular device pre power callback
  @Input         pfnDevicePostPower : regular device post power callback
  @Input         pfnSystemPrePower : regular system pre power callback
- @Input         pfnDevicePostPower : regular system post power callback
- @Input         pfnSystemPrePower : regular device pre power callback
  @Input         pfnSystemPostPower : regular device pre power callback
  @Input         pfnForcedIdleRequest : forced idle request callback
  @Input         pfnForcedIdleCancelRequest : forced idle request cancel callback
+ @Input         pfnForcedIdleCancelRequestAsync : forced idle request cancel callback,
+                                                  doesn't wait for response.
 
 ******************************************************************************/
 void PVRSRVSetPowerCallbacks(PPVRSRV_DEVICE_NODE				psDeviceNode,
 							 PVRSRV_POWER_DEV					*psPowerDevice,
 							 PFN_PRE_POWER						pfnDevicePrePower,
-							 PFN_POST_POWER					    pfnDevicePostPower,
-							 PFN_SYS_PRE_POWER				    pfnSystemPrePower,
-							 PFN_SYS_POST_POWER			        pfnSystemPostPower,
+							 PFN_POST_POWER						pfnDevicePostPower,
+							 PFN_SYS_PRE_POWER					pfnSystemPrePower,
+							 PFN_SYS_POST_POWER					pfnSystemPostPower,
 							 PFN_FORCED_IDLE_REQUEST			pfnForcedIdleRequest,
-							 PFN_FORCED_IDLE_CANCEL_REQUEST	pfnForcedIdleCancelRequest);
+							 PFN_FORCED_IDLE_CANCEL_REQUEST		pfnForcedIdleCancelRequest,
+							 PFN_FORCED_IDLE_CANCEL_REQUEST_ASYNC pfnForcedIdleCancelRequestAsync);
 
 /* Type PFN_DC_REGISTER_POWER */
 PVRSRV_ERROR PVRSRVRegisterPowerDevice(PPVRSRV_DEVICE_NODE				psDeviceNode,
@@ -256,6 +330,7 @@ PVRSRV_ERROR PVRSRVRegisterPowerDevice(PPVRSRV_DEVICE_NODE				psDeviceNode,
 									   PFN_POST_CLOCKSPEED_CHANGE		pfnPostClockSpeedChange,
 									   PFN_FORCED_IDLE_REQUEST			pfnForcedIdleRequest,
 									   PFN_FORCED_IDLE_CANCEL_REQUEST	pfnForcedIdleCancelRequest,
+									   PFN_FORCED_IDLE_CANCEL_REQUEST_ASYNC pfnForcedIdleCancelRequestAsync,
 									   PFN_GPU_UNITS_POWER_CHANGE		pfnGPUUnitsPowerChange,
 									   IMG_HANDLE						hDevCookie,
 									   PVRSRV_DEV_POWER_STATE			eCurrentPowerState,
@@ -310,6 +385,42 @@ PVRSRV_ERROR PVRSRVGetDevicePowerState(PCPVRSRV_DEVICE_NODE psDeviceNode,
 ******************************************************************************/
 IMG_BOOL PVRSRVIsDevicePowered(PPVRSRV_DEVICE_NODE psDeviceNode);
 
+/*!
+******************************************************************************
+
+ @Function	PVRSRVGetSystemPowerState
+
+ @Description
+
+	Return the system power state
+
+ @Input		psDeviceNode : Device node
+ @Output	peCurrentSysPowerState : Current power state
+
+ @Return	PVRSRV_ERROR_UNKNOWN_POWER_STATE if device could not be found.
+            PVRSRV_OK otherwise.
+
+******************************************************************************/
+PVRSRV_ERROR PVRSRVGetSystemPowerState(PPVRSRV_DEVICE_NODE psDeviceNode,
+	                                   PPVRSRV_SYS_POWER_STATE peCurrentSysPowerState);
+
+/*!
+******************************************************************************
+
+ @Function	PVRSRVIsSystemPowered
+
+ @Description
+
+	Whether the system layer is powered, for ensuring the RGX regbank is powered
+	during initial GPU driver configuration.
+
+ @Input		psDeviceNode : Device node
+
+ @Return	IMG_BOOL
+
+******************************************************************************/
+IMG_BOOL PVRSRVIsSystemPowered(PPVRSRV_DEVICE_NODE psDeviceNode);
+
 /**************************************************************************/ /*!
 @Function       PVRSRVDevicePreClockSpeedChange
 
@@ -345,7 +456,7 @@ PVRSRV_ERROR PVRSRVDevicePreClockSpeedChange(PPVRSRV_DEVICE_NODE psDeviceNode,
 @Description    This function is called after a voltage/frequency change has
                 been made to the GPU HW following a call to
                 PVRSRVDevicePreClockSpeedChange().
-                Before calling this function the caller must ensure the system
+                Before calling this function, the caller must ensure the system
                 data RGX_DATA->RGX_TIMING_INFORMATION->ui32CoreClockSpeed has
                 been updated with the new frequency set, measured in Hz.
                 The function informs the host driver that the DVFS change has
@@ -424,6 +535,49 @@ PVRSRV_ERROR PVRSRVDeviceIdleRequestKM(PPVRSRV_DEVICE_NODE psDeviceNode,
 
 ******************************************************************************/
 PVRSRV_ERROR PVRSRVDeviceIdleCancelRequestKM(PPVRSRV_DEVICE_NODE psDeviceNode);
+
+/*!
+******************************************************************************
+
+ @Function    PVRSRVDeviceIdleLatchedGetKM
+
+ @Description Perform device-specific processing required to force the device
+              idle. The device power-lock might be temporarily released (and
+              again re-acquired) during the course of this call, hence to
+              maintain lock-ordering power-lock should be the last acquired
+              lock before calling this function. Latched based on power
+              device internal refcount. Only actions idle on initial reference
+              increment via calling this function.
+
+ @Input       psDeviceNode         : Device node
+
+ @Return      PVRSRV_ERROR_PWLOCK_RELEASED_REACQ_FAILED
+                                     When re-acquisition of power-lock failed.
+                                     Handled internally but still represents error
+                                     occurred.
+
+              PVRSRV_OK              When idle request succeeded.
+              PVRSRV_ERROR           Other system errors.
+
+******************************************************************************/
+PVRSRV_ERROR PVRSRVDeviceIdleLatchedGetKM(PPVRSRV_DEVICE_NODE psDeviceNode);
+
+/*!
+******************************************************************************
+
+ @Function	PVRSRVDeviceIdleLatchedPutAsyncKM
+
+ @Description Perform device-specific processing required to cancel the forced idle state
+              on the device, returning to normal operation. Does not wait for FW response.
+              Latched based on power device internal refcount. Only actions idle cancel
+              once final reference is dropped via calling this function.
+
+ @Input		psDeviceNode : Device node
+
+ @Return	PVRSRV_ERROR
+
+******************************************************************************/
+PVRSRV_ERROR PVRSRVDeviceIdleLatchedPutAsyncKM(PPVRSRV_DEVICE_NODE psDeviceNode);
 
 /*!
 ******************************************************************************

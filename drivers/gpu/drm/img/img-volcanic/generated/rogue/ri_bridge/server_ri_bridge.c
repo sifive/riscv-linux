@@ -143,9 +143,7 @@ PVRSRVBridgeRIWriteMEMDESCEntry(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -167,7 +165,6 @@ PVRSRVBridgeRIWriteMEMDESCEntry(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psRIWriteMEMDESCEntryIN), sizeof(unsigned long));
@@ -183,7 +180,6 @@ PVRSRVBridgeRIWriteMEMDESCEntry(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -234,13 +230,13 @@ PVRSRVBridgeRIWriteMEMDESCEntry(IMG_UINT32 ui32DispatchTableEntry,
 	UnlockHandle(psConnection->psHandleBase);
 
 	psRIWriteMEMDESCEntryOUT->eError =
-	    RIWriteMEMDESCEntryKM(psPMRHandleInt,
+	    RIWriteMEMDESCEntryKM(psConnection, OSGetDevNode(psConnection),
+				  psPMRHandleInt,
 				  psRIWriteMEMDESCEntryIN->ui32TextBSize,
 				  uiTextBInt,
 				  psRIWriteMEMDESCEntryIN->ui64Offset,
 				  psRIWriteMEMDESCEntryIN->ui64Size,
-				  psRIWriteMEMDESCEntryIN->bIsImport,
-				  psRIWriteMEMDESCEntryIN->bIsSuballoc, &psRIHandleInt);
+				  psRIWriteMEMDESCEntryIN->ui64Flags, &psRIHandleInt);
 	/* Exit early if bridged call fails */
 	if (unlikely(psRIWriteMEMDESCEntryOUT->eError != PVRSRV_OK))
 	{
@@ -295,11 +291,7 @@ RIWriteMEMDESCEntry_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -333,9 +325,7 @@ PVRSRVBridgeRIWriteProcListEntry(IMG_UINT32 ui32DispatchTableEntry,
 
 	IMG_UINT32 ui32NextOffset = 0;
 	IMG_BYTE *pArrayArgsBuffer = NULL;
-#if !defined(INTEGRITY_OS)
 	IMG_BOOL bHaveEnoughSpace = IMG_FALSE;
-#endif
 
 	IMG_UINT32 ui32BufferSize = 0;
 	IMG_UINT64 ui64BufferSize =
@@ -357,7 +347,6 @@ PVRSRVBridgeRIWriteProcListEntry(IMG_UINT32 ui32DispatchTableEntry,
 
 	if (ui32BufferSize != 0)
 	{
-#if !defined(INTEGRITY_OS)
 		/* Try to use remainder of input buffer for copies if possible, word-aligned for safety. */
 		IMG_UINT32 ui32InBufferOffset =
 		    PVR_ALIGN(sizeof(*psRIWriteProcListEntryIN), sizeof(unsigned long));
@@ -373,7 +362,6 @@ PVRSRVBridgeRIWriteProcListEntry(IMG_UINT32 ui32DispatchTableEntry,
 			pArrayArgsBuffer = &pInputBuffer[ui32InBufferOffset];
 		}
 		else
-#endif
 		{
 			pArrayArgsBuffer = OSAllocMemNoStats(ui32BufferSize);
 
@@ -455,11 +443,7 @@ RIWriteProcListEntry_exit:
 		PVR_ASSERT(ui32BufferSize == ui32NextOffset);
 #endif /* PVRSRV_NEED_PVR_ASSERT */
 
-#if defined(INTEGRITY_OS)
-	if (pArrayArgsBuffer)
-#else
 	if (!bHaveEnoughSpace && pArrayArgsBuffer)
-#endif
 		OSFreeMemNoStats(pArrayArgsBuffer);
 
 	return 0;
@@ -705,31 +689,47 @@ PVRSRV_ERROR InitRIBridge(void)
 {
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIWRITEPMRENTRY,
-			      PVRSRVBridgeRIWritePMREntry, NULL);
+			      PVRSRVBridgeRIWritePMREntry, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIWRITEPMRENTRY),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIWRITEPMRENTRY));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIWRITEMEMDESCENTRY,
-			      PVRSRVBridgeRIWriteMEMDESCEntry, NULL);
+			      PVRSRVBridgeRIWriteMEMDESCEntry, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIWRITEMEMDESCENTRY),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIWRITEMEMDESCENTRY));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIWRITEPROCLISTENTRY,
-			      PVRSRVBridgeRIWriteProcListEntry, NULL);
+			      PVRSRVBridgeRIWriteProcListEntry, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIWRITEPROCLISTENTRY),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIWRITEPROCLISTENTRY));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIUPDATEMEMDESCADDR,
-			      PVRSRVBridgeRIUpdateMEMDESCAddr, NULL);
+			      PVRSRVBridgeRIUpdateMEMDESCAddr, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIUPDATEMEMDESCADDR),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIUPDATEMEMDESCADDR));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIDELETEMEMDESCENTRY,
-			      PVRSRVBridgeRIDeleteMEMDESCEntry, NULL);
+			      PVRSRVBridgeRIDeleteMEMDESCEntry, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIDELETEMEMDESCENTRY),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIDELETEMEMDESCENTRY));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIDUMPLIST, PVRSRVBridgeRIDumpList,
-			      NULL);
+			      NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIDUMPLIST),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIDUMPLIST));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIDUMPALL, PVRSRVBridgeRIDumpAll,
-			      NULL);
+			      NULL, 0, sizeof(PVRSRV_BRIDGE_OUT_RIDUMPALL));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIDUMPPROCESS,
-			      PVRSRVBridgeRIDumpProcess, NULL);
+			      PVRSRVBridgeRIDumpProcess, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIDUMPPROCESS),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIDUMPPROCESS));
 
 	SetDispatchTableEntry(PVRSRV_BRIDGE_RI, PVRSRV_BRIDGE_RI_RIWRITEPMRENTRYWITHOWNER,
-			      PVRSRVBridgeRIWritePMREntryWithOwner, NULL);
+			      PVRSRVBridgeRIWritePMREntryWithOwner, NULL,
+			      sizeof(PVRSRV_BRIDGE_IN_RIWRITEPMRENTRYWITHOWNER),
+			      sizeof(PVRSRV_BRIDGE_OUT_RIWRITEPMRENTRYWITHOWNER));
 
 	return PVRSRV_OK;
 }

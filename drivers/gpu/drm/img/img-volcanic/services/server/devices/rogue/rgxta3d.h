@@ -52,7 +52,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "rgx_fwif_resetframework.h"
 #include "sync_server.h"
 #include "connection_server.h"
-#include "rgxdebug.h"
+#include "rgxdebug_common.h"
 #include "pvr_notifier.h"
 
 typedef struct _RGX_SERVER_RENDER_CONTEXT_ RGX_SERVER_RENDER_CONTEXT;
@@ -118,6 +118,7 @@ typedef struct _RGX_HWRTDATA_COMMON_COOKIE_
 {
 	DEVMEM_MEMDESC			*psHWRTDataCommonFwMemDesc;
 	RGXFWIF_DEV_VIRTADDR	sHWRTDataCommonFwAddr;
+	DEVMEMINT_RESERVATION	*psPMMListsReservation;
 	IMG_UINT32				ui32RefCount;
 
 } RGX_HWRTDATA_COMMON_COOKIE;
@@ -147,6 +148,8 @@ struct _RGX_FREELIST_ {
 	/* Free list PMR */
 	PMR						*psFreeListPMR;
 	IMG_DEVMEM_OFFSET_T		uiFreeListPMROffset;
+
+	DEVMEMINT_RESERVATION* psFreeListReservation;
 
 	/* Freelist config */
 	IMG_UINT32				ui32MaxFLPages;
@@ -200,11 +203,10 @@ typedef struct {
 
 	DEVMEMINT_RESERVATION	*psReservation;
 	PMR						*psPMR;
-	DEVMEMINT_MAPPING		*psMapping;
-	PVRSRV_MEMALLOCFLAGS_T	uiMapFlags;
 	IMG_UINT32				ui32ZSBufferID;
 	IMG_UINT32				ui32RefCount;
 	IMG_BOOL				bOnDemand;
+	IMG_BOOL				bIsBacked;
 
 	IMG_UINT32				ui32NumReqByApp;		/* Number of Backing Requests from Application */
 	IMG_UINT32				ui32NumReqByFW;			/* Number of Backing Requests from Firmware */
@@ -223,35 +225,65 @@ IMG_BOOL RGXDumpFreeListPageList(RGX_FREELIST *psFreeList);
 
 
 /* Create set of HWRTData(s) */
-PVRSRV_ERROR RGXCreateHWRTDataSet(CONNECTION_DATA	*psConnection,
-							   PVRSRV_DEVICE_NODE	*psDeviceNode,
-							   IMG_DEV_VIRTADDR		asVHeapTableDevVAddr[RGXMKIF_NUM_GEOMDATAS],
-							   IMG_DEV_VIRTADDR		psPMMListDevVAddr[RGXMKIF_NUM_RTDATAS],
-							   RGX_FREELIST			*apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
-							   IMG_UINT32			ui32ScreenPixelMax,
-							   IMG_UINT64			ui64MultiSampleCtl,
-							   IMG_UINT64			ui64FlippedMultiSampleCtl,
-							   IMG_UINT32			ui32TPCStride,
-							   IMG_DEV_VIRTADDR		asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
-							   IMG_UINT32			ui32TPCSize,
-							   IMG_UINT32			ui32TEScreen,
-							   IMG_UINT32			ui32TEAA,
-							   IMG_UINT32			ui32TEMTILE1,
-							   IMG_UINT32			ui32TEMTILE2,
-							   IMG_UINT32			ui32MTileStride,
-							   IMG_UINT32			ui32ISPMergeLowerX,
-							   IMG_UINT32			ui32ISPMergeLowerY,
-							   IMG_UINT32			ui32ISPMergeUpperX,
-							   IMG_UINT32			ui32ISPMergeUpperY,
-							   IMG_UINT32			ui32ISPMergeScaleX,
-							   IMG_UINT32			ui32ISPMergeScaleY,
-							   IMG_DEV_VIRTADDR		sMacrotileArrayDevVAddr[RGXMKIF_NUM_RTDATAS],
-							   IMG_DEV_VIRTADDR		sRgnHeaderDevVAddr[RGXMKIF_NUM_RTDATAS],
-							   IMG_DEV_VIRTADDR		asRTCDevVAddr[RGXMKIF_NUM_GEOMDATAS],
-							   IMG_UINT32			uiRgnHeaderSize,
-							   IMG_UINT32			ui32ISPMtileSize,
-							   IMG_UINT16			ui16MaxRTs,
-							   RGX_KM_HW_RT_DATASET	*pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS]);
+PVRSRV_ERROR RGXCreateHWRTDataSet(CONNECTION_DATA          *psConnection,
+                                  PVRSRV_DEVICE_NODE       *psDeviceNode,
+                                  IMG_DEV_VIRTADDR          asVHeapTableDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                  IMG_DEV_VIRTADDR          psPMMListDevVAddr[RGXMKIF_NUM_RTDATAS],
+                                  RGX_FREELIST	           *apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
+                                  IMG_UINT32                ui32ScreenPixelMax,
+                                  IMG_UINT64                ui64MultiSampleCtl,
+                                  IMG_UINT64                ui64FlippedMultiSampleCtl,
+                                  IMG_UINT32                ui32TPCStride,
+                                  IMG_DEV_VIRTADDR          asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                  IMG_UINT32                ui32TPCSize,
+                                  IMG_UINT32                ui32TEScreen,
+                                  IMG_UINT32                ui32TEAA,
+                                  IMG_UINT32                ui32TEMTILE1,
+                                  IMG_UINT32                ui32TEMTILE2,
+                                  IMG_UINT32                ui32MTileStride,
+                                  IMG_UINT32                ui32ISPMergeLowerX,
+                                  IMG_UINT32                ui32ISPMergeLowerY,
+                                  IMG_UINT32                ui32ISPMergeUpperX,
+                                  IMG_UINT32                ui32ISPMergeUpperY,
+                                  IMG_UINT32                ui32ISPMergeScaleX,
+                                  IMG_UINT32                ui32ISPMergeScaleY,
+                                  IMG_DEV_VIRTADDR          sMacrotileArrayDevVAddr[RGXMKIF_NUM_RTDATAS],
+                                  IMG_DEV_VIRTADDR          sRgnHeaderDevVAddr[RGXMKIF_NUM_RTDATAS],
+                                  IMG_DEV_VIRTADDR          asRTCDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                  IMG_UINT32                uiRgnHeaderSize,
+                                  IMG_UINT32                ui32ISPMtileSize,
+                                  IMG_UINT16                ui16MaxRTs,
+                                  RGX_KM_HW_RT_DATASET     *pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS]);
+
+PVRSRV_ERROR RGXCreateHWRTDataSet2(CONNECTION_DATA          *psConnection,
+                                  PVRSRV_DEVICE_NODE        *psDeviceNode,
+                                  IMG_DEV_VIRTADDR          asVHeapTableDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                  DEVMEMINT_RESERVATION     *psPMMListsReservation,
+                                  RGX_FREELIST	             *apsFreeLists[RGXMKIF_NUM_RTDATA_FREELISTS],
+                                  IMG_UINT32                ui32ScreenPixelMax,
+                                  IMG_UINT64                ui64MultiSampleCtl,
+                                  IMG_UINT64                ui64FlippedMultiSampleCtl,
+                                  IMG_UINT32                ui32TPCStride,
+                                  IMG_DEV_VIRTADDR          asTailPtrsDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                  IMG_UINT32                ui32TPCSize,
+                                  IMG_UINT32                ui32TEScreen,
+                                  IMG_UINT32                ui32TEAA,
+                                  IMG_UINT32                ui32TEMTILE1,
+                                  IMG_UINT32                ui32TEMTILE2,
+                                  IMG_UINT32                ui32MTileStride,
+                                  IMG_UINT32                ui32ISPMergeLowerX,
+                                  IMG_UINT32                ui32ISPMergeLowerY,
+                                  IMG_UINT32                ui32ISPMergeUpperX,
+                                  IMG_UINT32                ui32ISPMergeUpperY,
+                                  IMG_UINT32                ui32ISPMergeScaleX,
+                                  IMG_UINT32                ui32ISPMergeScaleY,
+                                  IMG_DEV_VIRTADDR          sMacrotileArrayDevVAddr[RGXMKIF_NUM_RTDATAS],
+                                  IMG_DEV_VIRTADDR          sRgnHeaderDevVAddr[RGXMKIF_NUM_RTDATAS],
+                                  IMG_DEV_VIRTADDR          asRTCDevVAddr[RGXMKIF_NUM_GEOMDATAS],
+                                  IMG_UINT32                uiRgnHeaderSize,
+                                  IMG_UINT32                ui32ISPMtileSize,
+                                  IMG_UINT16                ui16MaxRTs,
+                                  RGX_KM_HW_RT_DATASET     *pasKMHWRTDataSet[RGXMKIF_NUM_RTDATAS]);
 
 /* Destroy HWRTDataSet */
 PVRSRV_ERROR RGXDestroyHWRTDataSet(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet);
@@ -259,12 +291,12 @@ PVRSRV_ERROR RGXDestroyHWRTDataSet(RGX_KM_HW_RT_DATASET *psKMHWRTDataSet);
 /*
 	RGXCreateZSBufferKM
 */
-PVRSRV_ERROR RGXCreateZSBufferKM(CONNECTION_DATA			*psConnection,
-                                 PVRSRV_DEVICE_NODE			*psDeviceNode,
-                                 DEVMEMINT_RESERVATION		*psReservation,
-                                 PMR						*psPMR,
+PVRSRV_ERROR RGXCreateZSBufferKM(CONNECTION_DATA * psConnection,
+                                 PVRSRV_DEVICE_NODE	*psDeviceNode,
+                                 DEVMEMINT_RESERVATION	*psReservation,
+                                 PMR					*psPMR,
                                  PVRSRV_MEMALLOCFLAGS_T		uiMapFlags,
-                                 RGX_ZSBUFFER_DATA			**ppsZSBuffer);
+                                 RGX_ZSBUFFER_DATA **ppsZSBuffer);
 
 /*
 	RGXDestroyZSBufferKM
@@ -322,19 +354,17 @@ PVRSRV_ERROR RGXGrowFreeList(RGX_FREELIST *psFreeList,
                              PDLLIST_NODE pListHeader);
 
 /* Create free list */
-PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA		*psConnection,
-							   PVRSRV_DEVICE_NODE	*psDeviceNode,
-							   IMG_HANDLE			hMemCtxPrivData,
-							   IMG_UINT32			ui32MaxFLPages,
-							   IMG_UINT32			ui32InitFLPages,
-							   IMG_UINT32			ui32GrowFLPages,
-							   IMG_UINT32			ui32GrowParamThreshold,
-							   RGX_FREELIST			*psGlobalFreeList,
-							   IMG_BOOL				bCheckFreelist,
-							   IMG_DEV_VIRTADDR		sFreeListDevVAddr,
-							   PMR					*psFreeListPMR,
-							   IMG_DEVMEM_OFFSET_T	uiFreeListPMROffset,
-							   RGX_FREELIST			**ppsFreeList);
+PVRSRV_ERROR RGXCreateFreeList(CONNECTION_DATA      *psConnection,
+                               PVRSRV_DEVICE_NODE	*psDeviceNode,
+                               IMG_HANDLE			hMemCtxPrivData,
+                               IMG_UINT32			ui32MaxFLPages,
+                               IMG_UINT32			ui32InitFLPages,
+                               IMG_UINT32			ui32GrowFLPages,
+                               IMG_UINT32           ui32GrowParamThreshold,
+                               RGX_FREELIST			*psGlobalFreeList,
+                               IMG_BOOL				bCheckFreelist,
+                               DEVMEMINT_RESERVATION* psFreeListReservation,
+                               RGX_FREELIST			**ppsFreeList);
 
 /* Destroy free list */
 PVRSRV_ERROR RGXDestroyFreeList(RGX_FREELIST *psFreeList);
@@ -476,6 +506,14 @@ PVRSRV_ERROR PVRSRVRGXKickTA3DKM(RGX_SERVER_RENDER_CONTEXT	*psRenderContext,
 								 IMG_UINT32					ui32NumberOfIndices,
 								 IMG_UINT32					ui32NumberOfMRTs,
 								 IMG_UINT64					ui64DeadlineInus);
+
+
+PVRSRV_ERROR PVRSRVRGXSendZSStoreDisableKM(CONNECTION_DATA *psConnection,
+									PVRSRV_DEVICE_NODE * psDeviceNode,
+									RGX_SERVER_RENDER_CONTEXT *psRenderContext,
+									IMG_BOOL    bDisableDepthStore,
+									IMG_BOOL    bDisableStencilStore,
+									IMG_UINT32  ui32ExtJobRefToDisableZSStore);
 
 
 PVRSRV_ERROR PVRSRVRGXSetRenderContextPriorityKM(CONNECTION_DATA *psConnection,

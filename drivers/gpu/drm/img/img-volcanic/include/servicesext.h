@@ -105,44 +105,14 @@ typedef IMG_INT32 *PPVRSRV_DEV_POWER_STATE;	/*!< Typedef for ptr to PVRSRV_DEV_P
   Power Flags Enum
  */
 typedef IMG_UINT32 PVRSRV_POWER_FLAGS;
-#define PVRSRV_POWER_FLAGS_NONE        0U      /*!< No flags */
-#define PVRSRV_POWER_FLAGS_FORCED      1U << 0 /*!< Power the transition should not fail */
-#define PVRSRV_POWER_FLAGS_SUSPEND_REQ 1U << 1 /*!< Power transition is due to OS suspend request */
-#define PVRSRV_POWER_FLAGS_RESUME_REQ  1U << 2 /*!< Power transition is due to OS resume request */
-
-/* Clock speed handler prototypes */
-
-/*!
-  Typedef for a pointer to a Function that will be called before a transition
-  from one clock speed to another. See also PFN_POST_CLOCKSPEED_CHANGE.
- */
-typedef PVRSRV_ERROR (*PFN_PRE_CLOCKSPEED_CHANGE) (IMG_HANDLE				hDevHandle,
-												   PVRSRV_DEV_POWER_STATE	eCurrentPowerState);
-
-/*!
-  Typedef for a pointer to a Function that will be called after a transition
-  from one clock speed to another. See also PFN_PRE_CLOCKSPEED_CHANGE.
- */
-typedef PVRSRV_ERROR (*PFN_POST_CLOCKSPEED_CHANGE) (IMG_HANDLE				hDevHandle,
-													PVRSRV_DEV_POWER_STATE	eCurrentPowerState);
-
-/*!
-  Typedef for a pointer to a function that will be called to transition the
-  device to a forced idle state. Used in unison with (forced) power requests,
-  DVFS and cluster count changes.
- */
-typedef PVRSRV_ERROR (*PFN_FORCED_IDLE_REQUEST) (IMG_HANDLE		hDevHandle,
-												 IMG_BOOL		bDeviceOffPermitted);
-
-/*!
-  Typedef for a pointer to a function that will be called to cancel a forced
-  idle state and return the firmware back to a state where the hardware can be
-  scheduled.
- */
-typedef PVRSRV_ERROR (*PFN_FORCED_IDLE_CANCEL_REQUEST) (IMG_HANDLE	hDevHandle);
-
-typedef PVRSRV_ERROR (*PFN_GPU_UNITS_POWER_CHANGE) (IMG_HANDLE		hDevHandle,
-													IMG_UINT32		ui32SESPowerState);
+#define PVRSRV_POWER_FLAGS_NONE             0U      /*!< No flags */
+#define PVRSRV_POWER_FLAGS_FORCED           (1U << 0) /*!< Power the transition should not fail */
+#define PVRSRV_POWER_FLAGS_OSPM_SUSPEND_REQ (1U << 1) /*!< Indicates an OS Power Management
+                                                           transition (S3/S4) has been requested.
+                                                           Allows system modules to save VRAM */
+#define PVRSRV_POWER_FLAGS_OSPM_RESUME_REQ  (1U << 2) /*!< Indicates an OS Power Management
+                                                           transition has been requested.
+                                                           Allows system modules to load VRAM */
 
 /*!
  *****************************************************************************

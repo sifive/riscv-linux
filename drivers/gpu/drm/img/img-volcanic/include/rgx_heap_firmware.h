@@ -114,13 +114,22 @@ static_assert((RGX_FIRMWARE_RAW_HEAP_SIZE) >= IMG_UINT32_C(0x800000), "MIPS GPU 
  *  MMU objects required: 65536 PTEs; 16 PDEs; 1 PCE; */
 #define RGX_FIRMWARE_MAX_PAGETABLE_SIZE (1 * 1024 * 1024)
 
+#define RGX_FW_CONFIG_HEAP_SIZE (1 << RGX_FW_HEAP_SHIFT)
+#define RGX_FW_MAX_HEAP_SIZE (1 << 28)
 /*
- * The maximum configurable size via RGX_FW_HEAP_SHIFT is 32MiB (1<<25) and
- * the minimum is 4MiB (1<<22); the default firmware heap size is set to
- * maximum 32MiB.
+ * The maximum configurable size via RGX_FW_HEAP_SHIFT is 256MiB (1<<28) and
+ * the minimum is 4MiB (1<<22); the firmware heap size is dependent
+ * on the number of drivers supported.
  */
-#if defined(RGX_FW_HEAP_SHIFT) && (RGX_FW_HEAP_SHIFT < 22 || RGX_FW_HEAP_SHIFT > 25)
-#error "RGX_FW_HEAP_SHIFT is outside valid range [22, 25]"
+#if defined(RGX_NUM_DRIVERS_SUPPORTED) && (RGX_NUM_DRIVERS_SUPPORTED > 1)
+	#if defined(RGX_FW_HEAP_SHIFT) && (RGX_FW_HEAP_SHIFT < 22 || (RGX_FW_CONFIG_HEAP_SIZE > (RGX_FW_MAX_HEAP_SIZE / RGX_NUM_DRIVERS_SUPPORTED)))
+	#error "RGX_FW_HEAP_SHIFT is outside valid range"
+	#endif
+#else
+	#if defined(RGX_FW_HEAP_SHIFT) && (RGX_FW_HEAP_SHIFT < 22 || RGX_FW_HEAP_SHIFT > 28)
+	#error "RGX_FW_HEAP_SHIFT is outside valid range [22,28]"
+	#endif
 #endif
+
 
 #endif /* RGX_HEAP_FIRMWARE_H */

@@ -48,12 +48,22 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(VIRTUAL_PLATFORM)
 #define MAX_HW_TIME_US                           (240000000)
 #define DEVICES_WATCHDOG_POWER_ON_SLEEP_TIMEOUT  (120000)
+#define EVENT_OBJECT_TIMEOUT_US                  (120000000)
 #else
 #define MAX_HW_TIME_US                           (20000000)
 #define DEVICES_WATCHDOG_POWER_ON_SLEEP_TIMEOUT  (10000) // (1500)
+
+#if defined(TC_APOLLO_TCF5)
+#define EVENT_OBJECT_TIMEOUT_US                  (2000000)
+#else
+#define EVENT_OBJECT_TIMEOUT_US                  (100000)
+#endif
+
 #endif
 #define DEVICES_WATCHDOG_POWER_OFF_SLEEP_TIMEOUT (3600000)
 #define WAIT_TRY_COUNT                           (10000)
+
+
 
 #define SYS_RGX_DEV_NAME "tc_rogue"
 

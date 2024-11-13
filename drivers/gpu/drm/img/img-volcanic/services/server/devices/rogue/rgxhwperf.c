@@ -90,37 +90,6 @@ static_assert(HOST_STREAM_BUFFER_SIZE >= (PVRSRVTL_MAX_PACKET_SIZE<<1),
 static_assert(FW_STREAM_BUFFER_SIZE >= (PVRSRVTL_MAX_PACKET_SIZE<<1),
               "FW_STREAM_BUFFER_SIZE is less than (PVRSRVTL_MAX_PACKET_SIZE<<1)");
 
-static inline IMG_UINT32
-RGXHWPerfGetPackets(IMG_UINT32  ui32BytesExp,
-                    IMG_UINT32  ui32AllowedSize,
-                    RGX_PHWPERF_V2_PACKET_HDR psCurPkt )
-{
-	IMG_UINT32 sizeSum = 0;
-
-	/* Traverse the array to find how many packets will fit in the available space. */
-	while ( sizeSum < ui32BytesExp  &&
-			sizeSum + RGX_HWPERF_GET_SIZE(psCurPkt) < ui32AllowedSize )
-	{
-		sizeSum += RGX_HWPERF_GET_SIZE(psCurPkt);
-		psCurPkt = RGX_HWPERF_GET_NEXT_PACKET(psCurPkt);
-	}
-
-	return sizeSum;
-}
-
-static inline void
-RGXSuspendHWPerfL2DataCopy(PVRSRV_RGXDEV_INFO* psDeviceInfo,
-			   IMG_BOOL bIsReaderConnected)
-{
-	if (!bIsReaderConnected)
-	{
-		PVR_DPF((PVR_DBG_WARNING, "%s : HWPerf FW events enabled but host buffer for FW events is full "
-		        "and no reader is currently connected, suspending event collection. "
-		        "Connect a reader or restart driver to avoid event loss.", __func__));
-		psDeviceInfo->bSuspendHWPerfL2DataCopy = IMG_TRUE;
-	}
-}
-
 /******************************************************************************
  * RGX HW Performance Profiling Server API(s)
  *****************************************************************************/
@@ -166,7 +135,7 @@ PVRSRV_ERROR RGXServerFeatureFlagsToHWPerfFlags(PVRSRV_RGXDEV_INFO *psDevInfo, R
 	if ((pszBVNC = RGXDevBVNCString(psDevInfo)))
 	{
 		size_t uiStringLength = OSStringNLength(pszBVNC, RGX_HWPERF_MAX_BVNC_LEN - 1);
-		OSStringLCopy(psBVNC->aszBvncString, pszBVNC, uiStringLength + 1);
+		OSStringSafeCopy(psBVNC->aszBvncString, pszBVNC, uiStringLength + 1);
 		memset(&psBVNC->aszBvncString[uiStringLength], 0, RGX_HWPERF_MAX_BVNC_LEN - uiStringLength);
 	}
 	else
@@ -180,34 +149,20 @@ PVRSRV_ERROR RGXServerFeatureFlagsToHWPerfFlags(PVRSRV_RGXDEV_INFO *psDevInfo, R
 	{
 		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_PERFBUS_FLAG;
 	}
-#if defined(RGX_FEATURE_S7_TOP_INFRASTRUCTURE_BIT_MASK)
-	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, S7_TOP_INFRASTRUCTURE))
-	{
-		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_S7_TOP_INFRASTRUCTURE_FLAG;
-	}
-#endif
 #if defined(RGX_FEATURE_XT_TOP_INFRASTRUCTURE_BIT_MASK)
 	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, XT_TOP_INFRASTRUCTURE))
 	{
 		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_XT_TOP_INFRASTRUCTURE_FLAG;
 	}
 #endif
-#if defined(RGX_FEATURE_PERF_COUNTER_BATCH_BIT_MASK)
 	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, PERF_COUNTER_BATCH))
 	{
 		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_PERF_COUNTER_BATCH_FLAG;
 	}
-#endif
 	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, ROGUEXE))
 	{
 		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_ROGUEXE_FLAG;
 	}
-#if defined(RGX_FEATURE_DUST_POWER_ISLAND_S7_BIT_MASK)
-	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, DUST_POWER_ISLAND_S7))
-	{
-		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_DUST_POWER_ISLAND_S7_FLAG;
-	}
-#endif
 	if (RGX_IS_FEATURE_SUPPORTED(psDevInfo, PBE2_IN_XE))
 	{
 		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_PBE2_IN_XE_FLAG;
@@ -218,8 +173,11 @@ PVRSRV_ERROR RGXServerFeatureFlagsToHWPerfFlags(PVRSRV_RGXDEV_INFO *psDevInfo, R
 	}
 
 #ifdef SUPPORT_WORKLOAD_ESTIMATION
-	/* Not a part of BVNC feature line and so doesn't need the feature supported check */
-	psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_WORKLOAD_ESTIMATION;
+	if (!PVRSRV_VZ_MODE_IS(GUEST, DEVINFO, psDevInfo))
+	{
+		/* Not a part of BVNC feature line and so doesn't need the feature supported check */
+		psBVNC->ui32BvncKmFeatureFlags |= RGX_HWPERF_FEATURE_WORKLOAD_ESTIMATION;
+	}
 #endif
 
 	/* Define the HW counter block counts. */
@@ -255,6 +213,9 @@ PVRSRV_ERROR RGXServerFeatureFlagsToHWPerfFlags(PVRSRV_RGXDEV_INFO *psDevInfo, R
 		OSDeviceMemSet(&psBlocks[uiCount], 0, (RGX_HWPERF_MAX_BVNC_BLOCK_LEN - uiCount) * sizeof(*psBlocks));
 	}
 
+	/* The GPU core count is overwritten by the FW */
+	psBVNC->ui16BvncGPUCores = 0;
+
 	return PVRSRV_OK;
 }
 
@@ -280,7 +241,7 @@ PVRSRV_ERROR PVRSRVRGXConfigMuxHWPerfCountersKM(
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	PVR_LOG_RETURN_IF_FALSE(ui32ArrayLen > 0, "ui32ArrayLen is 0",
 	                  PVRSRV_ERROR_INVALID_PARAMS);
@@ -347,7 +308,7 @@ PVRSRV_ERROR PVRSRVRGXConfigMuxHWPerfCountersKM(
 
 	/*PVR_DPF((PVR_DBG_VERBOSE, "PVRSRVRGXConfigMuxHWPerfCountersKM firmware completed"));*/
 
-	PVR_DPF((PVR_DBG_WARNING, "HWPerf %d counter blocks configured and ENABLED", ui32ArrayLen));
+	PVR_DPF((PVR_DBG_MESSAGE, "HWPerf %d counter blocks configured and ENABLED", ui32ArrayLen));
 
 	PVR_DPF_RETURN_OK;
 
@@ -381,7 +342,7 @@ PVRSRV_ERROR PVRSRVRGXConfigCustomCountersKM(
 
 	PVR_UNREFERENCED_PARAMETER(psConnection);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	PVR_DPF_ENTERED;
 
@@ -498,7 +459,7 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 
 	PVR_UNREFERENCED_PARAMETER(ui32CtrlWord);
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_SUPPORTED);
+	PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDeviceNode, PVRSRV_ERROR_NOT_SUPPORTED);
 
 	PVR_LOG_RETURN_IF_FALSE(ui32ArrayLen > 0, "ui32ArrayLen is 0",
 	                        PVRSRV_ERROR_INVALID_PARAMS);
@@ -526,11 +487,11 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 	PVR_LOG_RETURN_IF_ERROR(eError, "DevmemFwAllocate");
 
 	eError = RGXSetFirmwareAddress(&sKccbCmd.uCmdData.sHWPerfCfgDABlks.sBlockConfigs,
-	                          psFwBlkConfigsMemDesc, 0, RFW_FWADDR_FLAG_NONE);
+	                               psFwBlkConfigsMemDesc, 0, RFW_FWADDR_FLAG_NONE);
 	PVR_LOG_GOTO_IF_ERROR(eError, "RGXSetFirmwareAddress", fail1);
 
 	eError = DevmemAcquireCpuVirtAddr(psFwBlkConfigsMemDesc, (void **)&psFwArray);
-	PVR_LOG_GOTO_IF_ERROR(eError, "DevMemAcquireCpuVirtAddr", fail2);
+	PVR_LOG_GOTO_IF_ERROR(eError, "DevmemAcquireCpuVirtAddr", fail2);
 
 	OSCachedMemCopyWMB(psFwArray, psBlockConfigs, sizeof(RGX_HWPERF_CONFIG_CNTBLK)*ui32ArrayLen);
 	DevmemPDumpLoadMem(psFwBlkConfigsMemDesc,
@@ -556,21 +517,19 @@ PVRSRV_ERROR PVRSRVRGXConfigureHWPerfBlocksKM(
 	DevmemReleaseCpuVirtAddr(psFwBlkConfigsMemDesc);
 	DevmemFwUnmapAndFree(psDevice, psFwBlkConfigsMemDesc);
 
-	PVR_DPF((PVR_DBG_WARNING, "HWPerf %d counter blocks configured and ENABLED",
+	PVR_DPF((PVR_DBG_MESSAGE, "HWPerf %d counter blocks configured and ENABLED",
 	         ui32ArrayLen));
 
 	PVR_DPF_RETURN_OK;
 
 fail3:
 	DevmemReleaseCpuVirtAddr(psFwBlkConfigsMemDesc);
-
 fail2:
 	RGXUnsetFirmwareAddress(psFwBlkConfigsMemDesc);
-
 fail1:
 	DevmemFwUnmapAndFree(psDevice, psFwBlkConfigsMemDesc);
 
-	PVR_DPF_RETURN_RC (eError);
+	PVR_DPF_RETURN_RC(eError);
 }
 
 /******************************************************************************
@@ -608,11 +567,10 @@ PVRSRV_ERROR RGXHWPerfConfigMuxCounters(
 		IMG_UINT32					     ui32NumBlocks,
 		RGX_HWPERF_CONFIG_MUX_CNTBLK	*asBlockConfigs)
 {
-	PVRSRV_ERROR           eError = PVRSRV_OK;
+	PVRSRV_ERROR           eError;
 	RGX_KM_HWPERF_DEVDATA* psDevData;
 	RGX_HWPERF_DEVICE *psHWPerfDev;
 
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_IMPLEMENTED);
 
 	/* Validate input argument values supplied by the caller */
 	if (!psHWPerfConnection || ui32NumBlocks==0 || !asBlockConfigs)
@@ -631,17 +589,19 @@ PVRSRV_ERROR RGXHWPerfConfigMuxCounters(
 	{
 		psDevData = (RGX_KM_HWPERF_DEVDATA *) psHWPerfDev->hDevData;
 
+		PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDevData->psRgxDevNode, PVRSRV_ERROR_NOT_IMPLEMENTED);
+
 		/* Call the internal server API */
 		eError = PVRSRVRGXConfigMuxHWPerfCountersKM(NULL,
 		                                            psDevData->psRgxDevNode,
 		                                            ui32NumBlocks,
 		                                            asBlockConfigs);
-		PVR_LOG_RETURN_IF_ERROR(eError, "PVRSRVRGXCtrlHWPerfKM");
+		PVR_LOG_RETURN_IF_ERROR(eError, "PVRSRVRGXConfigMuxHWPerfCountersKM");
 
 		psHWPerfDev = psHWPerfDev->psNext;
 	}
 
-	return eError;
+	return PVRSRV_OK;
 }
 
 
@@ -653,8 +613,6 @@ PVRSRV_ERROR RGXHWPerfConfigureAndEnableCustomCounters(
 {
 	PVRSRV_ERROR            eError;
 	RGX_HWPERF_DEVICE       *psHWPerfDev;
-
-	PVRSRV_VZ_RET_IF_MODE(GUEST, PVRSRV_ERROR_NOT_IMPLEMENTED);
 
 	/* Validate input arguments supplied by the caller */
 	PVR_LOG_RETURN_IF_FALSE((NULL != psHWPerfConnection), "psHWPerfConnection invalid",
@@ -677,6 +635,8 @@ PVRSRV_ERROR RGXHWPerfConfigureAndEnableCustomCounters(
 	while (psHWPerfDev)
 	{
 		RGX_KM_HWPERF_DEVDATA *psDevData = (RGX_KM_HWPERF_DEVDATA *) psHWPerfDev->hDevData;
+
+		PVRSRV_VZ_RET_IF_MODE(GUEST, DEVNODE, psDevData->psRgxDevNode, PVRSRV_ERROR_NOT_IMPLEMENTED);
 
 		eError = PVRSRVRGXConfigCustomCountersKM(NULL,
 				                                 psDevData->psRgxDevNode,
@@ -706,7 +666,7 @@ GetHWPerfBlockTypeByID(PVRSRV_RGXDEV_INFO *psDevInfo, IMG_UINT32 ui32BlockID)
 	IMG_UINT32 ui32TableIdx = 0xFFFF;
 	RGX_HWPERF_CNTBLK_RT_INFO sRtInfo; /* Only used to satisfy pfnIsBlkPresent requirements. */
 
-#if defined(RGX_FEATURE_HWPERF_OCEANIC)
+#if defined(HWPERF_UNIFIED)
 	IMG_UINT32 uiBlockID = (IMG_UINT32)(ui32BlockID & ~(RGX_CNTBLK_ID_UNIT_ALL_MASK|RGX_CNTBLK_ID_DA_MASK));
 #else
 	IMG_UINT32 uiBlockID = (IMG_UINT32)(ui32BlockID & ~RGX_CNTBLK_ID_UNIT_ALL_MASK);
@@ -793,7 +753,7 @@ PVRSRV_ERROR PVRSRVRGXGetConfiguredHWPerfMuxCounters(PVRSRV_DEVICE_NODE *psDevNo
 	{
 		RGXFWIF_HWPERF_CTL_BLK *psBlock = rgxfw_hwperf_get_block_ctl(ui32BlockID, psHWPerfCtl);
 		const RGXFW_HWPERF_CNTBLK_TYPE_MODEL *psBlkTypeDesc;
-		IMG_UINT32 i, ui32LastCountIdx = 0;
+		IMG_UINT32 i, ui32LastCountIdx = 0, ui8CurCountIdx = 0;
 		RGX_HWPERF_CONFIG_MUX_CNTBLK sBlockConfig;
 
 		PVR_RETURN_IF_ERROR(PVRSRVPowerLock(psDevNode));
@@ -804,11 +764,11 @@ PVRSRV_ERROR PVRSRVRGXGetConfiguredHWPerfMuxCounters(PVRSRV_DEVICE_NODE *psDevNo
 			PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_INVALID_PARAMS, Error);
 		}
 
-		if (!psBlock->bEnabled || !psBlock->bValid)
+		if (!psBlock->ui32Enabled || !psBlock->ui32Valid)
 		{
 			PVR_DPF((PVR_DBG_ERROR, "Block (0x%04x) is not %s",
 			         ui32BlockID,
-			         !psBlock->bEnabled ? "enabled." : "configured."));
+			         !psBlock->ui32Enabled ? "enabled." : "configured."));
 			PVR_GOTO_WITH_ERROR(eError, PVRSRV_ERROR_INVALID_PARAMS, Error);
 		}
 
@@ -821,7 +781,8 @@ PVRSRV_ERROR PVRSRVRGXGetConfiguredHWPerfMuxCounters(PVRSRV_DEVICE_NODE *psDevNo
 		sBlockConfig.ui16BlockID = psBlock->eBlockID;
 		sBlockConfig.ui8Mode = 0;
 
-		for (i = 0; (psBlock->uiCounterMask >> i) != 0; i++)
+		for (i = 0; ((psBlock->uiCounterMask >> i) != 0) &&
+		     (ui8CurCountIdx < psBlkTypeDesc->ui8NumCounters); i++)
 		{
 			if (psBlock->uiCounterMask & (1 << i))
 			{
@@ -844,6 +805,7 @@ PVRSRV_ERROR PVRSRVRGXGetConfiguredHWPerfMuxCounters(PVRSRV_DEVICE_NODE *psDevNo
 					(psBlock->aui64CounterCfg[i] >> RGX_CR_TA_PERF_SELECT0_BATCH_MIN_SHIFT) & 0x1FFF;
 #endif
 				ui32LastCountIdx++;
+				ui8CurCountIdx++;
 			}
 		}
 
@@ -916,7 +878,7 @@ PVRSRV_ERROR PVRSRVRGXGetConfiguredHWPerfCounters(PVRSRV_DEVICE_NODE *psDevNode,
 			}
 		}
 	}
-#if defined(RGX_FEATURE_HWPERF_OCEANIC)
+#if defined(HWPERF_UNIFIED)
 	else if ((ui32BlockID & RGX_CNTBLK_ID_DA_MASK) == RGX_CNTBLK_ID_DA_MASK)
 	{
 		RGXFWIF_HWPERF_DA_BLK *psBlock = rgxfw_hwperf_get_da_block_ctl(ui32BlockID, psHWPerfCtl);
@@ -987,7 +949,7 @@ PVRSRV_ERROR PVRSRVRGXGetEnabledHWPerfBlocks(PVRSRV_DEVICE_NODE *psDevNode,
 
 	for (i = 0; i < RGX_HWPERF_MAX_MUX_BLKS; i++)
 	{
-		if (psHWPerfCtl->sBlkCfg[i].bEnabled && psHWPerfCtl->sBlkCfg[i].bValid)
+		if (psHWPerfCtl->sBlkCfg[i].ui32Enabled && psHWPerfCtl->sBlkCfg[i].ui32Valid)
 		{
 			*pui32BlockCount += 1;
 
@@ -1034,7 +996,7 @@ PVRSRV_ERROR PVRSRVRGXGetEnabledHWPerfBlocks(PVRSRV_DEVICE_NODE *psDevNode,
 		}
 	}
 
-#if defined(RGX_FEATURE_HWPERF_OCEANIC)
+#if defined(HWPERF_UNIFIED)
 	for (i = 0; i < RGX_HWPERF_MAX_DA_BLKS; i++)
 	{
 		if (psHWPerfCtl->sDABlkCfg[i].uiEnabled)

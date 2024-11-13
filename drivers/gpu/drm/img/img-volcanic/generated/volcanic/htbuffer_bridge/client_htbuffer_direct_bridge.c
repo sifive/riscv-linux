@@ -68,18 +68,3 @@ IMG_INTERNAL PVRSRV_ERROR BridgeHTBControl(IMG_HANDLE hBridge,
 
 	return eError;
 }
-
-IMG_INTERNAL PVRSRV_ERROR BridgeHTBLog(IMG_HANDLE hBridge,
-				       IMG_UINT32 ui32PID,
-				       IMG_UINT32 ui32TID,
-				       IMG_UINT64 ui64TimeStamp,
-				       IMG_UINT32 ui32SF,
-				       IMG_UINT32 ui32NumArgs, IMG_UINT32 * pui32Args)
-{
-	PVRSRV_ERROR eError;
-	PVR_UNREFERENCED_PARAMETER(hBridge);
-
-	eError = HTBLogKM(ui32PID, ui32TID, ui64TimeStamp, ui32SF, ui32NumArgs, pui32Args);
-
-	return eError;
-}
