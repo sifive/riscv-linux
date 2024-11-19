@@ -718,14 +718,19 @@
 				 <0x82000000  0x0 0x41000000  0x0 0x41000000 0x0 0xf000000>,    /* mem */
 				 <0xc3000000 0x80 0x00000000 0x80 0x00000000 0x02 0x00000000>;  /* mem prefetchable */
 
-			/* num-lanes = <0x4>; */
+			num-lanes = <0x4>;
 			/**********************************
 			 	msi_ctrl_io[0~31] : 188~219
 			 	msi_ctrl_int : 220
 			**********************************/
-			interrupts = <220>;
-			interrupt-names = "msi";
+			interrupts = <220>, <179>, <180>, <181>, <182>, <183>, <184>, <185>, <186>;
+			interrupt-names = "msi", "inta", "intb", "intc", "intd";
 			interrupt-parent = <&plic0>;
+			interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+			interrupt-map = <0x0 0x0 0x0 0x1 &plic0 179>,
+							<0x0 0x0 0x0 0x2 &plic0 180>,
+							<0x0 0x0 0x0 0x3 &plic0 181>,
+							<0x0 0x0 0x0 0x4 &plic0 182>;
 			iommus = <&smmu0 0xfe0000>;
 			iommu-map = <0x0 &smmu0 0xff0000 0xffffff>;
 			gen-x = <3>;
