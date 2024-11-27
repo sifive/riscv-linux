@@ -375,12 +375,7 @@ dma_chan_tx_status(struct dma_chan *dchan, dma_cookie_t cookie,
 		completed_length = completed_blocks * len;
 		bytes = length - completed_length;
 	}
-#ifdef CONFIG_SOC_SIFIVE_EIC7700
-	else
-	{
-		bytes = vd_to_axi_desc(vdesc)->length;
-	}
-#endif
+
 	spin_unlock_irqrestore(&chan->vc.lock, flags);
 	dma_set_residue(txstate, bytes);
 
