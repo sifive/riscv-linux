@@ -1,3 +1,9 @@
+linux-premier (6.6.21-10.1) noble; urgency=medium
+
+  * Updated IMG GPU driver to DDK 24.2
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Wed, 27 Nov 2024 14:09:08 +0000
+
 linux-premier (6.6.21-9.1) noble; urgency=medium
 
   * Disabled NUMA and optimized DRM configs
