@@ -83,6 +83,7 @@ struct axi_dma_chip {
 	struct reset_control	*arst;
 	struct reset_control	*prst;
 #endif
+	spinlock_t lock;
 };
 
 /* LLI == Linked List Item */
