@@ -1,3 +1,9 @@
+linux-premier (6.6.21-10.2) noble; urgency=medium
+
+  * Add dependency of eswin-eic7x-gpu package version
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Fri, 29 Nov 2024 10:18:03 +0000
+
 linux-premier (6.6.21-10.1) noble; urgency=medium
 
   * Updated IMG GPU driver to DDK 24.2
