@@ -45,7 +45,7 @@ Build-Profiles: <!stage1>
 Architecture: ARCH
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}, eswin-eic7x-gpu (>= 24.2+0ubuntu11)
 Built-Using: ${linux:BuiltUsing}
 Description: Linux kernel modules for version PKGVER on DESC
  Contains the corresponding System.map file, the modules built by the
