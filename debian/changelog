@@ -1,3 +1,9 @@
+linux-premier (6.6.21-10.3) noble; urgency=medium
+
+  * Prevent older mesa and xorg for DDK 24.2
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Wed, 04 Dec 2024 14:04:10 +0000
+
 linux-premier (6.6.21-10.2) noble; urgency=medium
 
   * Add dependency of eswin-eic7x-gpu package version
