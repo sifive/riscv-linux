@@ -26,7 +26,25 @@ Priority: optional
 Provides: linux-image, fuse-module, =PROVIDES=
 Depends: ${misc:Depends}, ${shlibs:Depends}, kmod, linux-base (>= 4.5ubuntu1~16.04.1), linux-modules-PKGVER-ABINUM-FLAVOUR
 Recommends: BOOTLOADER, initramfs-tools | linux-initramfs-tool
-Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x], mesa (<< 1:22.3.5), xorg-server (<< 2:21.1.13)
+Breaks: flash-kernel (<< 3.90ubuntu2) [arm64 armhf], s390-tools (<< 2.3.0-0ubuntu3) [s390x],
+ libgbm1 (<< 1:22.3.5),
+ libegl-mesa0 (<< 1:22.3.5),
+ libegl1-mesa (<< 1:22.3.5),
+ libwayland-egl1-mesa (<< 1:22.3.5),
+ libgles2-mesa (<< 1:22.3.5),
+ libglapi-mesa (<< 1:22.3.5),
+ libglx-mesa0 (<< 1:22.3.5),
+ libgl1-mesa-glx (<< 1:22.3.5),
+ libgl1-mesa-dri (<< 1:22.3.5),
+ libosmesa6 (<< 1:22.3.5),
+ mesa-va-drivers (<< 1:22.3.5),
+ mesa-vdpau-drivers (<< 1:22.3.5),
+ mesa-vulkan-drivers (<< 1:22.3.5),
+ mesa-opencl-icd (<< 1:22.3.5),
+ xserver-common (<< 2:21.1.13),
+ xserver-xephyr (<< 2:21.1.13),
+ xserver-xorg-core (<< 2:21.1.13),
+ xserver-xorg-legacy (<< 2:21.1.13)
 Suggests: fdutils, SRCPKGNAME-tools, linux-headers-PKGVER-ABINUM-FLAVOUR
 Description: Linux kernel image for version PKGVER on DESC
  This package contains the Linux kernel image for version PKGVER on
