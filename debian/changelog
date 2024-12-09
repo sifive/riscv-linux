@@ -1,3 +1,9 @@
+linux-premier (6.6.21-10.5) noble; urgency=medium
+
+  * Removed Breaks for mesa-opencl-icd
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Mon, 09 Dec 2024 11:08:58 +0000
+
 linux-premier (6.6.21-10.4) noble; urgency=medium
 
   * Add all package of mesa and xorg in Breaks
