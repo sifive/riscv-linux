@@ -331,7 +331,10 @@ static inline unsigned long pte_napot(pte_t pte)
 /* Yields the page frame number (PFN) of a page table entry */
 static inline unsigned long pte_pfn(pte_t pte)
 {
-	unsigned long res  = __page_val_to_pfn(pte_val(pte));
+	unsigned long res;
+
+	ALT_UNFIX_MT(pte);
+	res = __page_val_to_pfn(pte_val(pte));
 
 	if (has_svnapot() && pte_napot(pte))
 		res = res & (res - 1UL);
