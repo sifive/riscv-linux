@@ -22,12 +22,6 @@
 
 #define RTCCLK_FREQ		1000000
 #define LSPCLK_FREQ		200000000
-
-/* Currently, not reserving any DDR for ECC capability. Also, ECC must be disabled in U-Boot
- * If wanna enable ECC capability of DDR, should reserve highest zone of 1/8 all space for it
- */
-#define MEMORY_SIZE_H		0x4
-#define MEMORY_SIZE_L		0x0
 #define CMA_SIZE		0x20000000
 
 #include "eic7700.dtsi"
@@ -62,6 +56,14 @@
 		#size-cells = <2>;
 		ranges;
 
+		linux,cma {
+			compatible = "shared-dma-pool";
+			reusable;
+			size = <0x0 CMA_SIZE>;
+			alignment = <0x0 0x1000>;
+			linux,cma-default;
+		};
+
 		npu0_reserved: sprammemory@59000000 {
 			no-map;
 			reg = <0x0 0x59000000 0x0 0x400000>;
@@ -75,16 +77,6 @@
 		g2d_4GB_boundary_reserved_4k {
 			no-map;
 			reg = <0x0 0xfffff000 0x0 0x1000>;
-		};
-	};
-
-	soc {
-		reset_test@1e00e000 {
-			compatible	= "reset_test";
-			resets = <&d0_reset SCPU_RST_CTRL SW_SCPU_BUS_RSTN>,
-					 <&d0_reset SCPU_RST_CTRL SW_SCPU_CORE_RSTN>,
-					 <&d0_reset SCPU_RST_CTRL SW_SCPU_DBG_RSTN>;
-			reset-names = "bus", "core", "dbg";
 		};
 	};
 };
