@@ -472,7 +472,10 @@ void audio_proc_module_exit(void)
 {
 	int i;
 
+	mutex_lock(&audio_proc_class_lock);
+
 	if (g_proc_uninitialized) {
+		mutex_unlock(&audio_proc_class_lock);
 		return;
 	}
 
@@ -488,5 +491,6 @@ void audio_proc_module_exit(void)
 
 	g_proc_uninitialized = true;
 
+	mutex_unlock(&audio_proc_class_lock);
 	pr_info("es_audio_proc: uninitialized\n");
 }
