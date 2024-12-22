@@ -1,3 +1,12 @@
+linux-premier (6.6.21-10.7) noble; urgency=medium
+
+  * Fixed GCC workaround config mismatch error
+  * Add all packages of mesa and xorg in Breaks
+  * Add dependency of eswin-eic7x-gpu package version
+  * Updated IMG GPU driver to DDK 24.2
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Sun, 22 Dec 2024 07:03:39 +0000
+
 linux-premier (6.6.21-9.1) noble; urgency=medium
 
   * Disabled NUMA and optimized DRM configs
