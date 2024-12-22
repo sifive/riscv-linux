@@ -1,3 +1,9 @@
+linux-premier (6.6.21-10.7) noble; urgency=medium
+
+  * Fixed GCC workaround config mismatch error
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Sun, 22 Dec 2024 07:03:39 +0000
+
 linux-premier (6.6.21-10.6) noble; urgency=medium
 
   * Updated dependency for eswin-eic7x-gpu
