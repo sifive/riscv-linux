@@ -2293,7 +2293,6 @@ CONFIG_GADGET_UAC1_LEGACY                       policy<{'riscv64': 'n'}>
 CONFIG_GAMEPORT                                 policy<{'riscv64': 'n'}>
 CONFIG_GARP                                     policy<{'riscv64': 'm'}>
 CONFIG_GCC11_NO_ARRAY_BOUNDS                    policy<{'riscv64': 'y'}>
-CONFIG_GCC_ASM_GOTO_OUTPUT_WORKAROUND           policy<{'riscv64': 'y'}>
 CONFIG_GCC_SUPPORTS_DYNAMIC_FTRACE              policy<{'riscv64': 'y'}>
 CONFIG_GCC_VERSION                              policy<{'riscv64': '130200'}>
 CONFIG_GCOV_KERNEL                              policy<{'riscv64': 'n'}>
