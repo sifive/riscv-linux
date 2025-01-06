@@ -66,6 +66,12 @@ config RESET_BRCMSTB_RESCAL
 	  This enables the RESCAL reset controller for SATA, PCIe0, or PCIe1 on
 	  BCM7216.
 
+config RESET_ESWIN_EIC7700
+	tristate "Eswin EIC7700 Reset Driver"
+	default n
+	help
+	  This enables the reset controller driver for Eswin EIC7700 SoCs.
+
 config RESET_EYEQ
 	bool "Mobileye EyeQ reset controller"
 	depends on MACH_EYEQ5 || MACH_EYEQ6H || COMPILE_TEST
