@@ -274,6 +274,34 @@ config MMC_SDHCI_OF_MA35D1
 
 	  If unsure, say N.
 
+config MMC_SDHCI_OF_ESWIN
+	tristate "SDHCI OF support for the Eswin SDHCI controllers"
+	depends on MMC_SDHCI_PLTFM
+	depends on OF
+	depends on COMMON_CLK
+	select MMC_CQHCI
+	help
+	  This selects the Eswin Secure Digital Host Controller Interface
+	  (SDHCI).
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+config MMC_SDHCI_OF_SDIO_ESWIN
+	tristate "SDHCI OF SDIO support for the Eswin SDHCI controllers"
+	depends on MMC_SDHCI_PLTFM
+	depends on OF
+	depends on COMMON_CLK
+	select MMC_CQHCI
+	help
+	  This selects the Eswin Secure Digital Host Controller Interface
+	  (SDHCI-SDIO).
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
 config MMC_SDHCI_CADENCE
 	tristate "SDHCI support for the Cadence SD/SDIO/eMMC controller"
 	depends on MMC_SDHCI_PLTFM
