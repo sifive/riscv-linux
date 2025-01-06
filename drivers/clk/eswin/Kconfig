@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config COMMON_CLK_EIC7700
+	bool "EIC7700 Clock Driver"
+	help
+	  Build the Eswin EIC7700 clock driver based on the common clock framework.
