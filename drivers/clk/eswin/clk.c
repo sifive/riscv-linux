@@ -30,6 +30,7 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/util_macros.h>
+#include <linux/gpio/consumer.h>
 #include <dt-bindings/clock/eic7700-clock.h>
 
 #include "clk.h"
@@ -127,6 +128,26 @@ err:
 	return PTR_ERR(clk);
 }
 EXPORT_SYMBOL_GPL(eswin_clk_register_fixed_rate);
+
+static int eswin_clk_set_cpu_volatge(struct gpio_desc *cpu_voltage_gpio,
+                                     enum voltage_level target_volatge)
+{
+	if (!cpu_voltage_gpio) {
+		return -EINVAL;
+	}
+	switch (target_volatge) {
+		case VOLTAGE_0_9V:
+			gpiod_set_value(cpu_voltage_gpio, 1);
+			break;
+		case VOLTAGE_0_8V:
+			gpiod_set_value(cpu_voltage_gpio, 0);
+			break;
+		default:
+			pr_err("%s %d: unsupport  volatge %d\n", __func__,__LINE__, target_volatge);
+			return -EINVAL;
+	}
+	return 0;
+}
 
 static int eswin_calc_pll(u32 *frac_val, u32 *postdiv1_val,
 				 u32 *fbdiv_val, u32 *refdiv_val, u64 rate,
@@ -320,6 +341,41 @@ static int clk_pll_set_rate(struct clk_hw *hw,
 				clk_cpu_lp_pll_name, ret);
 			return -EPERM;
 		}
+
+		/*
+			The CPU clock has now switched to the LP_PLL, so we can adjust the CPU's supply voltage
+			If the board cpu voltage does not support boosting to 0.9V, then the frequency cannot exceed 1.6GHz.
+		*/
+		switch (rate) {
+			case CLK_FREQ_1800M:
+			case CLK_FREQ_1700M:
+			case CLK_FREQ_1600M:
+				ret = eswin_clk_set_cpu_volatge(clk->cpu_voltage_gpio, VOLTAGE_0_9V);
+				if (ret) {
+					pr_warn("Failed to change cpu volatge to 0.9V, not support rate %ld\n",  rate);
+					goto switch_back;
+				} else {
+					if (clk->cpu_current_volatge != VOLTAGE_0_9V) {
+						pr_info("Cpu volatge change to 0.9V, target rate %ld\n", rate);
+						clk->cpu_current_volatge = VOLTAGE_0_9V;
+					}
+				}
+				break;
+			default:
+				ret = eswin_clk_set_cpu_volatge(clk->cpu_voltage_gpio, VOLTAGE_0_8V);
+				if (!ret) {
+					if (clk->cpu_current_volatge != VOLTAGE_0_8V) {
+						pr_info("cpu volatge change to 0.8V, target rate %ld\n", rate);
+						clk->cpu_current_volatge = VOLTAGE_0_8V;
+					}
+				}
+				/*
+					For boards that do not support voltage switching, the voltage is maintained at 0.8V.
+					Therefore, this is also considered successful.
+				*/
+				ret = 0;
+				break;
+		}
 	}
 
 	/*first disable pll */
@@ -367,6 +423,8 @@ static int clk_pll_set_rate(struct clk_hw *hw,
 		pr_err("%s %d, faild to lock the cpu pll, cpu will work on low power pll\n",__func__,__LINE__);
 		return -EBUSY;
 	}
+
+switch_back:
 	if (EIC7700_PLL_CPU == clk->id) {
 		ret = clk_set_parent(clk_cpu_mux, clk_cpu_pll);
 		if (ret) {
@@ -375,7 +433,7 @@ static int clk_pll_set_rate(struct clk_hw *hw,
 			return -EPERM;
 		}
 	}
-	return  0;
+	return ret;
 }
 
 static unsigned long clk_pll_recalc_rate(struct clk_hw *hw,
@@ -530,11 +588,21 @@ void eswin_clk_register_pll(struct eswin_pll_clock *clks,
 	struct clk *clk = NULL;
 	struct clk_init_data init;
 	int i;
+	struct gpio_desc *cpu_voltage_gpio;
 
 	p_clk = devm_kzalloc(dev, sizeof(*p_clk) * nums, GFP_KERNEL);
 
 	if (!p_clk)
 		return;
+
+	cpu_voltage_gpio = devm_gpiod_get(dev, "cpu-voltage", GPIOD_OUT_HIGH);
+	if (IS_ERR_OR_NULL(cpu_voltage_gpio)) {
+		dev_warn(dev, "failed to get cpu volatge gpio\n");
+		cpu_voltage_gpio = NULL;
+	} else {
+		/*cpu default freq is 1400M, the volatge should be VOLTAGE_0_8V*/
+		eswin_clk_set_cpu_volatge(cpu_voltage_gpio, VOLTAGE_0_8V);
+	}
 
 	for (i = 0; i < nums; i++) {
 		char *name = kzalloc(strlen(clks[i].name)
@@ -584,6 +652,7 @@ void eswin_clk_register_pll(struct eswin_pll_clock *clks,
 		p_clk->lock_width = clks[i].lock_width;
 
 		p_clk->hw.init = &init;
+		p_clk->cpu_voltage_gpio = cpu_voltage_gpio;
 
 		clk = clk_register(dev, &p_clk->hw);
 		if (IS_ERR(clk)) {

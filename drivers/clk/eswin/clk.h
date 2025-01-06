@@ -128,6 +128,11 @@ struct eswin_pll_clock {
 	const u8	lock_width;
 };
 
+enum voltage_level {
+       VOLTAGE_0_9V = 900,  // Represents 0.9V in millivolts
+       VOLTAGE_0_8V = 800   // Represents 0.8V in millivolts
+};
+
 struct eswin_clk_pll {
 	struct clk_hw	hw;
 	u32	id;
@@ -153,6 +158,8 @@ struct eswin_clk_pll {
 	void __iomem	*status_reg;
 	u8	lock_shift;
 	u8	lock_width;
+	struct gpio_desc *cpu_voltage_gpio;
+	enum voltage_level cpu_current_volatge;
 };
 
 struct eswin_clock_data *eswin_clk_init(struct platform_device *, int);
