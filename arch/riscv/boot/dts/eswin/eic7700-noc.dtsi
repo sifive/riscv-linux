@@ -1,0 +1,2620 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Device Tree Include file for Die0 NOC monitor of Eswin EIC770x family SoC.
+ *
+ * Copyright 2024, Beijing ESWIN Computing Technology Co., Ltd.. All rights reserved.
+ * SPDX-License-Identifier: GPL-2.0
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, version 2.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+d0_cfg_noc:d0_cfg_noc{
+	compatible = "eswin,eic7700-noc";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	ranges;
+	reg = <0 0x52060000 0 0x4000>;
+
+	interrupts = <446>;
+	interrupt-names = "error";
+	interrupt-parent = <&plic0>;
+	errlogger,idx = <0 1 3 5>;
+
+	sideband_manager@52061000{
+		compatible = "eswin,win2xxx-noc-sideband-manager";
+		reg = <0 0x52061000 0 0x10>;
+		SenseIn0 =
+			<SBM_CLMM 	OFFSET0>,
+			<SBM_CNOC_AON 	OFFSET1>,
+			<SBM_CNOC_DDRT0_CTRL 	OFFSET2>,
+			<SBM_CNOC_DDRT0_PHY 	OFFSET3>,
+			<SBM_CNOC_DDRT1_CTRL 	OFFSET4>,
+			<SBM_CNOC_DDRT1_PHY 	OFFSET5>,
+			<SBM_CNOC_DSPT 	OFFSET6>,
+			<SBM_CNOC_GPU 	OFFSET7>,
+			<SBM_CNOC_HSP 	OFFSET8>,
+			<SBM_CNOC_LSP_APB2 	OFFSET9>,
+			<SBM_CNOC_LSP_APB3	OFFSET10>,
+			<SBM_CNOC_LSP_APB4 	OFFSET11>,
+			<SBM_CNOC_LSP_APB6 	OFFSET12>,
+			<SBM_CNOC_MCPUT_D2D 	OFFSET13>,
+			<SBM_CNOC_NPU 	OFFSET14>,
+			<SBM_CNOC_PCIET_P 	OFFSET15>,
+			<SBM_CNOC_PCIET_X 	OFFSET16>,
+			<SBM_CNOC_TCU 	OFFSET17>,
+			<SBM_CNOC_VC 	OFFSET18>,
+			<SBM_CNOC_VI 	OFFSET19>,
+			<SBM_CNOC_VO 	OFFSET20>;
+		bf-name =
+			"SBM_CLMM",
+			"SBM_CNOC_AON",
+			"SBM_CNOC_DDRT0_CTRL",
+			"SBM_CNOC_DDRT0_PHY ",
+			"SBM_CNOC_DDRT1_CTRL",
+			"SBM_CNOC_DDRT1_PHY",
+			"SBM_CNOC_DSPT",
+			"SBM_CNOC_GPU",
+			"SBM_CNOC_HSP",
+			"SBM_CNOC_LSP_APB2",
+			"SBM_CNOC_LSP_APB3",
+			"SBM_CNOC_LSP_APB4",
+			"SBM_CNOC_LSP_APB6",
+			"SBM_CNOC_MCPUT_D2D",
+			"SBM_CNOC_NPU",
+			"SBM_CNOC_PCIET_P",
+			"SBM_CNOC_PCIET_X",
+			"SBM_CNOC_TCU",
+			"SBM_CNOC_VC",
+			"SBM_CNOC_VI",
+			"SBM_CNOC_VO";
+	};
+	ErrorLogger0 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x14 32 >;
+		description = "Register 0 to log errors";
+		lock {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 1>;
+			lut = "Not Locked", "Locked";
+		};
+		OpCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 1 4>;
+			lut = "RD: data read with incrementing address",
+				"RDW: data read with wrapping address",
+				"RDL: allocates monitor in the Target with incrementing address",
+				"RDX: exclusive read with incrementing address",
+				"WR: data write with incrementing address",
+				"WRW: data write with wrapping address",
+				"WRC: conditional write if matching monitor in Target is found",
+				"RSV: reserved",
+				"PRE: preamble packet of linked sequence (locked sequence)",
+				"URG: urgency packet used for QoS (status must be REQ)";
+		};
+		ErrCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 3 >;
+			lut = "SLV (error source: Target): error detected by the Slave without any information or no Error",
+				"DEC (error source: Initiator NIU): decode error",
+				"UNS (error source: Target NIU): unsupported access type",
+				"DISC (error source: Power Disconnect): disconnected Target or NoC domain",
+				"SEC (error source: Initiator NIU or Firewall): security error",
+				"HIDE (error source: Firewall): hidden security error. Will be reported as OK to the initiator",
+				"TMO (error source: Target NIU): time-out",
+				"RSV: reserved";
+
+		};
+		Len1 {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 16 12 >;
+		};
+		Format {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 31 1 >;
+			lut = "NTTP v3.0 (Invalid)", "NTTP v3.5 (Ok)";
+		};
+	};
+
+	ErrorLogger1 {
+		compatible = "eswin,eic7700,register", "eswin,eic7700,noc,filter,routeid";
+		offset,length = < 0x18 32>;
+		description = "Register 1 to log errors";
+		InitFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 15 1 >;  /*bit 15 will aloways be 0, then we will always get "snoc_cnoc/I/0"*/
+			lut =
+				"snoc_cnoc/I/0";
+		};
+
+		TargetFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 10 5 >;
+			lut =
+				"clmm/T/0",
+				"cnoc_aon/T/0",
+				"cnoc_ddrt0_ctrl/T/0",
+				"cnoc_ddrt0_phy/T/0",
+				"cnoc_ddrt1_ctrl/T/0",
+				"cnoc_ddrt1_phy/T/0",
+				"cnoc_dspt/T/0",
+				"cnoc_gpu/T/0",
+				"cnoc_hsp/T/0",
+				"cnoc_lsp_apb2/T/0",
+				"cnoc_lsp_apb3/T/0",
+				"cnoc_lsp_apb4/T/0",
+				"cnoc_lsp_apb6/T/0",
+				"cnoc_mcput_d2d/T/0",
+				"cnoc_npu/T/0",
+				"cnoc_pciet_p/T/0",
+				"cnoc_pciet_x/T/0",
+				"cnoc_service/T/0",
+				"cnoc_tcu/T/0",
+				"cnoc_vc/T/0",
+				"cnoc_vi/T/0",
+				"cnoc_vo/T/0",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED",
+				"RESERVED";
+		};
+
+		TargetSubRange {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 2 >;
+		};
+
+		SeqId {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 8 >;
+		};
+	};
+
+	ErrorLogger3 {
+		/* This register does not really include a bitfield or its bitfield is 32 bits and it provides an offset address */
+		/* To calculate the absolute address, you must use the initflow:targetflow:subrange from ErrorLogger1 register */
+		/* And use it as an index in the aperture table. Then you must add the value of this register to the value given */
+		/* by the table to get the absolute address. */
+		compatible = "eswin,eic7700,register";
+		offset,length = <0x20 32>;
+		description = "Register 3 to log errors";
+		aperture-link = <1>; /* link to ErrorLogger1 whose information are required to calculate real absolute address */
+		AbsoluteAddress {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 8 >;	/* bitfield initflow:targeflow:subrange from aperture-link register */
+			aperture-size= < 46 >;		/* Number of line in the aperture table below */
+			aperture-idx,aperture-base =	/* Aperture_idx is concatenation of initflow:targetflow:subrange bitfield from ErrorLogger1 */
+				/bits/ 64  <0x0 0x0    0x0  0x51600000>,
+				/bits/ 64  <0x0 0x0    0x1  0x71600000>,
+				/bits/ 64  <0x0 0x1    0x0  0x51800000>,
+				/bits/ 64  <0x0 0x1    0x1  0x71800000>,
+				/bits/ 64  <0x0 0x1    0x2  0x0       >,
+				/bits/ 64  <0x0 0x1    0x3  0x0       >,
+				/bits/ 64  <0x0 0x2    0x0  0x52300000>,
+				/bits/ 64  <0x0 0x2    0x1  0x72300000>,
+				/bits/ 64  <0x0 0x3    0x0  0x53000000>,
+				/bits/ 64  <0x0 0x3    0x1  0x73000000>,
+				/bits/ 64  <0x0 0x4    0x0  0x52380000>,
+				/bits/ 64  <0x0 0x4    0x1  0x72380000>,
+				/bits/ 64  <0x0 0x5    0x0  0x53800000>,
+				/bits/ 64  <0x0 0x5    0x1  0x73800000>,
+				/bits/ 64  <0x0 0x6    0x0  0x52200000>,
+				/bits/ 64  <0x0 0x6    0x1  0x72200000>,
+				/bits/ 64  <0x0 0x7    0x0  0x51400000>,
+				/bits/ 64  <0x0 0x7    0x1  0x71400000>,
+				/bits/ 64  <0x0 0x8    0x0  0x50400000>,
+				/bits/ 64  <0x0 0x8    0x1  0x70400000>,
+				/bits/ 64  <0x0 0x9    0x0  0x50800000>,
+				/bits/ 64  <0x0 0x9    0x1  0x70800000>,
+				/bits/ 64  <0x0 0xa    0x0  0x50900000>,
+				/bits/ 64  <0x0 0xa    0x1  0x70900000>,
+				/bits/ 64  <0x0 0xb    0x0  0x50a00000>,
+				/bits/ 64  <0x0 0xb    0x1  0x70a00000>,
+				/bits/ 64  <0x0 0xc    0x0  0x50b00000>,
+				/bits/ 64  <0x0 0xc    0x1  0x70b00000>,
+				/bits/ 64  <0x0 0xd    0x0  0x52100000>,
+				/bits/ 64  <0x0 0xd    0x1  0x72100000>,
+				/bits/ 64  <0x0 0xe    0x0  0x51c00000>,
+				/bits/ 64  <0x0 0xe    0x1  0x71c00000>,
+				/bits/ 64  <0x0 0xf    0x0  0x50000000>,
+				/bits/ 64  <0x0 0xf    0x1  0x70000000>,
+				/bits/ 64  <0x0 0x10   0x0  0x54000000>,
+				/bits/ 64  <0x0 0x10   0x1  0x74000000>,
+				/bits/ 64  <0x0 0x11   0x0  0x52060000>,
+				/bits/ 64  <0x0 0x11   0x1  0x72060000>,
+				/bits/ 64  <0x0 0x12   0x0  0x50c00000>,
+				/bits/ 64  <0x0 0x12   0x1  0x70c00000>,
+				/bits/ 64  <0x0 0x13   0x0  0x50100000>,
+				/bits/ 64  <0x0 0x13   0x1  0x70100000>,
+				/bits/ 64  <0x0 0x14   0x0  0x51000000>,
+				/bits/ 64  <0x0 0x14   0x1  0x71000000>,
+				/bits/ 64  <0x0 0x15   0x0  0x50200000>,
+				/bits/ 64  <0x0 0x15   0x1  0x70200000>;
+		};
+	};
+
+	ErrorLogger5 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x28 32>;
+		description = "Register 5 to log errors";
+
+		User_flag {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0x0 7 >;
+			lut =
+				"Cache_0",
+				"Cache_1",
+				"Cache_2",
+				"Cache_3",
+				"Prot_0",
+				"Prot_1",
+				"Prot_2";
+		};
+	};
+};
+
+d0_llc_noc:d0_llc_noc@52081400 {
+	compatible = "eswin,eic7700-noc";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	ranges;
+	reg = <0 0x52081400 0 0x4000>;
+	interrupts = <441>;
+	interrupt-names = "error";
+	interrupt-parent = <&plic0>;
+	errlogger,idx = <0 1 3 4 5>;
+	sideband_manager@52082000 {
+		compatible = "eswin,win2xxx-noc-sideband-manager";
+		reg = <0 0x52082000 0 0x10>;
+		SenseIn0 =
+			<SBM_LNOC_NPU_LLC0 	OFFSET0>,
+			<SBM_LNOC_NPU_LLC1 	OFFSET1>,
+			<SBM_LNOC_DDRT0_P0 	OFFSET2>,
+			<SBM_LNOC_DDRT1_P0 	OFFSET3>;
+		bf-name =
+			"SBM_LNOC_NPU_LLC0",
+			"SBM_LNOC_NPU_LLC1",
+			"SBM_LNOC_DDRT0_P0",
+			"SBM_LNOC_DDRT1_P0";
+	};
+
+	llcnoc_packet_ddr0_p0_req_probe@52080000 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52080000 0 0x4000>;
+		clocks = <&d0_clock EIC7700_CLK_DDRT0_P0_ACLK>;
+		clock-names = "clk";
+		interrupts = <445>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr0_p0_req";
+	};
+	llcnoc_packet_ddr1_p0_req_probe@52080800 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52080800 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_DDRT1_P0_ACLK>;
+		clock-names = "clk";
+		interrupts = <443>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr1_p0_req";
+	};
+	llcnoc_trans_probe@52081000 {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		compatible = "eswin,win2xxx-noc-trans-probe";
+		reg = <0 0x52081000 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_NOC_NSP_CLK>;
+		clock-names = "clk";
+		interrupts = <441>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <2>;
+		counter,nr = <8>;
+		profiler,nr = <1>;
+		portsel = "npu_llc0", "npu_llc1";
+		llcnoc_trans_npu_llc0_filter@52081480 {
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52081480 0 0x80>;
+		};
+		llcnoc_trans_npu_llc1_filter@52081500 {
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52081500 0 0x80>;
+		};
+		llcnoc_trans_profiler@52081580 {
+			compatible = "eswin,win2xxx-noc-trans-profiler";
+			reg = <0 0x52081580 0 0x80>;
+		};
+	};
+	ErrorLogger0 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x14 32 >;
+		description = "Register 0 to log errors";
+		lock {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 1 >;
+			lut = "Not Locked", "Locked";
+		};
+		OpCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 1 4 >;
+			lut = "RD: data read with incrementing address",
+				"RDW: data read with wrapping address",
+				"RDL: allocates monitor in the Target with incrementing address",
+				"RDX: exclusive read with incrementing address",
+				"WR: data write with incrementing address",
+				"WRW: data write with wrapping address",
+				"WRC: conditional write if matching monitor in Target is found",
+				"RSV: reserved",
+				"PRE: preamble packet of linked sequence (locked sequence)",
+				"URG: urgency packet used for QoS (status must be REQ)";
+		};
+		ErrCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 3 >;
+			lut = "SLV (error source: Target): error detected by the Slave without any information or no Error",
+				"DEC (error source: Initiator NIU): decode error",
+				"UNS (error source: Target NIU): unsupported access type",
+				"DISC (error source: Power Disconnect): disconnected Target or NoC domain",
+				"SEC (error source: Initiator NIU or Firewall): security error",
+				"HIDE (error source: Firewall): hidden security error. Will be reported as OK to the initiator",
+				"TMO (error source: Target NIU): time-out",
+				"RSV: reserved";
+
+		};
+		Len1 {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 16 12 >;
+		};
+		Format {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 31 1 >;
+			lut = "NTTP v3.0 (Invalid)", "NTTP v3.5 (Ok)";
+		};
+	};
+
+	ErrorLogger1 {
+		compatible = "eswin,eic7700,register", "eswin,eic7700,noc,filter,routeid";
+		offset,length = < 0x18 32>;
+		description = "Register 1 to log errors";
+		InitFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 14 2 >;
+			lut =
+				"npu_lnoc_llc0/I/0",
+				"npu_lnoc_llc1/I/0",
+				"snoc_lnoc/I/0",
+				"RESERVED";
+		};
+
+		TargetFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 12 2 >;
+			lut =
+				"lnoc_ddrt0_p0/T/0",
+				"lnoc_ddrt1_p0/T/0",
+				"lnoc_service/T/0",
+				"RESERVED";
+		};
+
+		TargetSubRange {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 4 >;
+		};
+
+		SeqId {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 8 >;
+		};
+	};
+
+	ErrorLogger3 {
+		/* This register does not really include a bitfield or its bitfield is 32 bits and it provides an offset address */
+		/* To calculate the absolute address, you must use the initflow:targetflow:subrange from ErrorLogger1 register */
+		/* And use it as an index in the aperture table. Then you must add the value of this register to the value given */
+		/* by the table to get the absolute address. */
+		compatible = "eswin,eic7700,register";
+		offset,length = <0x20 32>;
+		description = "Register 3 to log errors";
+		aperture-link = <1>; /* link to ErrorLogger whose information are required to calculate real absolute address */
+		msb-link = <4>; /*indicate which ErrorLogger contains the msb addrs, -1 means no*/
+		AbsoluteAddress {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 8 >;		/* bitfield initflow:targeflow:subrange from aperture-link register */
+			aperture-size= < 53 >;		/* Number of line in the aperture table below */
+			aperture-idx,aperture-base =		/* Aperture_idx is concatenation of initflow:targetflow:subrange bitfield from ErrorLogger1 */
+				/bits/ 64  <0x0	0x0	0x0	0x80000000      >,
+				/bits/ 64  <0x0	0x0	0x1	0x100000000     >,
+				/bits/ 64  <0x0	0x0	0x2	0x200000000     >,
+				/bits/ 64  <0x0	0x0	0x3	0x400000000     >,
+				/bits/ 64  <0x0	0x0	0x4	0x800000000     >,
+				/bits/ 64  <0x0	0x0	0x5	0x2000000000    >,
+				/bits/ 64  <0x0	0x0	0x6	0xc000000000    >,
+				/bits/ 64  <0x0	0x0	0x7	0xe000000000    >,
+				/bits/ 64  <0x0	0x0	0x8	0x4000000000    >,
+				/bits/ 64  <0x0	0x0	0x9	0x4000000100    >,
+				/bits/ 64  <0x0	0x0	0xa	0x10000000000   >,
+				/bits/ 64  <0x0	0x0	0xb	0x10000000100   >,
+				/bits/ 64  <0x0	0x0	0xc	0x0             >,
+				/bits/ 64  <0x0	0x1	0x0	0x80000080      >,
+				/bits/ 64  <0x0	0x1	0x1	0x100000080     >,
+				/bits/ 64  <0x0	0x1	0x2	0x200000080     >,
+				/bits/ 64  <0x0	0x1	0x3	0x400000080     >,
+				/bits/ 64  <0x0	0x1	0x4	0x800000080     >,
+				/bits/ 64  <0x0	0x1	0x5	0x2000000080    >,
+				/bits/ 64  <0x0	0x1	0x6	0xc000000080    >,
+				/bits/ 64  <0x0	0x1	0x7	0xe000000080    >,
+				/bits/ 64  <0x0	0x1	0x8	0x4000000080    >,
+				/bits/ 64  <0x0	0x1	0x9	0x4000000180    >,
+				/bits/ 64  <0x0	0x1	0xa	0x10000000080   >,
+				/bits/ 64  <0x0	0x1	0xb	0x10000000180   >,
+				/bits/ 64  <0x1	0x0	0x0	0x80000000      >,
+				/bits/ 64  <0x1	0x0	0x1	0x100000000     >,
+				/bits/ 64  <0x1	0x0	0x2	0x200000000     >,
+				/bits/ 64  <0x1	0x0	0x3	0x400000000     >,
+				/bits/ 64  <0x1	0x0	0x4	0x800000000     >,
+				/bits/ 64  <0x1	0x0	0x5	0x2000000000    >,
+				/bits/ 64  <0x1	0x0	0x6	0xc000000000    >,
+				/bits/ 64  <0x1	0x0	0x7	0xe000000000    >,
+				/bits/ 64  <0x1	0x0	0x8	0x4000000000    >,
+				/bits/ 64  <0x1	0x0	0x9	0x4000000100    >,
+				/bits/ 64  <0x1	0x0	0xa	0x10000000000   >,
+				/bits/ 64  <0x1	0x0	0xb	0x10000000100   >,
+				/bits/ 64  <0x1	0x0	0xc	0x0             >,
+				/bits/ 64  <0x1	0x1	0x0	0x80000080      >,
+				/bits/ 64  <0x1	0x1	0x1	0x100000080     >,
+				/bits/ 64  <0x1	0x1	0x2	0x200000080     >,
+				/bits/ 64  <0x1	0x1	0x3	0x400000080     >,
+				/bits/ 64  <0x1	0x1	0x4	0x800000080     >,
+				/bits/ 64  <0x1	0x1	0x5	0x2000000080    >,
+				/bits/ 64  <0x1	0x1	0x6	0xc000000080    >,
+				/bits/ 64  <0x1	0x1	0x7	0xe000000080    >,
+				/bits/ 64  <0x1	0x1	0x8	0x4000000080    >,
+				/bits/ 64  <0x1	0x1	0x9	0x4000000180    >,
+				/bits/ 64  <0x1	0x1	0xa	0x10000000080   >,
+				/bits/ 64  <0x1	0x1	0xb	0x10000000180   >,
+				/bits/ 64  <0x2	0x2	0x0	0x52080000      >,
+				/bits/ 64  <0x2	0x2	0x1	0x72080000      >,
+				/bits/ 64  <0x2	0x2	0x2	0x0             >;
+		};
+	};
+
+	ErrorLogger4 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x24 32>;
+		description = "Register 4 to log errors";
+		addr_msb {
+			compatible = "eswin,eic7700,bitfield";
+			description = "Stores NTTP packet header field Addr (MSBs) of the logged error";
+			offset,length = < 0 9 >;
+		};
+	};
+
+	ErrorLogger5 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x28 32 >;
+		description = "Register 5 to log errors";
+
+		User_flag {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0x0 16 >;
+			lut =
+				"Cache_0",
+				"Cache_1",
+				"Cache_2",
+				"Cache_3",
+				"Prot_0",
+				"Prot_1",
+				"Prot_2",
+				"Qos_0",
+				"Qos_1",
+				"Qos_2",
+				"Qos_3",
+				"User_0",
+				"User_1",
+				"User_2",
+				"User_3",
+				"User_4";
+		};
+	};
+};
+
+d0_sys_noc:d0_sys_noc@52002C00 {
+	compatible = "eswin,eic7700-noc";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	ranges;
+	reg = <0 0x52002C00 0 0x4000>;
+	interrupts = <431>;
+	interrupt-names = "error";
+	interrupt-parent = <&plic0>;
+	errlogger,idx = <0 1 3 4 5>;
+
+	eswin,qos-configs = "DSPT", "NPU", "SPISLV_TBU3";
+	eswin,DSPT-qos-base = <0x52002C80>;
+	eswin,DSPT-qos-settings = <
+		0x8 0x4        /* prio */
+		0xC 0x2        /* mode 0:fixed 1:limiter 2:bypass 3:regulator*/
+		/* a number of (1/256)th of Bytes/cycle.
+		   Ex:zebu zdfi design feature, dsp AXI Clk=1040MHz, BW=12.1875MB/s, register value = (9.375/1040)*256 = 0x03
+		*/
+		0x10 0x03    /* bandwidth. 12.1875MB/s */
+		/*
+		   Saturation(B) = ((Requried Bandwidth)*(Windows Time of Bandwidth Calculation))/16
+		   Ex:16 byte saturation for BW=12.1875MB/s means 1.313us window time.
+		   The desired value is number of saturation bytes divided by 16(ex,1 for 16byte B)
+		*/
+		0x14 0x1     /* saturation, 1.313us*/
+		0x18 0x1>;   /* QoSEn */
+
+	eswin,NPU-qos-base = <0x52002D00>;
+	eswin,NPU-qos-settings = <
+		0x8 0x4      /* prio */
+		0xC 0x2      /* mode */
+		0x10 0x18    /* bandwidth */
+		0x14 0x10    /* saturation */
+		0x18 0x1>;   /* QoSEn */
+
+	eswin,SPISLV_TBU3-qos-base = <0x52002D80>;
+	eswin,SPISLV_TBU3-qos-settings = <
+		0x8 0x4      /* prio */
+		0xC 0x2      /* mode */
+		0x10 0x18    /* bandwidth */
+		0x14 0x10    /* saturation */
+		0x18 0x1>;   /* QoSEn */
+	sideband_manager@52004000 {
+		compatible = "eswin,win2xxx-noc-sideband-manager";
+		reg = <0 0x52004000 0 0x10>;
+		SenseIn0 =
+			<SBM_AON_SNOC_SP0 	OFFSET0>,
+			<SBM_DSPT_SNOC 		OFFSET1>,
+			<SBM_JTAG_SNOC 		OFFSET2>,
+			<SBM_MCPUT_SNOC_D2D 	OFFSET3>,
+			<SBM_MCPUT_SNOC_MP 	OFFSET4>,
+			<SBM_MCPUT_SNOC_SP0 	OFFSET5>,
+			<SBM_MCPUT_SNOC_SP1 	OFFSET6>,
+			<SBM_NPU_SNOC_SP0 	OFFSET7>,
+			<SBM_NPU_SNOC_SP1 	OFFSET8>,
+			<SBM_PCIET_SNOC_P 	OFFSET9>,
+			<SBM_SPISLV_PCIET_SNOC	OFFSET10>,
+			<SBM_TBU4_SNOC 		OFFSET11>,
+			<SBM_TCU_SNOC 		OFFSET12>,
+			<SBM_SNOC_AON 		OFFSET13>,
+			<SBM_SNOC_DDR0_P1 	OFFSET14>,
+			<SBM_SNOC_DDR0_P2 	OFFSET15>,
+			<SBM_SNOC_DDR1_P1 	OFFSET16>,
+			<SBM_SNOC_DDR1_P2 	OFFSET17>,
+			<SBM_SNOC_DSPT 		OFFSET18>,
+			<SBM_SNOC_MCPUT_D2D 	OFFSET19>,
+			<SBM_SNOC_NPU 		OFFSET20>,
+			<SBM_SNOC_PCIET 	OFFSET21>;
+		bf-name =
+			"SBM_AON_SNOC_SP0",
+			"SBM_DSPT_SNOC",
+			"SBM_JTAG_SNOC",
+			"SBM_MCPUT_SNOC_D2D ",
+			"SBM_MCPUT_SNOC_MP",
+			"SBM_MCPUT_SNOC_SP0",
+			"SBM_MCPUT_SNOC_SP1",
+			"SBM_NPU_SNOC_SP0",
+			"SBM_NPU_SNOC_SP1",
+			"SBM_PCIET_SNOC_P",
+			"SBM_SPISLV_PCIET_SNOC",
+			"SBM_TBU4_SNOC",
+			"SBM_TCU_SNOC",
+			"SBM_SNOC_AON",
+			"SBM_SNOC_DDR0_P1",
+			"SBM_SNOC_DDR0_P2",
+			"SBM_SNOC_DDR1_P1",
+			"SBM_SNOC_DDR1_P2",
+			"SBM_SNOC_DSPT",
+			"SBM_SNOC_MCPUT_D2D",
+			"SBM_SNOC_NPU",
+			"SBM_SNOC_PCIET";
+	};
+	sysnoc_packet_ddr0_p1_req_probe@52000000 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52000000 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_DDRT0_P1_ACLK>;
+		clock-names = "clk";
+		interrupts = <439>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr0_p1_req";
+	};
+	sysnoc_packet_ddr0_p2_req_probe@52000800 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52000800 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_DDRT0_P2_ACLK>;
+		clock-names = "clk";
+		interrupts = <437>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr0_p2_req";
+	};
+	sysnoc_packet_ddr1_p1_req_probe@52001000 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52001000 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_DDRT1_P1_ACLK>;
+		clock-names = "clk";
+		interrupts = <435>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr1_p1_req";
+	};
+	sysnoc_packet_ddr1_p2_req_probe@52001800 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52001800 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_DDRT1_P2_ACLK>;
+		clock-names = "clk";
+		interrupts = <433>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr1_p2_req";
+	};
+	sysnoc_trans_probe_0@52002000 {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		compatible = "eswin,win2xxx-noc-trans-probe";
+		reg = <0 0x52002000 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_NOC_NSP_CLK>;
+		clock-names = "clk";
+		interrupts = <430>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <2>;
+		counter,nr = <8>;
+		profiler,nr = <1>;
+		portsel = "dspt_snoc", "npu_sp1";
+		sysnoc_trans_dspt_filter@52002E00 {
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52002E00 0 0x80>;
+		};
+		sysnoc_trans_npu_sp1_filter@52002F80 {
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52002F80 0 0x80>;
+		};
+		sysnoc_trans_profiler@52003180 {
+			compatible = "eswin,win2xxx-noc-trans-profiler";
+			reg = <0 0x52003180 0 0x80>;
+		};
+	};
+	sysnoc_trans_probe_1@52002400 {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		compatible = "eswin,win2xxx-noc-trans-probe";
+		reg = <0 0x52002400 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_NOC_NSP_CLK>;
+		clock-names = "clk";
+		interrupts = <429>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <3>;
+		counter,nr = <12>;
+		profiler,nr = <1>;
+		portsel = "mcput_mp", "mcput_sp1", "tcu";
+		sysnoc_trans_mcput_mp_filter@52002E80 {
+			status = "okay";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52002E80 0 0x80>;
+		};
+		sysnoc_trans_mcput_sp1_filter@52002F00 {
+			status = "okay";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52002F00 0 0x80>;
+		};
+		sysnoc_trans_tcu_filter@52003100 {
+			status = "okay";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52003100 0 0x80>;
+		};
+		sysnoc_trans_profiler@52003200 {
+			compatible = "eswin,win2xxx-noc-trans-profiler";
+			reg = <0 0x52003200 0 0x80>;
+		};
+	};
+	sysnoc_trans_probe_2@52002800 {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		compatible = "eswin,win2xxx-noc-trans-probe";
+		reg = <0 0x52002800 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_NOC_NSP_CLK>;
+		clock-names = "clk";
+		interrupts = <428>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <2>;
+		counter,nr = <8>;
+		profiler,nr = <1>;
+		portsel = "spislv_tbu3", "tbu4_snoc";
+		sysnoc_trans_spislv_tbu3_filter@52003000 {	/*pcie subsys*/
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52003000 0 0x80>;
+		};
+		sysnoc_trans_tbu4_filter@52003080 {	/*aon subsys*/
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52003080 0 0x80>;
+		};
+		sysnoc_trans_profiler@52003280 {
+			compatible = "eswin,win2xxx-noc-trans-profiler";
+			reg = <0 0x52003280 0 0x80>;
+		};
+	};
+	ErrorLogger0 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x14 32 >;
+		description = "Register 0 to log errors";
+		lock {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 1>;
+			lut = "Not Locked", "Locked";
+		};
+		OpCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 1 4>;
+			lut = "RD: data read with incrementing address",
+				"RDW: data read with wrapping address",
+				"RDL: allocates monitor in the Target with incrementing address",
+				"RDX: exclusive read with incrementing address",
+				"WR: data write with incrementing address",
+				"WRW: data write with wrapping address",
+				"WRC: conditional write if matching monitor in Target is found",
+				"RSV: reserved",
+				"PRE: preamble packet of linked sequence (locked sequence)",
+				"URG: urgency packet used for QoS (status must be REQ)";
+		};
+		ErrCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 3 >;
+			lut = "SLV (error source: Target): error detected by the Slave without any information or no Error",
+				"DEC (error source: Initiator NIU): decode error",
+				"UNS (error source: Target NIU): unsupported access type",
+				"DISC (error source: Power Disconnect): disconnected Target or NoC domain",
+				"SEC (error source: Initiator NIU or Firewall): security error",
+				"HIDE (error source: Firewall): hidden security error. Will be reported as OK to the initiator",
+				"TMO (error source: Target NIU): time-out",
+				"RSV: reserved";
+
+		};
+		Len1 {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 16 12 >;
+		};
+		Format {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 31 1 >;
+			lut = "NTTP v3.0 (Invalid)", "NTTP v3.5 (Ok)";
+		};
+	};
+
+	ErrorLogger1 {
+		compatible = "eswin,eic7700,register", "eswin,eic7700,noc,filter,routeid";
+		offset,length = < 0x18 32>;
+		description = "Register 1 to log errors";
+		InitFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 19 4 >;
+			lut =
+				"aon_snoc_sp0/I/0",
+				"dspt_snoc/I/0",
+				"jtag_snoc/I/0",
+				"mcput_snoc_d2d/I/0",
+				"mcput_snoc_mp/I/0",
+				"mcput_snoc_sp0/I/0",
+				"mcput_snoc_sp1/I/0",
+				"mnoc_snoc/I/0",
+				"npu_snoc_sp0/I/0",
+				"npu_snoc_sp1/I/0",
+				"pciet_snoc_p/I/0",
+				"rnoc_snoc/I/0",
+				"spislv_tbu3_snoc/I/0",
+				"tbu4_snoc/I/0",
+				"tcu_snoc/I/0",
+				"RESERVED0";
+		};
+
+		TargetFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 15 4 >;
+			lut =
+				"snoc_aon/T/0",
+				"snoc_cnoc/T/0",
+				"snoc_ddrt0_p1/T/0",
+				"snoc_ddrt0_p2/T/0",
+				"snoc_ddrt1_p1/T/0",
+				"snoc_ddrt1_p2/T/0",
+				"snoc_dspt/T/0",
+				"snoc_lnoc/T/0",
+				"snoc_mcput_d2d/T/0",
+				"snoc_mnoc/T/0",
+				"snoc_npu/T/0",
+				"snoc_pciet/T/0",
+				"snoc_rnoc/T/0",
+				"snoc_service/T/0",
+				"RESERVED1",
+				"RESERVED2";
+		};
+
+		TargetSubRange {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 9 6 >;
+		};
+
+		SeqId {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 9 >;
+		};
+	};
+
+	ErrorLogger3 {
+		/* This register does not really include a bitfield or its bitfield is 32 bits and it provides an offset address */
+		/* To calculate the absolute address, you must use the initflow:targetflow:subrange from ErrorLogger1 register */
+		/* And use it as an index in the aperture table. Then you must add the value of this register to the value given */
+		/* by the table to get the absolute address. */
+		compatible = "eswin,eic7700,register";
+		offset,length = <0x20 32>;
+		description = "Register 3 to log errors";
+		aperture-link = <1>; /* link to ErrorLogger whose information are required to calculate real absolute address */
+		msb-link = <4>; /*indicate which ErrorLogger contains the msb addrs, -1 means no*/
+		AbsoluteAddress {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 9 14 >;		/* bitfield initflow:targeflow:subrange from aperture-link register */
+			aperture-size= < 1181 >;		/* Number of line in the aperture table below */
+			aperture-idx,aperture-base =		/* Aperture_idx is concatenation of initflow:targetflow:subrange bitfield from ErrorLogger1 */
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0xf             0x0               >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_cnoc_T_O      0x10            0x0               >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_lnoc_T_O      0x0             0x52080000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_lnoc_T_O      0x1             0x72080000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x2             0x58800000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x3             0x78800000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x4             0x59000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x5             0x5a000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x6             0x5b000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x7             0x79000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x8             0x7a000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x9             0x7b000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xa             0x50000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xb             0x70000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xc             0x40000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xd             0x60000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mnoc_T_O      0x0             0x52020000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_mnoc_T_O      0x1             0x72020000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_rnoc_T_O      0x0             0x52040000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_rnoc_T_O      0x1             0x72040000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_service_T_O   0x0             0x52000000        >,
+				/bits/ 64  <aon_snoc_sp0_I_O     snoc_service_T_O   0x1             0x72000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x0             0x520c0000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x1             0x720c0000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x2             0x58400000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x3             0x78400000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x4             0x14000400000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x5             0x14008400000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x6             0x58800000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x7             0x78800000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x8             0x14000800000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0x9             0x14008800000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0xa             0x5c000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0xb             0x7c000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0xc             0x14004000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_aon_T_O       0xd             0x1400c000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x0             0x80000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x1             0x100000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x2             0x200000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x3             0x400000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x4             0x800000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x6             0xc000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x7             0xe000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x8             0x4000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0x9             0x4000000100      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0xa             0x10000000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt0_p2_T_O  0xb             0x10000000100     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x0             0x80000080        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x1             0x100000080       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x2             0x200000080       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x3             0x400000080       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x4             0x800000080       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x6             0xc000000080      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x7             0xe000000080      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x8             0x4000000080      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0x9             0x4000000180      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0xa             0x10000000080     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_ddrt1_p2_T_O  0xb             0x10000000180     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x2             0x14000400000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x3             0x14008400000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x4             0x58800000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x5             0x78800000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x6             0x14000800000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x7             0x14008800000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x8             0x59000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x9             0x5a000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0xa             0x5b000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0xb             0x79000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0xc             0x7a000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0xd             0x7b000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0xe             0x14001000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0xf             0x14002000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x10            0x14003000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x11            0x14009000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x12            0x1400a000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x13            0x1400b000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x14            0x50000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x15            0x70000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x16            0x40000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x17            0x60000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x18            0x80000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x19            0x100000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x1a            0x200000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x1b            0x400000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x1c            0x800000000       >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x1d            0x1800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x1e            0x3800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x1f            0xd800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x20            0xf800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x21            0x2000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x22            0x7000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x23            0x7000000100      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x24            0xc000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x25            0xe000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x26            0x13000000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x27            0x13000000100     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x28            0x4000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x29            0x4000000100      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x2a            0x8000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x2b            0xa000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x2c            0x10000000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_mcput_d2d_T_O 0x2d            0x10000000100     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_pciet_T_O     0x2             0x8000000000      >,
+				/bits/ 64  <dspt_snoc_I_O        snoc_pciet_T_O     0x3             0xa000000000      >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0xf             0x0               >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_cnoc_T_O      0x10            0x0               >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_lnoc_T_O      0x0             0x52080000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_lnoc_T_O      0x1             0x72080000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_mnoc_T_O      0x0             0x52020000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_mnoc_T_O      0x1             0x72020000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_rnoc_T_O      0x0             0x52040000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_rnoc_T_O      0x1             0x72040000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_service_T_O   0x0             0x52000000        >,
+				/bits/ 64  <jtag_snoc_I_O        snoc_service_T_O   0x1             0x72000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x0             0x520c0000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x1             0x720c0000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x2             0x58400000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x3             0x78400000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x4             0x14000400000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x5             0x14008400000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x6             0x58800000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x7             0x78800000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x8             0x14000800000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0x9             0x14008800000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0xa             0x5c000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0xb             0x7c000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0xc             0x14004000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_aon_T_O       0xd             0x1400c000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x0             0x80000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x1             0x100000000       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x2             0x200000000       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x3             0x400000000       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x4             0x800000000       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x6             0xc000000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x7             0xe000000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x8             0x4000000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0x9             0x4000000100      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0xa             0x10000000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt0_p2_T_O  0xb             0x10000000100     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x0             0x80000080        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x1             0x100000080       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x2             0x200000080       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x3             0x400000080       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x4             0x800000080       >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x6             0xc000000080      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x7             0xe000000080      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x8             0x4000000080      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0x9             0x4000000180      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0xa             0x10000000080     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_ddrt1_p2_T_O  0xb             0x10000000180     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_dspt_T_O      0x4             0x14003000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_dspt_T_O      0x5             0x1400b000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_lnoc_T_O      0x0             0x52080000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_lnoc_T_O      0x1             0x72080000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_mnoc_T_O      0x0             0x52020000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_mnoc_T_O      0x1             0x72020000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_pciet_T_O     0x2             0x8000000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_pciet_T_O     0x3             0xa000000000      >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_rnoc_T_O      0x0             0x52040000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_rnoc_T_O      0x1             0x72040000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_service_T_O   0x0             0x52000000        >,
+				/bits/ 64  <mcput_snoc_d2d_I_O   snoc_service_T_O   0x1             0x72000000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x0             0x80000000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x1             0x100000000       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x2             0x200000000       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x3             0x400000000       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x4             0x800000000       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x6             0x4000000000      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt0_p1_T_O  0x7             0x4000000100      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x0             0x80000080        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x1             0x100000080       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x2             0x200000080       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x3             0x400000080       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x4             0x800000080       >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x6             0x4000000080      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_ddrt1_p1_T_O  0x7             0x4000000180      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x6             0x1800000000      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x7             0x3800000000      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x8             0x7000000000      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0x9             0x7000000100      >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0xa             0x0               >,
+				/bits/ 64  <mcput_snoc_mp_I_O    snoc_npu_T_O       0xb             0x0               >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x0             0x520c0000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x1             0x720c0000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x2             0x58400000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x3             0x78400000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x4             0x58800000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x5             0x78800000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x6             0x5c000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_aon_T_O       0x7             0x7c000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_lnoc_T_O      0x0             0x52080000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_lnoc_T_O      0x1             0x72080000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x2             0x58800000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x3             0x78800000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x4             0x59000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x5             0x5a000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x6             0x5b000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x7             0x79000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x8             0x7a000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0x9             0x7b000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0xa             0x50000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0xb             0x70000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0xc             0x40000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mcput_d2d_T_O 0xd             0x60000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mnoc_T_O      0x0             0x52020000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_mnoc_T_O      0x1             0x72020000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_rnoc_T_O      0x0             0x52040000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_rnoc_T_O      0x1             0x72040000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_service_T_O   0x0             0x52000000        >,
+				/bits/ 64  <mcput_snoc_sp0_I_O   snoc_service_T_O   0x1             0x72000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x0             0x520c0000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x1             0x720c0000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x2             0x58400000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x3             0x78400000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x4             0x14000400000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x5             0x14008400000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x6             0x58800000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x7             0x78800000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x8             0x14000800000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0x9             0x14008800000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0xa             0x5c000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0xb             0x7c000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0xc             0x14004000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0xd             0x1400c000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0xe             0x0               >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_aon_T_O       0xf             0x0               >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x0             0x80000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x1             0x100000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x2             0x200000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x3             0x400000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x4             0x800000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x6             0xc000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x7             0xe000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x8             0x4000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0x9             0x4000000100      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0xa             0x10000000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt0_p2_T_O  0xb             0x10000000100     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x0             0x80000080        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x1             0x100000080       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x2             0x200000080       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x3             0x400000080       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x4             0x800000080       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x6             0xc000000080      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x7             0xe000000080      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x8             0x4000000080      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0x9             0x4000000180      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0xa             0x10000000080     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_ddrt1_p2_T_O  0xb             0x10000000180     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_dspt_T_O      0x4             0x14003000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_dspt_T_O      0x5             0x1400b000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x2             0x14000400000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x3             0x14008400000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x4             0x58800000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x5             0x78800000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x6             0x14000800000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x7             0x14008800000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x8             0x59000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x9             0x5a000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0xa             0x5b000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0xb             0x79000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0xc             0x7a000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0xd             0x7b000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0xe             0x14001000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0xf             0x14002000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x10            0x14003000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x11            0x14009000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x12            0x1400a000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x13            0x1400b000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x14            0x50000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x15            0x70000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x16            0x40000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x17            0x60000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x18            0x80000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x19            0x100000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x1a            0x200000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x1b            0x400000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x1c            0x800000000       >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x1d            0x1800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x1e            0x3800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x1f            0xd800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x20            0xf800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x21            0x2000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x22            0x7000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x23            0x7000000100      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x24            0xc000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x25            0xe000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x26            0x13000000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x27            0x13000000100     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x28            0x4000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x29            0x4000000100      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x2a            0x8000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x2b            0xa000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x2c            0x10000000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_mcput_d2d_T_O 0x2d            0x10000000100     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_pciet_T_O     0x2             0x8000000000      >,
+				/bits/ 64  <mcput_snoc_sp1_I_O   snoc_pciet_T_O     0x3             0xa000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_dspt_T_O      0x4             0x14003000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_dspt_T_O      0x5             0x1400b000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x2             0x14000400000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x3             0x14008400000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x4             0x58800000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x5             0x78800000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x6             0x14000800000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x7             0x14008800000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x8             0x59000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x9             0x5a000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0xa             0x5b000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0xb             0x79000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0xc             0x7a000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0xd             0x7b000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0xe             0x14001000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0xf             0x14002000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x10            0x14003000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x11            0x14009000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x12            0x1400a000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x13            0x1400b000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x14            0x50000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x15            0x70000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x16            0x40000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x17            0x60000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x18            0x80000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x19            0x100000000       >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x1a            0x200000000       >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x1b            0x400000000       >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x1c            0x800000000       >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x1d            0x1800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x1e            0x3800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x1f            0xd800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x20            0xf800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x21            0x2000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x22            0x7000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x23            0x7000000100      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x24            0xc000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x25            0xe000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x26            0x13000000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x27            0x13000000100     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x28            0x4000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x29            0x4000000100      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x2a            0x8000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x2b            0xa000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x2c            0x10000000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_mcput_d2d_T_O 0x2d            0x10000000100     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_pciet_T_O     0x2             0x8000000000      >,
+				/bits/ 64  <mnoc_snoc_I_O        snoc_pciet_T_O     0x3             0xa000000000      >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x0             0x520c0000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x1             0x720c0000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x2             0x58400000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x3             0x78400000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x4             0x58800000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x5             0x78800000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x6             0x5c000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_aon_T_O       0x7             0x7c000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0xf             0x0               >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_cnoc_T_O      0x10            0x0               >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_lnoc_T_O      0x0             0x52080000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_lnoc_T_O      0x1             0x72080000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x2             0x58800000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x3             0x78800000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x4             0x59000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x5             0x5a000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x6             0x5b000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x7             0x79000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x8             0x7a000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0x9             0x7b000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xa             0x50000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xb             0x70000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xc             0x40000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mcput_d2d_T_O 0xd             0x60000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mnoc_T_O      0x0             0x52020000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_mnoc_T_O      0x1             0x72020000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_rnoc_T_O      0x0             0x52040000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_rnoc_T_O      0x1             0x72040000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_service_T_O   0x0             0x52000000        >,
+				/bits/ 64  <npu_snoc_sp0_I_O     snoc_service_T_O   0x1             0x72000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x0             0x520c0000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x1             0x720c0000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x2             0x58400000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x3             0x78400000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x4             0x14000400000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x5             0x14008400000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x6             0x58800000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x7             0x78800000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x8             0x14000800000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0x9             0x14008800000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0xa             0x5c000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0xb             0x7c000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0xc             0x14004000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0xd             0x1400c000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0xe             0x0               >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_aon_T_O       0xf             0x0               >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x0             0x80000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x1             0x100000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x2             0x200000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x3             0x400000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x4             0x800000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x6             0xc000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x7             0xe000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x8             0x4000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0x9             0x4000000100      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0xa             0x10000000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt0_p2_T_O  0xb             0x10000000100     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x0             0x80000080        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x1             0x100000080       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x2             0x200000080       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x3             0x400000080       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x4             0x800000080       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x6             0xc000000080      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x7             0xe000000080      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x8             0x4000000080      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0x9             0x4000000180      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0xa             0x10000000080     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_ddrt1_p2_T_O  0xb             0x10000000180     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_dspt_T_O      0x4             0x14003000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_dspt_T_O      0x5             0x1400b000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x2             0x14000400000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x3             0x14008400000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x4             0x58800000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x5             0x78800000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x6             0x14000800000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x7             0x14008800000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x8             0x59000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x9             0x5a000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0xa             0x5b000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0xb             0x79000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0xc             0x7a000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0xd             0x7b000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0xe             0x14001000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0xf             0x14002000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x10            0x14003000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x11            0x14009000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x12            0x1400a000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x13            0x1400b000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x14            0x50000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x15            0x70000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x16            0x40000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x17            0x60000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x18            0x80000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x19            0x100000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x1a            0x200000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x1b            0x400000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x1c            0x800000000       >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x1d            0x1800000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x1e            0x3800000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x1f            0xd800000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x20            0xf800000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x21            0x2000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x22            0x7000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x23            0x7000000100      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x24            0xc000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x25            0xe000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x26            0x13000000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x27            0x13000000100     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x28            0x4000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x29            0x4000000100      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x2a            0x8000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x2b            0xa000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x2c            0x10000000000     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_mcput_d2d_T_O 0x2d            0x10000000100     >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_pciet_T_O     0x2             0x8000000000      >,
+				/bits/ 64  <npu_snoc_sp1_I_O     snoc_pciet_T_O     0x3             0xa000000000      >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0xf             0x0               >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_cnoc_T_O      0x10            0x0               >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_lnoc_T_O      0x0             0x52080000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_lnoc_T_O      0x1             0x72080000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_mnoc_T_O      0x0             0x52020000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_mnoc_T_O      0x1             0x72020000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_rnoc_T_O      0x0             0x52040000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_rnoc_T_O      0x1             0x72040000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_service_T_O   0x0             0x52000000        >,
+				/bits/ 64  <pciet_snoc_p_I_O     snoc_service_T_O   0x1             0x72000000        >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x12            0x0               >,
+				/bits/ 64  <rnoc_snoc_I_O        snoc_npu_T_O       0x13            0x0               >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x0             0x520c0000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x1             0x720c0000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x2             0x58400000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x3             0x78400000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x4             0x14000400000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x5             0x14008400000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x6             0x58800000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x7             0x78800000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x8             0x14000800000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0x9             0x14008800000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0xa             0x5c000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0xb             0x7c000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0xc             0x14004000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_aon_T_O       0xd             0x1400c000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x0             0x52060000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x1             0x72060000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x2             0x52100000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x3             0x52200000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x4             0x52300000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x5             0x72100000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x6             0x72200000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x7             0x72300000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x8             0x53000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0x9             0x73000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0xa             0x50000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0xb             0x70000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0xc             0x54000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0xd             0x74000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_cnoc_T_O      0xe             0x0               >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x0             0x80000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x1             0x100000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x2             0x200000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x3             0x400000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x4             0x800000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x6             0xc000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x7             0xe000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x8             0x4000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0x9             0x4000000100      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0xa             0x10000000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt0_p2_T_O  0xb             0x10000000100     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x0             0x80000080        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x1             0x100000080       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x2             0x200000080       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x3             0x400000080       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x4             0x800000080       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x6             0xc000000080      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x7             0xe000000080      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x8             0x4000000080      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0x9             0x4000000180      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0xa             0x10000000080     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_ddrt1_p2_T_O  0xb             0x10000000180     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_dspt_T_O      0x4             0x14003000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_dspt_T_O      0x5             0x1400b000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_lnoc_T_O      0x0             0x52080000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_lnoc_T_O      0x1             0x72080000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x2             0x14000400000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x3             0x14008400000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x4             0x58800000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x5             0x78800000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x6             0x14000800000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x7             0x14008800000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x8             0x59000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x9             0x5a000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0xa             0x5b000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0xb             0x79000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0xc             0x7a000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0xd             0x7b000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0xe             0x14001000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0xf             0x14002000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x10            0x14003000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x11            0x14009000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x12            0x1400a000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x13            0x1400b000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x14            0x50000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x15            0x70000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x16            0x40000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x17            0x60000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x18            0x80000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x19            0x100000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x1a            0x200000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x1b            0x400000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x1c            0x800000000       >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x1d            0x1800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x1e            0x3800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x1f            0xd800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x20            0xf800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x21            0x2000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x22            0x7000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x23            0x7000000100      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x24            0xc000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x25            0xe000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x26            0x13000000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x27            0x13000000100     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x28            0x4000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x29            0x4000000100      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x2a            0x8000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x2b            0xa000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x2c            0x10000000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mcput_d2d_T_O 0x2d            0x10000000100     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mnoc_T_O      0x0             0x52020000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_mnoc_T_O      0x1             0x72020000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_rnoc_T_O      0x0             0x52040000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_rnoc_T_O      0x1             0x72040000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_service_T_O   0x0             0x52000000        >,
+				/bits/ 64  <spislv_tbu3_snoc_I_O snoc_service_T_O   0x1             0x72000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x0             0x80000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x1             0x100000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x2             0x200000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x3             0x400000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x4             0x800000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x6             0xc000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x7             0xe000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x8             0x4000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0x9             0x4000000100      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0xa             0x10000000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt0_p2_T_O  0xb             0x10000000100     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x0             0x80000080        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x1             0x100000080       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x2             0x200000080       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x3             0x400000080       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x4             0x800000080       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x6             0xc000000080      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x7             0xe000000080      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x8             0x4000000080      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0x9             0x4000000180      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0xa             0x10000000080     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_ddrt1_p2_T_O  0xb             0x10000000180     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_dspt_T_O      0x4             0x14003000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_dspt_T_O      0x5             0x1400b000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x2             0x14000400000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x3             0x14008400000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x4             0x58800000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x5             0x78800000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x6             0x14000800000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x7             0x14008800000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x8             0x59000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x9             0x5a000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0xa             0x5b000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0xb             0x79000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0xc             0x7a000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0xd             0x7b000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0xe             0x14001000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0xf             0x14002000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x10            0x14003000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x11            0x14009000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x12            0x1400a000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x13            0x1400b000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x14            0x50000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x15            0x70000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x16            0x40000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x17            0x60000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x18            0x80000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x19            0x100000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x1a            0x200000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x1b            0x400000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x1c            0x800000000       >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x1d            0x1800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x1e            0x3800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x1f            0xd800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x20            0xf800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x21            0x2000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x22            0x7000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x23            0x7000000100      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x24            0xc000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x25            0xe000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x26            0x13000000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x27            0x13000000100     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x28            0x4000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x29            0x4000000100      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x2a            0x8000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x2b            0xa000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x2c            0x10000000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_mcput_d2d_T_O 0x2d            0x10000000100     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x12            0x0               >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_npu_T_O       0x13            0x0               >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_pciet_T_O     0x0             0x40000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_pciet_T_O     0x1             0x60000000        >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_pciet_T_O     0x2             0x8000000000      >,
+				/bits/ 64  <tbu4_snoc_I_O        snoc_pciet_T_O     0x3             0xa000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x0             0x80000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x1             0x100000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x2             0x200000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x3             0x400000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x4             0x800000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x5             0x2000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x6             0xc000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x7             0xe000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x8             0x4000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0x9             0x4000000100      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0xa             0x10000000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt0_p2_T_O  0xb             0x10000000100     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x0             0x80000080        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x1             0x100000080       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x2             0x200000080       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x3             0x400000080       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x4             0x800000080       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x5             0x2000000080      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x6             0xc000000080      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x7             0xe000000080      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x8             0x4000000080      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0x9             0x4000000180      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0xa             0x10000000080     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_ddrt1_p2_T_O  0xb             0x10000000180     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_dspt_T_O      0x0             0x520e0000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_dspt_T_O      0x1             0x720e0000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_dspt_T_O      0x2             0x5b000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_dspt_T_O      0x3             0x7b000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_dspt_T_O      0x4             0x14003000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_dspt_T_O      0x5             0x1400b000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x0             0x58400000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x1             0x78400000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x2             0x14000400000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x3             0x14008400000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x4             0x58800000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x5             0x78800000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x6             0x14000800000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x7             0x14008800000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x8             0x59000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x9             0x5a000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0xa             0x5b000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0xb             0x79000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0xc             0x7a000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0xd             0x7b000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0xe             0x14001000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0xf             0x14002000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x10            0x14003000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x11            0x14009000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x12            0x1400a000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x13            0x1400b000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x14            0x50000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x15            0x70000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x16            0x40000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x17            0x60000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x18            0x80000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x19            0x100000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x1a            0x200000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x1b            0x400000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x1c            0x800000000       >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x1d            0x1800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x1e            0x3800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x1f            0xd800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x20            0xf800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x21            0x2000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x22            0x7000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x23            0x7000000100      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x24            0xc000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x25            0xe000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x26            0x13000000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x27            0x13000000100     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x28            0x4000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x29            0x4000000100      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x2a            0x8000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x2b            0xa000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x2c            0x10000000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_mcput_d2d_T_O 0x2d            0x10000000100     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x0             0x52080000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x1             0x72080000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x2             0x59000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x3             0x5a000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x4             0x79000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x5             0x7a000000        >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x6             0x14001000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x7             0x14002000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x8             0x14009000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x9             0x1400a000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0xa             0x1800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0xb             0x3800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0xc             0xd800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0xd             0xf800000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0xe             0x7000000000      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0xf             0x7000000100      >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x10            0x13000000000     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x11            0x13000000100     >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x12            0x0               >,
+				/bits/ 64  <tcu_snoc_I_O         snoc_npu_T_O       0x13            0x0               >;
+			};
+	};
+
+	ErrorLogger4 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x24 32>;
+		description = "Register 4 to log errors";
+		addr_msb {
+			compatible = "eswin,eic7700,bitfield";
+			description = "Stores NTTP packet header field Addr (MSBs) of the logged error";
+			offset,length = < 0 9 >;
+		};
+	};
+
+	ErrorLogger5 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x28 32>;
+		description = "Register 5 to log errors";
+
+		User_flag {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0x0 18 >;
+			lut =
+				"Cache_0",
+				"Cache_1",
+				"Cache_2",
+				"Cache_3",
+				"Prot_0 ",
+				"Prot_1 ",
+				"Prot_2 ",
+				"User_0 ",
+				"User_1 ",
+				"User_2 ",
+				"User_3 ",
+				"User_4 ",
+				"User_5 ",
+				"User_6 ",
+				"qos0",
+				"qos1",
+				"qos2",
+				"qos3";
+		};
+	};
+};
+
+d0_media_noc:d0_media_noc@52021400 {
+	compatible = "eswin,eic7700-noc";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	ranges;
+	reg = <0 0x52021400 0 0x4000>;
+	interrupts = <454>;
+	interrupt-names = "error";
+	interrupt-parent = <&plic0>;
+	errlogger,idx = <0 1 3 4 5>;
+	eswin,qos-configs = "GPU", "TBU2", "VC";
+	eswin,GPU-qos-base = <0x52021480>;
+	eswin,GPU-qos-settings = <
+		0x8 0x4        /* prio */
+		0xC 0x2        /* mode */
+		0x10 0x1E0    /* bandwidth*/
+		0x14 0x1     /* saturation*/
+		0x18 0x1>;   /* QoSEn */
+
+	eswin,TBU2-qos-base = <0x52021500>;
+	eswin,TBU2-qos-settings = <
+		0x8 0x4      /* prio */
+		0xC 0x2      /* mode */
+		0x10 0x18    /* bandwidth */
+		0x14 0x10    /* saturation */
+		0x18 0x1>;   /* QoSEn */
+
+	eswin,VC-qos-base = <0x52021580>;
+	eswin,VC-qos-settings = <
+		0x8 0x4      /* prio */
+		0xC 0x2      /* mode */
+		0x10 0x18    /* bandwidth */
+		0x14 0x10    /* saturation */
+		0x18 0x1>;   /* QoSEn */
+	sideband_manager@52022000 {
+		compatible = "eswin,win2xxx-noc-sideband-manager";
+		reg = <0 0x52022000 0 0x10>;
+		SenseIn0 =
+			<SBM_MNOC_GPU 	OFFSET0>,
+			<SBM_MNOC_TBU2 	OFFSET1>,
+			<SBM_MNOC_VC 	OFFSET2>,
+			<SBM_MNOC_DDRT0_P3 	OFFSET3>,
+			<SBM_MNOC_DDRT1_P3 	OFFSET4>;
+		bf-name =
+			"SBM_MNOC_GPU",
+			"SBM_MNOC_TBU2",
+			"SBM_MNOC_VC",
+			"SBM_MNOC_DDRT0_P3",
+			"SBM_MNOC_DDRT1_P3";
+	};
+
+	mnoc_packet_ddr0_p3_req_probe@52020000 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52020000 0 0x4000>;
+		clocks = <&d0_clock EIC7700_CLK_DDRT0_P3_ACLK>;
+		clock-names = "clk";
+		interrupts = <458>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr0_p3_req";
+	};
+	mnoc_packet_ddr1_p3_req_probe@52020800 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52020800 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_DDRT1_P3_ACLK>;
+		clock-names = "clk";
+		interrupts = <456>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr1_p3_req";
+	};
+	mnoc_trans_probe@52021000 {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		compatible = "eswin,win2xxx-noc-trans-probe";
+		reg = <0 0x52021000 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_NOC_NSP_CLK>;
+		clock-names = "clk";
+		interrupts = <453>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <3>;
+		counter,nr = <12>;
+		profiler,nr = <1>;
+		portsel = "gpu", "tbu2", "vc";
+		mnoc_trans_gpu_filter@52021600 {
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52021600 0 0x80>;
+		};
+		mnoc_trans_tbu2_filter@52021680 {	/*hsp subsys*/
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52021680 0 0x80>;
+		};
+		mnoc_trans_vc_filter@52021700 {
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52021700 0 0x80>;
+		};
+		mnoc_trans_profiler@52021780 {
+			compatible = "eswin,win2xxx-noc-trans-profiler";
+			reg = <0 0x52021780 0 0x80>;
+		};
+	};
+	ErrorLogger0 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x14 32 >;
+		description = "Register 0 to log errors";
+		lock {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 1 >;
+			lut = "Not Locked", "Locked";
+		};
+		OpCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 1 4 >;
+			lut = "RD: data read with incrementing address",
+				"RDW: data read with wrapping address",
+				"RDL: allocates monitor in the Target with incrementing address",
+				"RDX: exclusive read with incrementing address",
+				"WR: data write with incrementing address",
+				"WRW: data write with wrapping address",
+				"WRC: conditional write if matching monitor in Target is found",
+				"RSV: reserved",
+				"PRE: preamble packet of linked sequence (locked sequence)",
+				"URG: urgency packet used for QoS (status must be REQ)";
+		};
+		ErrCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 3 >;
+			lut = "SLV (error source: Target): error detected by the Slave without any information or no Error",
+				"DEC (error source: Initiator NIU): decode error",
+				"UNS (error source: Target NIU): unsupported access type",
+				"DISC (error source: Power Disconnect): disconnected Target or NoC domain",
+				"SEC (error source: Initiator NIU or Firewall): security error",
+				"HIDE (error source: Firewall): hidden security error. Will be reported as OK to the initiator",
+				"TMO (error source: Target NIU): time-out",
+				"RSV: reserved";
+
+		};
+		Len1 {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 16 12 >;
+		};
+		Format {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 31 1 >;
+			lut = "NTTP v3.0 (Invalid)", "NTTP v3.5 (Ok)";
+		};
+	};
+
+	ErrorLogger1 {
+		compatible = "eswin,eic7700,register", "eswin,eic7700,noc,filter,routeid";
+		offset,length = < 0x18 32>;
+		description = "Register 1 to log errors";
+		InitFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 14 2 >;
+			lut =
+				"gpu_mnoc/I/0",
+				"snoc_mnoc/I/0",
+				"tbu2_mnoc/I/0",
+				"vc_mnoc/I/0";
+		};
+
+		TargetFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 12 2 >;
+			lut =
+				"mnoc_ddrt0_p3/T/0",
+				"mnoc_ddrt1_p3/T/0",
+				"mnoc_service/T/0",
+				"mnoc_snoc/T/0";
+		};
+
+		TargetSubRange {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 9 3 >;
+		};
+
+		SeqId {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 9 >;
+		};
+	};
+
+	ErrorLogger3 {
+		/* This register does not really include a bitfield or its bitfield is 32 bits and it provides an offset address */
+		/* To calculate the absolute address, you must use the initflow:targetflow:subrange from ErrorLogger1 register */
+		/* And use it as an index in the aperture table. Then you must add the value of this register to the value given */
+		/* by the table to get the absolute address. */
+		compatible = "eswin,eic7700,register";
+		offset,length = <0x20 32>;
+		description = "Register 3 to log errors";
+		aperture-link = <1>; /* link to ErrorLogger whose information are required to calculate real absolute address */
+		msb-link = <4>; /*indicate which ErrorLogger contains the msb addrs, -1 means no*/
+		AbsoluteAddress {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 9 7 >;		/* bitfield initflow:targeflow:subrange from aperture-link register */
+			aperture-size= < 55 >;			/* Number of line in the aperture table below */
+			aperture-idx,aperture-base =	/* Aperture_idx is concatenation of initflow:targetflow:subrange bitfield from ErrorLogger1 */
+					/bits/ 64  <0x0  0x0 0x0           0x80000000       >,
+					/bits/ 64  <0x0  0x0 0x1           0x100000000      >,
+					/bits/ 64  <0x0  0x0 0x2           0x200000000      >,
+					/bits/ 64  <0x0  0x0 0x3           0x400000000      >,
+					/bits/ 64  <0x0  0x0 0x4           0x800000000      >,
+					/bits/ 64  <0x0  0x0 0x5           0x2000000000     >,
+					/bits/ 64  <0x0  0x0 0x6           0x4000000000     >,
+					/bits/ 64  <0x0  0x0 0x7           0x4000000100     >,
+					/bits/ 64  <0x0  0x1 0x0           0x80000080       >,
+					/bits/ 64  <0x0  0x1 0x1           0x100000080      >,
+					/bits/ 64  <0x0  0x1 0x2           0x200000080      >,
+					/bits/ 64  <0x0  0x1 0x3           0x400000080      >,
+					/bits/ 64  <0x0  0x1 0x4           0x800000080      >,
+					/bits/ 64  <0x0  0x1 0x5           0x2000000080     >,
+					/bits/ 64  <0x0  0x1 0x6           0x4000000080     >,
+					/bits/ 64  <0x0  0x1 0x7           0x4000000180     >,
+					/bits/ 64  <0x0  0x3 0x0           0x0              >,
+					/bits/ 64  <0x1 0x2  0x0           0x52020000       >,
+					/bits/ 64  <0x1 0x2  0x1           0x72020000       >,
+					/bits/ 64  <0x1 0x2  0x2           0x0              >,
+					/bits/ 64  <0x1 0x2  0x3           0x0              >,
+					/bits/ 64  <0x2 0x0 0x0           0x80000000       >,
+					/bits/ 64  <0x2 0x0 0x1           0x100000000      >,
+					/bits/ 64  <0x2 0x0 0x2           0x200000000      >,
+					/bits/ 64  <0x2 0x0 0x3           0x400000000      >,
+					/bits/ 64  <0x2 0x0 0x4           0x800000000      >,
+					/bits/ 64  <0x2 0x0 0x5           0x2000000000     >,
+					/bits/ 64  <0x2 0x0 0x6           0x4000000000     >,
+					/bits/ 64  <0x2 0x0 0x7           0x4000000100     >,
+					/bits/ 64  <0x2 0x1 0x0           0x80000080       >,
+					/bits/ 64  <0x2 0x1 0x1           0x100000080      >,
+					/bits/ 64  <0x2 0x1 0x2           0x200000080      >,
+					/bits/ 64  <0x2 0x1 0x3           0x400000080      >,
+					/bits/ 64  <0x2 0x1 0x4           0x800000080      >,
+					/bits/ 64  <0x2 0x1 0x5           0x2000000080     >,
+					/bits/ 64  <0x2 0x1 0x6           0x4000000080     >,
+					/bits/ 64  <0x2 0x1 0x7           0x4000000180     >,
+					/bits/ 64  <0x2 0x3   0x0           0x0              >,
+					/bits/ 64  <0x3   0x0 0x0           0x80000000       >,
+					/bits/ 64  <0x3   0x0 0x1           0x100000000      >,
+					/bits/ 64  <0x3   0x0 0x2           0x200000000      >,
+					/bits/ 64  <0x3   0x0 0x3           0x400000000      >,
+					/bits/ 64  <0x3   0x0 0x4           0x800000000      >,
+					/bits/ 64  <0x3   0x0 0x5           0x2000000000     >,
+					/bits/ 64  <0x3   0x0 0x6           0x4000000000     >,
+					/bits/ 64  <0x3   0x0 0x7           0x4000000100     >,
+					/bits/ 64  <0x3   0x1 0x0           0x80000080       >,
+					/bits/ 64  <0x3   0x1 0x1           0x100000080      >,
+					/bits/ 64  <0x3   0x1 0x2           0x200000080      >,
+					/bits/ 64  <0x3   0x1 0x3           0x400000080      >,
+					/bits/ 64  <0x3   0x1 0x4           0x800000080      >,
+					/bits/ 64  <0x3   0x1 0x5           0x2000000080     >,
+					/bits/ 64  <0x3   0x1 0x6           0x4000000080     >,
+					/bits/ 64  <0x3   0x1 0x7           0x4000000180     >,
+					/bits/ 64  <0x3   0x3 0x0           0x0              >;
+		};
+	};
+
+	ErrorLogger4 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x24 32>;
+		description = "Register 4 to log errors";
+		addr_msb {
+			compatible = "eswin,eic7700,bitfield";
+			description = "Stores NTTP packet header field Addr (MSBs) of the logged error";
+			offset,length = < 0 9 >;
+		};
+	};
+
+	ErrorLogger5 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x28 32 >;
+		description = "Register 5 to log errors";
+
+		User_flag {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0x0 18 >;
+			lut =
+				"Cache_0",
+				"Cache_1",
+				"Cache_2",
+				"Cache_3",
+				"Prot_0 ",
+				"Prot_1 ",
+				"Prot_2 ",
+				"User_0 ",
+				"User_1 ",
+				"User_2 ",
+				"User_3 ",
+				"User_4 ",
+				"User_5 ",
+				"User_6 ",
+				"qos0",
+				"qos1",
+				"qos2",
+				"qos3";
+		};
+	};
+};
+
+d0_realtime_noc:d0_realtime_noc@52041400 {
+	compatible = "eswin,eic7700-noc";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	ranges;
+	reg = <0 0x52041400 0 0x4000>;
+	interrupts = <448>;
+	interrupt-names = "error";
+	interrupt-parent = <&plic0>;
+	errlogger,idx = <0 1 3 4 5>;
+	eswin,qos-configs = "TBU0", "VO";
+	eswin,TBU0-qos-base = <0x52041480>;
+	eswin,TBU0-qos-settings = <
+		0x8 0x4        /* prio */
+		0xC 0x2        /* mode */
+		0x10 0x1E0    /* bandwidth */
+		0x14 0x1     /* saturation */
+		0x18 0x1>;   /* QoSEn */
+
+	eswin,VO-qos-base = <0x52041500>;
+	eswin,VO-qos-settings = <
+		0x8 0x4      /* prio */
+		0xC 0x2      /* mode */
+		0x10 0x18    /* bandwidth */
+		0x14 0x10    /* saturation */
+		0x18 0x1>;   /* QoSEn */
+	sideband_manager@52042000 {
+		compatible = "eswin,win2xxx-noc-sideband-manager";
+		reg = <0 0x52042000 0 0x10>;
+		SenseIn0 =
+			<SBM_RNOC_TBU0 	OFFSET0>,
+			<SBM_RNOC_VO 	OFFSET1>,
+			<SBM_RNOC_DDRT0_P4 	OFFSET2>,
+			<SBM_RNOC_DDRT1_P4 	OFFSET3>;
+		bf-name =
+			"SBM_RNOC_TBU0",
+			"SBM_RNOC_VO",
+			"SBM_RNOC_DDRT0_P4",
+			"SBM_RNOC_DDRT1_P4";
+	};
+
+	rnoc_packet_ddr0_p4_req_probe@52040000 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52040000 0 0x4000>;
+		clocks = <&d0_clock EIC7700_CLK_DDRT0_P4_ACLK>;
+		clock-names = "clk";
+		interrupts = <452>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr0_p4_req";
+	};
+	rnoc_packet_ddr1_p4_req_probe@52040800 {
+		compatible = "eswin,win2xxx-noc-packet-probe";
+		reg = <0 0x52040800 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_DDRT1_P4_ACLK>;
+		clock-names = "clk";
+		interrupts = <450>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <1>;
+		counter,nr = <2>;
+		portsel = "ddr1_p4_req";
+	};
+	rnoc_trans_probe@52041000 {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		compatible = "eswin,win2xxx-noc-trans-probe";
+		reg = <0 0x52041000 0 0x4000>;
+		clocks =<&d0_clock EIC7700_CLK_NOC_NSP_CLK>;
+		clock-names = "clk";
+		interrupts = <447>;
+		interrupt-names = "stat";
+		interrupt-parent = <&plic0>;
+		filter,nr = <2>;
+		counter,nr = <8>;
+		profiler,nr = <1>;
+		portsel = "tbu0", "vo";
+		rnoc_trans_tbu0_filter@52041580 {	/*vi subsys*/
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52041580 0 0x80>;
+		};
+		rnoc_trans_vo_filter@52041600 {
+			status = "disabled";
+			compatible = "eswin,win2xxx-noc-trans-filter";
+			reg = <0 0x52041600 0 0x80>;
+		};
+		rnoc_trans_profiler@52041680 {
+			compatible = "eswin,win2xxx-noc-trans-profiler";
+			reg = <0 0x52041680 0 0x80>;
+		};
+	};
+	ErrorLogger0 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x14 32 >;
+		description = "Register 0 to log errors";
+		lock {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 1 >;
+			lut = "Not Locked", "Locked";
+		};
+		OpCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 1 4 >;
+			lut = "RD: data read with incrementing address",
+				"RDW: data read with wrapping address",
+				"RDL: allocates monitor in the Target with incrementing address",
+				"RDX: exclusive read with incrementing address",
+				"WR: data write with incrementing address",
+				"WRW: data write with wrapping address",
+				"WRC: conditional write if matching monitor in Target is found",
+				"RSV: reserved",
+				"PRE: preamble packet of linked sequence (locked sequence)",
+				"URG: urgency packet used for QoS (status must be REQ)";
+		};
+		ErrCode {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 8 3 >;
+			lut = "SLV (error source: Target): error detected by the Slave without any information or no Error",
+				"DEC (error source: Initiator NIU): decode error",
+				"UNS (error source: Target NIU): unsupported access type",
+				"DISC (error source: Power Disconnect): disconnected Target or NoC domain",
+				"SEC (error source: Initiator NIU or Firewall): security error",
+				"HIDE (error source: Firewall): hidden security error. Will be reported as OK to the initiator",
+				"TMO (error source: Target NIU): time-out",
+				"RSV: reserved";
+
+		};
+		Len1 {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 16 12 >;
+		};
+		Format {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 31 1 >;
+			lut = "NTTP v3.0 (Invalid)", "NTTP v3.5 (Ok)";
+		};
+	};
+
+	ErrorLogger1 {
+		compatible = "eswin,eic7700,register", "eswin,eic7700,noc,filter,routeid";
+		offset,length = < 0x18 32>;
+		description = "Register 1 to log errors";
+		InitFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 14 2 >;
+			lut =
+				"snoc_rnoc/I/0",
+				"tbu0_rnoc/I/0",
+				"vo_rnoc/I/0",
+				"RESERVED0";
+		};
+
+		TargetFlow {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 12 2 >;
+			lut =
+				"rnoc_ddrt0_p4/T/0",
+				"rnoc_ddrt1_p4/T/0",
+				"rnoc_service/T/0",
+				"rnoc_snoc/T/0";
+		};
+
+		TargetSubRange {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 9 3 >;
+		};
+
+		SeqId {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0 9 >;
+		};
+	};
+
+	ErrorLogger3 {
+		/* This register does not really include a bitfield or its bitfield is 32 bits and it provides an offset address */
+		/* To calculate the absolute address, you must use the initflow:targetflow:subrange from ErrorLogger1 register */
+		/* And use it as an index in the aperture table. Then you must add the value of this register to the value given */
+		/* by the table to get the absolute address. */
+		compatible = "eswin,eic7700,register";
+		offset,length = <0x20 32>;
+		description = "Register 3 to log errors";
+		aperture-link = <1>; /* link to ErrorLogger whose information are required to calculate real absolute address */
+		msb-link = <4>; /*indicate which ErrorLogger contains the msb addrs, -1 means no*/
+		AbsoluteAddress {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 9 7 >;		/* bitfield initflow:targeflow:subrange from aperture-link register */
+			aperture-size= < 40 >;			/* Number of line in the aperture table below */
+			aperture-idx,aperture-base =	/* Aperture_idx is concatenation of initflow:targetflow:subrange bitfield from ErrorLogger1 */
+					/bits/ 64  <0x0 0x2 0x0          0x52040000       >,
+					/bits/ 64  <0x0 0x2 0x1          0x72040000       >,
+					/bits/ 64  <0x0 0x2 0x2          0x0              >,
+					/bits/ 64  <0x0 0x2 0x3          0x0              >,
+					/bits/ 64  <0x1 0x0 0x0          0x80000000       >,
+					/bits/ 64  <0x1 0x0 0x1          0x100000000      >,
+					/bits/ 64  <0x1 0x0 0x2          0x200000000      >,
+					/bits/ 64  <0x1 0x0 0x3          0x400000000      >,
+					/bits/ 64  <0x1 0x0 0x4          0x800000000      >,
+					/bits/ 64  <0x1 0x0 0x5          0x2000000000     >,
+					/bits/ 64  <0x1 0x1 0x0          0x80000080       >,
+					/bits/ 64  <0x1 0x1 0x1          0x100000080      >,
+					/bits/ 64  <0x1 0x1 0x2          0x200000080      >,
+					/bits/ 64  <0x1 0x1 0x3          0x400000080      >,
+					/bits/ 64  <0x1 0x1 0x4          0x800000080      >,
+					/bits/ 64  <0x1 0x1 0x5          0x2000000080     >,
+					/bits/ 64  <0x1 0x3 0x0          0x59000000       >,
+					/bits/ 64  <0x1 0x3 0x1          0x79000000       >,
+					/bits/ 64  <0x1 0x3 0x2          0x14001000000    >,
+					/bits/ 64  <0x1 0x3 0x3          0x14009000000    >,
+					/bits/ 64  <0x1 0x3 0x4          0x0              >,
+					/bits/ 64  <0x1 0x3 0x5          0x0              >,
+					/bits/ 64  <0x2 0x0 0x0          0x80000000       >,
+					/bits/ 64  <0x2 0x0 0x1          0x100000000      >,
+					/bits/ 64  <0x2 0x0 0x2          0x200000000      >,
+					/bits/ 64  <0x2 0x0 0x3          0x400000000      >,
+					/bits/ 64  <0x2 0x0 0x4          0x800000000      >,
+					/bits/ 64  <0x2 0x0 0x5          0x2000000000     >,
+					/bits/ 64  <0x2 0x1 0x0          0x80000080       >,
+					/bits/ 64  <0x2 0x1 0x1          0x100000080      >,
+					/bits/ 64  <0x2 0x1 0x2          0x200000080      >,
+					/bits/ 64  <0x2 0x1 0x3          0x400000080      >,
+					/bits/ 64  <0x2 0x1 0x4          0x800000080      >,
+					/bits/ 64  <0x2 0x1 0x5          0x2000000080     >,
+					/bits/ 64  <0x2 0x3 0x0          0x59000000       >,
+					/bits/ 64  <0x2 0x3 0x1          0x79000000       >,
+					/bits/ 64  <0x2 0x3 0x2          0x14001000000    >,
+					/bits/ 64  <0x2 0x3 0x3          0x14009000000    >,
+					/bits/ 64  <0x2 0x3 0x4          0x0              >,
+					/bits/ 64  <0x2 0x3 0x5          0x0              >;
+		};
+	};
+
+	ErrorLogger4 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x24 32>;
+		description = "Register 4 to log errors";
+		addr_msb {
+			compatible = "eswin,eic7700,bitfield";
+			description = "Stores NTTP packet header field Addr (MSBs) of the logged error";
+			offset,length = < 0 9 >;
+		};
+	};
+
+	ErrorLogger5 {
+		compatible = "eswin,eic7700,register";
+		offset,length = < 0x28 32 >;
+		description = "Register 5 to log errors";
+
+		User_flag {
+			compatible = "eswin,eic7700,bitfield";
+			offset,length = < 0x0 16 >;
+			lut =
+				 "Cache_0",
+				 "Cache_1",
+				 "Cache_2",
+				 "Cache_3",
+				 "Prot_0 ",
+				 "Prot_1 ",
+				 "Prot_2 ",
+				 "User_0 ",
+				 "User_1 ",
+				 "User_2 ",
+				 "User_3 ",
+				 "User_4 ",
+				 "qos0",
+				 "qos1",
+				 "qos2",
+				 "qos3";
+		};
+	};
+};

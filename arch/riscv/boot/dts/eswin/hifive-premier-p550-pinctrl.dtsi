@@ -1,0 +1,1339 @@
+#include "eic7700.dtsi"
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+    #address-cells = <2>;
+    #size-cells = <2>;
+    soc {
+        pinctrl: pinctrl@0x51600080 {
+			compatible = "eswin,eic7700-pinctrl", "syscon";
+			reg = <0x0 0x51600080 0x0 0x1FFF80>;
+			status = "disabled";
+            //func0
+            pinctrl_sdio0_default: sdio0-default{
+				mux {
+					groups = "sdio0_group";
+					function = "sdio0_func";
+				};
+			};
+            pinctrl_sdio1_default: sdio1-default{
+				mux {
+					groups = "sdio1_group";
+					function = "sdio1_func";
+				};
+			};
+            pinctrl_por_sel_default: por_sel-default{
+				mux {
+					groups = "por_sel_group";
+					function = "por_sel_func";
+				};
+			};
+            pinctrl_jtag0_default: jtag0-default{
+				mux {
+					groups = "jtag0_group";
+					function = "jtag0_func";
+				};
+			};
+            pinctrl_jtag1_default: jtag1-default{
+				mux {
+					groups = "jtag1_group";
+					function = "jtag1_func";
+				};
+			};
+            pinctrl_jtag2_default: jtag2-default{
+				mux {
+					groups = "jtag2_group";
+					function = "jtag2_func";
+				};
+			};
+            pinctrl_pcie_default: pcie-default{
+				mux{
+					groups = "pcie_group";
+					function = "pcie_func";
+				};
+			};
+            pinctrl_hdmi_default: hdmi-default{
+				mux{
+					groups = "hdmi_group";
+					function = "hdmi_func";
+				};
+			};
+            pinctrl_rgmii0_default: rgmii0-default{
+				mux {
+					groups = "rgmii0_group";
+					function = "rgmii0_func";
+				};
+			};
+            pinctrl_rgmii1_default: rgmii1-default{
+				mux{
+					groups = "rgmii1_group";
+					function = "rgmii1_func";
+				};
+			};
+            pinctrl_spi0_default: spi0-default{
+				mux {
+					groups = "spi0_group";
+					function = "spi0_func";
+				};
+			};
+            pinctrl_spi1_default: spi1-default{
+				mux{
+					groups = "spi1_group";
+					function = "spi1_func";
+				};
+			};
+            pinctrl_spi3_default: spi3-default{
+				mux {
+					groups = "spi3_group";
+					function = "spi3_func";
+				};
+			};
+            pinctrl_por_time_sel0_default: por_time_sel0-default{
+				mux {
+					groups = "por_time_sel0_group";
+					function = "por_time_sel0_func";
+				};
+			};
+            pinctrl_por_time_sel1_default: por_time_sel1-default{
+				mux {
+					groups = "por_time_sel1_group";
+					function = "por_time_sel1_func";
+				};
+			};
+            pinctrl_i2s0_default: i2s0-default{
+				mux {
+					groups = "i2s0_group";
+					function = "i2s0_func";
+				};
+			};
+            pinctrl_i2s1_default: i2s1-default{
+				mux {
+					groups = "i2s1_group";
+					function = "i2s1_func";
+				};
+			};
+            pinctrl_i2s2_default: i2s2-default{
+				mux {
+					groups = "i2s2_group";
+					function = "i2s2_func";
+				};
+			};
+            pinctrl_usb0_pwren_default: usb0_pwren-default{
+				mux {
+					groups = "usb0_pwren_group";
+					function = "usb0_pwren_func";
+				};
+			};
+            pinctrl_usb1_pwren_default: usb1_pwren-default{
+				mux {
+					groups = "usb1_pwren_group";
+					function = "usb1_pwren_func";
+				};
+			};
+            pinctrl_i2c0_default: i2c0-default{
+				mux {
+					groups = "i2c0_group";
+					function = "i2c0_func";
+				};
+			};
+            pinctrl_i2c1_default: i2c1-default{
+				mux {
+					groups = "i2c1_group";
+					function = "i2c1_func";
+				};
+			};
+            pinctrl_i2c2_default: i2c2-default{
+				mux {
+					groups = "i2c2_group";
+					function = "i2c2_func";
+				};
+			};
+            pinctrl_i2c3_default: i2c3-default{
+				mux {
+					groups = "i2c3_group";
+					function = "i2c3_func";
+				};
+			};
+            pinctrl_i2c4_default: i2c4-default{
+				mux {
+					groups = "i2c4_group";
+					function = "i2c4_func";
+				};
+			};
+            pinctrl_i2c5_default: i2c5-default{
+				mux {
+					groups = "i2c5_group";
+					function = "i2c5_func";
+				};
+			};
+            pinctrl_i2c8_default: i2c8-default{
+				mux {
+					groups = "i2c8_group";
+					function = "i2c8_func";
+				};
+			};
+            pinctrl_i2c10_default: i2c10-default{
+				mux {
+					groups = "i2c10_group";
+					function = "i2c10_func";
+				};
+			};
+            pinctrl_i2c11_default: i2c11-default{
+				mux {
+					groups = "i2c11_group";
+					function = "i2c11_func";
+				};
+			};
+            pinctrl_uart0_default: uart0-default{
+				mux {
+					groups = "uart0_group";
+					function = "uart0_func";
+				};
+			};
+            pinctrl_uart1_default: uart1-default{
+				mux {
+					groups = "uart1_group";
+					function = "uart1_func";
+				};
+			};
+            pinctrl_uart2_default: uart2-default{
+				mux {
+					groups = "uart2_group";
+					function = "uart2_func";
+				};
+			};
+            pinctrl_pwm0_default: pwm0-default{
+                mux {
+                    groups = "pwm0_group";
+                    function = "pwm0_func";
+                };
+            };
+            pinctrl_fan_tach_default: fan_tach-default{
+				mux {
+					groups = "fan_tach_group";
+					function = "fan_tach_func";
+				};
+			};
+            pinctrl_mipi_csi0_default: mipi_csi0-default{
+				mux {
+					groups = "mipi_csi0_group";
+					function = "mipi_csi0_func";
+				};
+			};
+            pinctrl_mipi_csi1_default: mipi_csi1-default{
+				mux {
+					groups = "mipi_csi1_group";
+					function = "mipi_csi1_func";
+				};
+			};
+            pinctrl_mipi_csi2_default: mipi_csi2-default{
+				mux {
+					groups = "mipi_csi2_group";
+					function = "mipi_csi2_func";
+				};
+			};
+            pinctrl_mipi_csi3_default: mipi_csi3-default{
+				mux {
+					groups = "mipi_csi3_group";
+					function = "mipi_csi3_func";
+				};
+			};
+            pinctrl_mipi_csi4_default: mipi_csi4-default{
+				mux {
+					groups = "mipi_csi4_group";
+					function = "mipi_csi4_func";
+				};
+			};
+            pinctrl_mipi_csi5_default: mipi_csi5-default{
+				mux {
+					groups = "mipi_csi5_group";
+					function = "mipi_csi5_func";
+				};
+			};
+            pinctrl_s_mode_default: s_mode-default{
+				mux {
+					groups = "s_mode_group";
+					function = "s_mode_func";
+				};
+			};
+            pinctrl_pinmux_ddr_refclk_sel_default: pinmux_ddr_refclk_sel-default{
+				mux {
+					groups = "pinmux_ddr_refclk_sel_group";
+					function = "pinmux_ddr_refclk_sel_func";
+				};
+			};
+            pinctrl_boot_sel_default: boot_sel-default{
+				mux {
+					groups = "boot_sel_group";
+					function = "boot_sel_func";
+				};
+			};
+            pinctrl_lpddr_ref_clk_default: lpddr_ref_clk-default{
+				mux {
+					groups = "lpddr_ref_clk_group";
+					function = "lpddr_ref_clk_func";
+				};
+			};
+
+            //func1
+            pinctrl_spi2_default: spi2-default{
+				mux1 {
+					groups = "spi2_clk_group";
+					function = "spi2_clk_func";
+				};
+				conf1 {
+					groups = "spi2_clk_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+					bias-pull-down = <0>;
+				};
+				mux2 {
+					groups = "spi2_d0_group";
+					function = "spi2_d0_func";
+				};
+				conf2 {
+					groups = "spi2_d0_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+					bias-pull-down = <0>;
+				};
+				mux3 {
+					groups = "spi2_d1_d2_d3_group";
+					function = "spi2_d1_d2_d3_func";
+				};
+				conf3 {
+					groups = "spi2_d1_d2_d3_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+					bias-pull-down = <0>;
+				};
+				mux4 {
+					groups = "spi2_cs_group";
+					function = "spi2_cs_func";
+				};
+			};
+
+            pinctrl_sata_act_led_default: sata_act_led-default{
+				mux {
+					groups = "sata_act_led_group";
+					function = "sata_act_led_func";
+				};
+				conf {
+					groups = "sata_act_led_group";
+					input-enable = <0>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_emmc_led_control_default: emmc_led_control-default{
+				mux {
+					groups = "emmc_led_control_group";
+					function = "emmc_led_control_func";
+				};
+				conf {
+					groups = "emmc_led_control_group";
+					input-enable = <0>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_sd0_led_control_default: sd0_led_control-default{
+				mux {
+					groups = "sd0_led_control_group";
+					function = "sd0_led_control_func";
+				};
+			};
+            pinctrl_sd1_led_control_default: sd1_led_control-default{
+				mux {
+					groups = "sd1_led_control_group";
+					function = "sd1_led_control_func";
+				};
+			};
+            pinctrl_i2c6_default: i2c6-default{
+				mux {
+					groups = "i2c6_group";
+					function = "i2c6_func";
+				};
+			};
+            pinctrl_i2c7_default: i2c7-default{
+				mux {
+					groups = "i2c7_group";
+					function = "i2c7_func";
+				};
+			};
+            pinctrl_i2c9_default: i2c9-default{
+				mux {
+					groups = "i2c9_group";
+					function = "i2c9_func";
+				};
+			};
+            pinctrl_pwm1_default: pwm1-default{
+				mux {
+					groups = "pwm1_group";
+					function = "pwm1_func";
+				};
+			};
+            pinctrl_pwm2_default: pwm2-default{
+				mux {
+					groups = "pwm2_group";
+					function = "pwm2_func";
+				};
+			};
+            pinctrl_mipi_csi_xtrig_default: mipi_csi_xtrig-default{
+				mux {
+					groups = "mipi_csi_xtrig_group";
+					function = "mipi_csi_xtrig_func";
+				};
+			};
+
+            //func3
+            pinctrl_uart3_default: uart3-default{
+				mux {
+					groups = "uart3_group";
+					function = "uart3_func";
+				};
+			};
+            pinctrl_uart4_default: uart4-default{
+				mux {
+					groups = "uart4_group";
+					function = "uart4_func";
+				};
+			};
+
+            //gpio
+            pinctrl_gpio0_default: gpio0-default{
+				mux {
+					groups = "gpio0_group";
+					function = "gpio0_func";
+				};
+				conf {
+					groups = "gpio0_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+				};
+			};
+            pinctrl_gpio1_default: gpio1-default{
+				mux {
+					groups = "gpio1_group";
+					function = "gpio1_func";
+				};
+			};
+            pinctrl_gpio2_default: gpio2-default{
+				mux {
+					groups = "gpio2_group";
+					function = "gpio2_func";
+				};
+			};
+            pinctrl_gpio3_default: gpio3-default{
+				mux {
+					groups = "gpio3_group";
+					function = "gpio3_func";
+				};
+			};
+            pinctrl_gpio4_default: gpio4-default{
+				mux {
+					groups = "gpio4_group";
+					function = "gpio4_func";
+				};
+			};
+            pinctrl_gpio5_default: gpio5-default{
+				mux {
+					groups = "gpio5_group";
+					function = "gpio5_func";
+				};
+				conf {
+					groups = "gpio5_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+				};
+			};
+            pinctrl_gpio6_default: gpio6-default{
+				mux {
+					groups = "gpio6_group";
+					function = "gpio6_func";
+				};
+				conf {
+					groups = "gpio6_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio7_default: gpio7-default{
+				mux {
+					groups = "gpio7_group";
+					function = "gpio7_func";
+				};
+				conf {
+					groups = "gpio7_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio8_default: gpio8-default{
+				mux {
+					groups = "gpio8_group";
+					function = "gpio8_func";
+				};
+				conf {
+					groups = "gpio8_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+				};
+			};
+            pinctrl_gpio9_default: gpio9-default{
+				mux {
+					groups = "gpio9_group";
+					function = "gpio9_func";
+				};
+				conf {
+					groups = "gpio9_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+				};
+			};
+            pinctrl_gpio10_default: gpio10-default{
+				mux {
+					groups = "gpio10_group";
+					function = "gpio10_func";
+				};
+				conf {
+					groups = "gpio10_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+				};
+			};
+            pinctrl_gpio11_default: gpio11-default{
+				mux {
+					groups = "gpio11_group";
+					function = "gpio11_func";
+				};
+				conf {
+					groups = "gpio11_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+				};
+			};
+            pinctrl_gpio12_default: gpio12-default{
+				mux {
+					groups = "gpio12_group";
+					function = "gpio12_func";
+				};
+			};
+            pinctrl_gpio13_default: gpio13-default{
+				mux {
+					groups = "gpio13_group";
+					function = "gpio13_func";
+				};
+			};
+            pinctrl_gpio14_default: gpio14-default{
+				mux {
+					groups = "gpio14_group";
+					function = "gpio14_func";
+				};
+			};
+            pinctrl_gpio15_default: gpio15-default{
+				mux {
+					groups = "gpio15_group";
+					function = "gpio15_func";
+				};
+			};
+            pinctrl_gpio16_default: gpio16-default{
+				mux {
+					groups = "gpio16_group";
+					function = "gpio16_func";
+				};
+				conf {
+					groups = "gpio16_group";
+					input-enable = <0>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio17_default: gpio17-default{
+				mux {
+					groups = "gpio17_group";
+					function = "gpio17_func";
+				};
+				conf {
+					groups = "gpio17_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio18_default: gpio18-default{
+				mux {
+					groups = "gpio18_group";
+					function = "gpio18_func";
+				};
+				conf {
+					groups = "gpio18_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio19_default: gpio19-default{
+				mux {
+					groups = "gpio19_group";
+					function = "gpio19_func";
+				};
+				conf {
+					groups = "gpio19_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio20_default: gpio20-default{
+				mux {
+					groups = "gpio20_group";
+					function = "gpio20_func";
+				};
+				conf {
+					groups = "gpio20_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio21_default: gpio21-default{
+				mux {
+					groups = "gpio21_group";
+					function = "gpio21_func";
+				};
+				conf {
+					groups = "gpio21_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio22_default: gpio22-default{
+				mux {
+					groups = "gpio22_group";
+					function = "gpio22_func";
+				};
+			};
+            pinctrl_gpio23_default: gpio23-default{
+				mux {
+					groups = "gpio23_group";
+					function = "gpio23_func";
+				};
+			};
+            pinctrl_gpio24_default: gpio24-default{
+				mux {
+					groups = "gpio24_group";
+					function = "gpio24_func";
+				};
+			};
+            pinctrl_gpio25_default: gpio25-default{
+				mux {
+					groups = "gpio25_group";
+					function = "gpio25_func";
+				};
+			};
+            pinctrl_gpio26_default: gpio26-default{
+				mux {
+					groups = "gpio26_group";
+					function = "gpio26_func";
+				};
+			};
+            pinctrl_gpio27_default: gpio27-default{
+				mux {
+					groups = "gpio27_group";
+					function = "gpio27_func";
+				};
+			};
+            pinctrl_gpio28_default: gpio28-default{
+				mux {
+					groups = "gpio28_group";
+					function = "gpio28_func";
+				};
+				conf {
+					groups = "gpio28_group";
+					input-enable = <1>;
+					bias-pull-up = <1>;
+				};
+			};
+            pinctrl_gpio29_default: gpio29-default{
+				mux {
+					groups = "gpio29_group";
+					function = "gpio29_func";
+				};
+			};
+            pinctrl_gpio30_default: gpio30-default{
+				mux {
+					groups = "gpio30_group";
+					function = "gpio30_func";
+				};
+			};
+            pinctrl_gpio31_default: gpio31-default{
+				mux {
+					groups = "gpio31_group";
+					function = "gpio31_func";
+				};
+			};
+            pinctrl_gpio32_default: gpio32-default{
+				mux {
+					groups = "gpio32_group";
+					function = "gpio32_func";
+				};
+			};
+            pinctrl_gpio33_default: gpio33-default{
+				mux {
+					groups = "gpio33_group";
+					function = "gpio33_func";
+				};
+			};
+            pinctrl_gpio34_default: gpio34-default{
+				mux {
+					groups = "gpio34_group";
+					function = "gpio34_func";
+				};
+			};
+            pinctrl_gpio35_default: gpio35-default{
+				mux {
+					groups = "gpio35_group";
+					function = "gpio35_func";
+				};
+				conf {
+					groups = "gpio35_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio36_default: gpio36-default{
+				mux {
+					groups = "gpio36_group";
+					function = "gpio36_func";
+				};
+				conf {
+					groups = "gpio36_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio37_default: gpio37-default{
+				mux {
+					groups = "gpio37_group";
+					function = "gpio37_func";
+				};
+				conf {
+					groups = "gpio37_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio38_default: gpio38-default{
+				mux {
+					groups = "gpio38_group";
+					function = "gpio38_func";
+				};
+				conf {
+					groups = "gpio38_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio39_default: gpio39-default{
+				mux {
+					groups = "gpio39_group";
+					function = "gpio39_func";
+				};
+				conf {
+					groups = "gpio39_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio40_default: gpio40-default{
+				mux {
+					groups = "gpio40_group";
+					function = "gpio40_func";
+				};
+				conf {
+					groups = "gpio40_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio41_default: gpio41-default{
+				mux {
+					groups = "gpio41_group";
+					function = "gpio41_func";
+				};
+			};
+            pinctrl_gpio42_default: gpio42-default{
+				mux {
+					groups = "gpio42_group";
+					function = "gpio42_func";
+				};
+				conf {
+					groups = "gpio42_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio43_default: gpio43-default{
+				mux {
+					groups = "gpio43_group";
+					function = "gpio43_func";
+				};
+			};
+            pinctrl_gpio44_default: gpio44-default{
+				mux {
+					groups = "gpio44_group";
+					function = "gpio44_func";
+				};
+			};
+            pinctrl_gpio45_default: gpio45-default{
+				mux {
+					groups = "gpio45_group";
+					function = "gpio45_func";
+				};
+			};
+            pinctrl_gpio46_default: gpio46-default{
+				mux {
+					groups = "gpio46_group";
+					function = "gpio46_func";
+				};
+				conf {
+					groups = "gpio46_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio47_default: gpio47-default{
+				mux {
+					groups = "gpio47_group";
+					function = "gpio47_func";
+				};
+				conf {
+					groups = "gpio47_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio48_default: gpio48-default{
+				mux {
+					groups = "gpio48_group";
+					function = "gpio48_func";
+				};
+			};
+            pinctrl_gpio49_default: gpio49-default{
+				mux {
+					groups = "gpio49_group";
+					function = "gpio49_func";
+				};
+			};
+            pinctrl_gpio50_default: gpio50-default{
+				mux {
+					groups = "gpio50_group";
+					function = "gpio50_func";
+				};
+			};
+            pinctrl_gpio51_default: gpio51-default{
+				mux {
+					groups = "gpio51_group";
+					function = "gpio51_func";
+				};
+			};
+            pinctrl_gpio52_default: gpio52-default{
+				mux {
+					groups = "gpio52_group";
+					function = "gpio52_func";
+				};
+				conf {
+					groups = "gpio52_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio53_default: gpio53-default{
+				mux {
+					groups = "gpio53_group";
+					function = "gpio53_func";
+				};
+				conf {
+					groups = "gpio53_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio54_default: gpio54-default{
+				mux {
+					groups = "gpio54_group";
+					function = "gpio54_func";
+				};
+			};
+            pinctrl_gpio55_default: gpio55-default{
+				mux {
+					groups = "gpio55_group";
+					function = "gpio55_func";
+				};
+			};
+            pinctrl_gpio56_default: gpio56-default{
+				mux {
+					groups = "gpio56_group";
+					function = "gpio56_func";
+				};
+			};
+            pinctrl_gpio57_default: gpio57-default{
+				mux {
+					groups = "gpio57_group";
+					function = "gpio57_func";
+				};
+			};
+            pinctrl_gpio58_default: gpio58-default{
+				mux {
+					groups = "gpio58_group";
+					function = "gpio58_func";
+				};
+			};
+            pinctrl_gpio59_default: gpio59-default{
+				mux {
+					groups = "gpio59_group";
+					function = "gpio59_func";
+				};
+			};
+            pinctrl_gpio60_default: gpio60-default{
+				mux {
+					groups = "gpio60_group";
+					function = "gpio60_func";
+				};
+			};
+            pinctrl_gpio61_default: gpio61-default{
+				mux {
+					groups = "gpio61_group";
+					function = "gpio61_func";
+				};
+			};
+            pinctrl_gpio62_default: gpio62-default{
+				mux {
+					groups = "gpio62_group";
+					function = "gpio62_func";
+				};
+			};
+            pinctrl_gpio63_default: gpio63-default{
+				mux {
+					groups = "gpio63_group";
+					function = "gpio63_func";
+				};
+			};
+            pinctrl_gpio64_default: gpio64-default{
+				mux {
+					groups = "gpio64_group";
+					function = "gpio64_func";
+				};
+				conf {
+					groups = "gpio64_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio65_default: gpio65-default{
+				mux {
+					groups = "gpio65_group";
+					function = "gpio65_func";
+				};
+				conf {
+					groups = "gpio65_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio66_default: gpio66-default{
+				mux {
+					groups = "gpio66_group";
+					function = "gpio66_func";
+				};
+				conf {
+					groups = "gpio66_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio67_default: gpio67-default{
+				mux {
+					groups = "gpio67_group";
+					function = "gpio67_func";
+				};
+				conf {
+					groups = "gpio67_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio68_default: gpio68-default{
+				mux {
+					groups = "gpio68_group";
+					function = "gpio68_func";
+				};
+			};
+            pinctrl_gpio69_default: gpio69-default{
+				mux {
+					groups = "gpio69_group";
+					function = "gpio69_func";
+				};
+			};
+            pinctrl_gpio70_default: gpio70-default{
+				mux {
+					groups = "gpio70_group";
+					function = "gpio70_func";
+				};
+			};
+            pinctrl_gpio71_default: gpio71-default{
+				mux {
+					groups = "gpio71_group";
+					function = "gpio71_func";
+				};
+			};
+            pinctrl_gpio72_default: gpio72-default{
+				mux {
+					groups = "gpio72_group";
+					function = "gpio72_func";
+				};
+			};
+            pinctrl_gpio73_default: gpio73-default{
+				mux {
+					groups = "gpio73_group";
+					function = "gpio73_func";
+				};
+			};
+            pinctrl_gpio74_default: gpio74-default{
+				mux {
+					groups = "gpio74_group";
+					function = "gpio74_func";
+				};
+			};
+            pinctrl_gpio75_default: gpio75-default{
+				mux {
+					groups = "gpio75_group";
+					function = "gpio75_func";
+				};
+			};
+            pinctrl_gpio76_default: gpio76-default{
+				mux {
+					groups = "gpio76_group";
+					function = "gpio76_func";
+				};
+			};
+            pinctrl_gpio77_default: gpio77-default{
+				mux {
+					groups = "gpio77_group";
+					function = "gpio77_func";
+				};
+			};
+            pinctrl_gpio78_default: gpio78-default{
+				mux {
+					groups = "gpio78_group";
+					function = "gpio78_func";
+				};
+			};
+            pinctrl_gpio79_default: gpio79-default{
+				mux {
+					groups = "gpio79_group";
+					function = "gpio79_func";
+				};
+			};
+            pinctrl_gpio80_default: gpio80-default{
+				mux {
+					groups = "gpio80_group";
+					function = "gpio80_func";
+				};
+			};
+            pinctrl_gpio81_default: gpio81-default{
+				mux {
+					groups = "gpio81_group";
+					function = "gpio81_func";
+				};
+			};
+            pinctrl_gpio82_default: gpio82-default{
+				mux {
+					groups = "gpio82_group";
+					function = "gpio82_func";
+				};
+			};
+            pinctrl_gpio83_default: gpio83-default{
+				mux {
+					groups = "gpio83_group";
+					function = "gpio83_func";
+				};
+			};
+            pinctrl_gpio84_default: gpio84-default{
+				mux {
+					groups = "gpio84_group";
+					function = "gpio84_func";
+				};
+			};
+            pinctrl_gpio85_default: gpio85-default{
+				mux {
+					groups = "gpio85_group";
+					function = "gpio85_func";
+				};
+			};
+            pinctrl_gpio86_default: gpio86-default{
+				mux {
+					groups = "gpio86_group";
+					function = "gpio86_func";
+				};
+			};
+            pinctrl_gpio87_default: gpio87-default{
+				mux {
+					groups = "gpio87_group";
+					function = "gpio87_func";
+				};
+			};
+            pinctrl_gpio88_default: gpio88-default{
+				mux {
+					groups = "gpio88_group";
+					function = "gpio88_func";
+				};
+			};
+            pinctrl_gpio89_default: gpio89-default{
+				mux {
+					groups = "gpio89_group";
+					function = "gpio89_func";
+				};
+			};
+            pinctrl_gpio90_default: gpio90-default{
+				mux {
+					groups = "gpio90_group";
+					function = "gpio90_func";
+				};
+			};
+            pinctrl_gpio91_default: gpio91-default{
+				mux {
+					groups = "gpio91_group";
+					function = "gpio91_func";
+				};
+			};
+            pinctrl_gpio92_default: gpio92-default{
+				mux {
+					groups = "gpio92_group";
+					function = "gpio92_func";
+				};
+				conf {
+					groups = "gpio92_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio93_default: gpio93-default{
+				mux {
+					groups = "gpio93_group";
+					function = "gpio93_func";
+				};
+				conf {
+					groups = "gpio93_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio94_default: gpio94-default{
+				mux {
+					groups = "gpio94_group";
+					function = "gpio94_func";
+				};
+				conf {
+					groups = "gpio94_group";
+					input-enable = <0>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio95_default: gpio95-default{
+				mux {
+					groups = "gpio95_group";
+					function = "gpio95_func";
+				};
+			};
+            pinctrl_gpio96_default: gpio96-default{
+				mux {
+					groups = "gpio96_group";
+					function = "gpio96_func";
+				};
+			};
+            pinctrl_gpio97_default: gpio97-default{
+				mux {
+					groups = "gpio97_group";
+					function = "gpio97_func";
+				};
+			};
+            pinctrl_gpio98_default: gpio98-default{
+				mux {
+					groups = "gpio98_group";
+					function = "gpio98_func";
+				};
+			};
+            pinctrl_gpio99_default: gpio99-default{
+				mux {
+					groups = "gpio99_group";
+					function = "gpio99_func";
+				};
+			};
+            pinctrl_gpio100_default: gpio100-default{
+				mux {
+					groups = "gpio100_group";
+					function = "gpio100_func";
+				};
+			};
+            pinctrl_gpio101_default: gpio101-default{
+				mux {
+					groups = "gpio101_group";
+					function = "gpio101_func";
+				};
+			};
+            pinctrl_gpio102_default: gpio102-default{
+				mux {
+					groups = "gpio102_group";
+					function = "gpio102_func";
+				};
+			};
+            pinctrl_gpio103_default: gpio103-default{
+				mux {
+					groups = "gpio103_group";
+					function = "gpio103_func";
+				};
+			};
+            pinctrl_gpio104_default: gpio104-default{
+				mux {
+					groups = "gpio104_group";
+					function = "gpio104_func";
+				};
+			};
+            pinctrl_gpio105_default: gpio105-default{
+				mux {
+					groups = "gpio105_group";
+					function = "gpio105_func";
+				};
+			};
+            pinctrl_gpio106_default: gpio106-default{
+				mux {
+					groups = "gpio106_group";
+					function = "gpio106_func";
+				};
+				conf {
+					groups = "gpio106_group";
+					input-enable = <0>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio107_default: gpio107-default{
+				mux {
+					groups = "gpio107_group";
+					function = "gpio107_func";
+				};
+				conf {
+					groups = "gpio107_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio108_default: gpio108-default{
+				mux {
+					groups = "gpio108_group";
+					function = "gpio108_func";
+				};
+				conf {
+					groups = "gpio108_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio109_default: gpio109-default{
+				mux {
+					groups = "gpio109_group";
+					function = "gpio109_func";
+				};
+				conf {
+					groups = "gpio109_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio110_default: gpio110-default{
+				mux {
+					groups = "gpio110_group";
+					function = "gpio110_func";
+				};
+				conf {
+					groups = "gpio110_group";
+					input-enable = <1>;
+					bias-pull-down = <1>;
+				};
+			};
+            pinctrl_gpio111_default: gpio111-default{
+				mux {
+					groups = "gpio111_group";
+					function = "gpio111_func";
+				};
+				conf {
+					groups = "gpio111_group";
+					input-enable = <0>;
+					bias-pull-up = <1>;
+				};
+			};
+
+            //func6
+            pinctrl_csi_mon_out_default: csi_mon_out-default{
+				mux {
+					groups = "csi_mon_out_group";
+					function = "csi_mon_out_func";
+				};
+			};
+            pinctrl_csi_ocla_clk_default: csi_ocla_clk-default{
+				mux {
+					groups = "csi_ocla_clk_group";
+					function = "csi_ocla_clk_func";
+				};
+			};
+            pinctrl_csi_mon_out_valid_default: csi_mon_out_valid-default{
+				mux {
+					groups = "csi_mon_out_valid_group";
+					function = "csi_mon_out_valid_func";
+				};
+			};
+            pinctrl_csi_parity_error_default: csi_parity_error-default{
+				mux {
+					groups = "csi_parity_error_group";
+					function = "csi_parity_error_func";
+				};
+			};
+            pinctrl_csi_dtb_out_default: csi_dtb_out-default{
+				mux {
+					groups = "csi_dtb_out_group";
+					function = "csi_dtb_out_func";
+				};
+			};
+            pinctrl_csi_phy_sel_default: csi_phy_sel-default{
+				mux {
+					groups = "csi_phy_sel_group";
+					function = "csi_phy_sel_func";
+				};
+			};
+            pinctrl_vc_g2d0_debug_out_default: vc_g2d0_debug_out-default{
+				mux {
+					groups = "vc_g2d0_debug_out_group";
+					function = "vc_g2d0_debug_out_func";
+				};
+			};
+            pinctrl_vc_g2d1_debug_out_default: vc_g2d1_debug_out-default{
+				mux {
+					groups = "vc_g2d1_debug_out_group";
+					function = "vc_g2d1_debug_out_func";
+				};
+			};
+            pinctrl_sata_mpll_clk_default: sata_mpll_clk-default{
+				mux {
+					groups = "sata_mpll_clk_group";
+					function = "sata_mpll_clk_func";
+				};
+			};
+            pinctrl_sata_ref_repeat_clk_m_default: sata_ref_repeat_clk_m-default{
+				mux {
+					groups = "sata_ref_repeat_clk_m_group";
+					function = "sata_ref_repeat_clk_m_func";
+				};
+			};
+            pinctrl_sata_ref_repeat_clk_p_default: sata_ref_repeat_clk_p-default{
+				mux {
+					groups = "sata_ref_repeat_clk_p_group";
+					function = "sata_ref_repeat_clk_p_func";
+				};
+			};
+		};
+    };
+};
