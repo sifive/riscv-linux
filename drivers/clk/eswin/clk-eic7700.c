@@ -1180,8 +1180,7 @@ static struct platform_driver eswin_clock_driver = {
 		.of_match_table	= eswin_clock_dt_ids,
 	},
 };
-static int __init eic7700_clk_init(void)
-{
-	return platform_driver_register(&eswin_clock_driver);
-}
-arch_initcall(eic7700_clk_init);
+module_platform_driver(eswin_clock_driver);
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("huangyifeng<huangyifeng@eswincomputing.com>");
+MODULE_DESCRIPTION("Eswin EIC770X clock controller driver");

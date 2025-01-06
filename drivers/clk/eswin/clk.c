@@ -373,6 +373,7 @@ static int clk_pll_set_rate(struct clk_hw *hw,
 				}
 				break;
 			case CLK_FREQ_1600M:
+			case CLK_FREQ_1500M:
 				cpu_target_volatge = true == cpu_no_boost_1_6ghz ? VOLTAGE_0_8V : VOLTAGE_0_9V;
 				ret = eswin_clk_set_cpu_volatge(clk->cpu_voltage_gpio, cpu_target_volatge);
 				if (ret) {
