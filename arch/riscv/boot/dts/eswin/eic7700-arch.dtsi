@@ -1,543 +1,263 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /*
- * Device Tree Include file for Eswin EIC7700 SoC's cpu.
- *
- * Copyright 2024, Beijing ESWIN Computing Technology Co., Ltd.. All rights reserved.
- * SPDX-License-Identifier: GPL-2.0
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, version 2.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Copyright (c) 2024 Beijing ESWIN Computing Technology Co., Ltd.
  */
 
 #include <dt-bindings/clock/eic7700-clock.h>
 
-#define UART0_INT	100
-#define UART1_INT	101
-#define UART2_INT	102
-#define UART3_INT	103
-#define UART4_INT	104
-
 / {
 	#address-cells = <2>;
 	#size-cells = <2>;
-	compatible = "eic7700-dev";
+	compatible = "eswin,eic7700";
 
-	L64: cpus {
+	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
-		timebase-frequency = <RTCCLK_FREQ>;
-		L17: cpu@0 {
+		cpu0: cpu@0 {
+			compatible = "sifive,p550", "riscv";
+			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_0>;
 			clock-frequency = <0>;
-			compatible = "eswin,eic770x", "riscv";
+			device_type = "cpu";
 			d-cache-block-size = <64>;
 			d-cache-sets = <128>;
 			d-cache-size = <32768>;
 			d-tlb-sets = <1>;
 			d-tlb-size = <32>;
-			device_type = "cpu";
-			hardware-exec-breakpoint-count = <4>;
-			hwpf-distanceBits = <6>;
-			hwpf-hitCacheThrdBits = <5>;
-			hwpf-hitMSHRThrdBits = <4>;
-			hwpf-l2pfPoolSize = <10>;
-			hwpf-nIssQEnt = <6>;
-			hwpf-nPrefetchQueueEntries = <8>;
-			hwpf-nStreams = <16>;
-			hwpf-qFullnessThrdBits = <4>;
-			hwpf-windowBits = <6>;
 			i-cache-block-size = <64>;
 			i-cache-sets = <128>;
 			i-cache-size = <32768>;
 			i-tlb-sets = <1>;
 			i-tlb-size = <32>;
 			mmu-type = "riscv,sv48";
-			next-level-cache = <&L15>;
+			next-level-cache = <&l2_cache_0>;
+			operating-points-v2 = <&d0_cpu_opp_table>;
 			reg = <0x0>;
 			riscv,isa-base = "rv64i";
-			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr", "zifencei", "zba", "zbb", "sscofpmf";
-			riscv,pmpgranularity = <4096>;
-			riscv,pmpregions = <8>;
-			sifive,buserror = <&L16>;
-			status = "okay";
-			timebase-frequency = <RTCCLK_FREQ>;
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr",
+							"zifencei", "zba", "zbb", "sscofpmf";
+			sifive,buserror = <&bus_error0>;
 			tlb-split;
-			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_0>;
-			operating-points-v2 = <&d0_cpu_opp_table>;
-			L14: interrupt-controller {
+			cpu0_intc: interrupt-controller {
 				#interrupt-cells = <1>;
 				compatible = "riscv,cpu-intc";
 				interrupt-controller;
 			};
-			L13: pmu {
-				riscv,raw-event-to-mhpmcounters = <0x0 0x0 0xffffffff 0xff 0x78
-					0x0 0x1 0xffffffff 0xfffe07ff 0x78
-					0x0 0x2 0xffffffff 0xfffe00ff 0x78
-					0x0 0x3 0xfffffffc 0xff 0x78
-					0x0 0x4 0xffffffc0 0xff 0x78
-					0x0 0x5 0xffffffff 0xfffffdff 0x78
-					0x0 0x6 0xfffffe00 0x110204ff 0x78
-					0x0 0x7 0xffffffff 0xf00000ff 0x78
-					0x0 0x8 0xfffffe04 0xff 0x78
-					0x0 0x9 0xffffffff 0xffffc0ff 0x78
-					0x0 0xa 0xffffffff 0xf00000ff 0x78
-					0x0 0xb 0xffffffff 0xfffffcff 0x78
-					0x0 0xc 0xfffffff0 0xff 0x78
-					0x0 0xd 0xffffffff 0x800000ff 0x78
-					0x0 0xe 0xffffffff 0xf80000ff 0x78
-					0x0 0xf 0xfffffffc 0xff 0x78>;
-				riscv,event-to-mhpmcounters = <0x01 0x01 0x01 0x02 0x02 0x02 0x4 0x6 0x78 0x10009 0x10009 0x78 0x10019 0x10019 0x78 0x10021 0x10021 0x78>;
-				riscv,event-to-mhpmevent = <0x4 0x0 0x202 0x5 0x0 0x4000 0x6 0x0 0x2001 0x10009 0x0 0x102 0x10019 0x0 0x1002 0x10021 0x0 0x802>;
-				compatible = "riscv,pmu0", "riscv,pmu";
-				interrupts-extended = <&L14 13>;
-			};
 		};
-		L22: cpu@1 {
+		cpu1: cpu@1 {
+			compatible = "sifive,p550", "riscv";
+			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_1>;
 			clock-frequency = <0>;
-			compatible = "eswin,eic770x", "riscv";
+			device_type = "cpu";
 			d-cache-block-size = <64>;
 			d-cache-sets = <128>;
 			d-cache-size = <32768>;
 			d-tlb-sets = <1>;
 			d-tlb-size = <32>;
-			device_type = "cpu";
-			hardware-exec-breakpoint-count = <4>;
-			hwpf-distanceBits = <6>;
-			hwpf-hitCacheThrdBits = <5>;
-			hwpf-hitMSHRThrdBits = <4>;
-			hwpf-l2pfPoolSize = <10>;
-			hwpf-nIssQEnt = <6>;
-			hwpf-nPrefetchQueueEntries = <8>;
-			hwpf-nStreams = <16>;
-			hwpf-qFullnessThrdBits = <4>;
-			hwpf-windowBits = <6>;
 			i-cache-block-size = <64>;
 			i-cache-sets = <128>;
 			i-cache-size = <32768>;
 			i-tlb-sets = <1>;
 			i-tlb-size = <32>;
 			mmu-type = "riscv,sv48";
-			next-level-cache = <&L20>;
+			next-level-cache = <&l2_cache_1>;
+			operating-points-v2 = <&d0_cpu_opp_table>;
 			reg = <0x1>;
 			riscv,isa-base = "rv64i";
-			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr", "zifencei", "zba", "zbb", "sscofpmf";
-			riscv,pmpgranularity = <4096>;
-			riscv,pmpregions = <8>;
-			sifive,buserror = <&L21>;
-			status = "okay";
-			timebase-frequency = <RTCCLK_FREQ>;
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr",
+							"zifencei", "zba", "zbb", "sscofpmf";
+			sifive,buserror = <&bus_error1>;
 			tlb-split;
-			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_1>;
-			operating-points-v2 = <&d0_cpu_opp_table>;
-			L19: interrupt-controller {
+			cpu1_intc: interrupt-controller {
 				#interrupt-cells = <1>;
 				compatible = "riscv,cpu-intc";
 				interrupt-controller;
 			};
-			L18: pmu {
-				riscv,raw-event-to-mhpmcounters = <0x0 0x0 0xffffffff 0xff 0x78
-					0x0 0x1 0xffffffff 0xfffe07ff 0x78
-					0x0 0x2 0xffffffff 0xfffe00ff 0x78
-					0x0 0x3 0xfffffffc 0xff 0x78
-					0x0 0x4 0xffffffc0 0xff 0x78
-					0x0 0x5 0xffffffff 0xfffffdff 0x78
-					0x0 0x6 0xfffffe00 0x110204ff 0x78
-					0x0 0x7 0xffffffff 0xf00000ff 0x78
-					0x0 0x8 0xfffffe04 0xff 0x78
-					0x0 0x9 0xffffffff 0xffffc0ff 0x78
-					0x0 0xa 0xffffffff 0xf00000ff 0x78
-					0x0 0xb 0xffffffff 0xfffffcff 0x78
-					0x0 0xc 0xfffffff0 0xff 0x78
-					0x0 0xd 0xffffffff 0x800000ff 0x78
-					0x0 0xe 0xffffffff 0xf80000ff 0x78
-					0x0 0xf 0xfffffffc 0xff 0x78>;
-				riscv,event-to-mhpmcounters = <0x01 0x01 0x01 0x02 0x02 0x02 0x4 0x6 0x78 0x10009 0x10009 0x78 0x10019 0x10019 0x78 0x10021 0x10021 0x78>;
-				riscv,event-to-mhpmevent = <0x4 0x0 0x202 0x5 0x0 0x4000 0x6 0x0 0x2001 0x10009 0x0 0x102 0x10019 0x0 0x1002 0x10021 0x0 0x802>;
-				compatible = "riscv,pmu0", "riscv,pmu";
-				interrupts-extended = <&L19 13>;
-			};
 		};
-		L27: cpu@2 {
+		cpu2: cpu@2 {
+			compatible = "sifive,p550", "riscv";
+			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_2>;
 			clock-frequency = <0>;
-			compatible = "eswin,eic770x", "riscv";
+			device_type = "cpu";
 			d-cache-block-size = <64>;
 			d-cache-sets = <128>;
 			d-cache-size = <32768>;
 			d-tlb-sets = <1>;
 			d-tlb-size = <32>;
-			device_type = "cpu";
-			hardware-exec-breakpoint-count = <4>;
-			hwpf-distanceBits = <6>;
-			hwpf-hitCacheThrdBits = <5>;
-			hwpf-hitMSHRThrdBits = <4>;
-			hwpf-l2pfPoolSize = <10>;
-			hwpf-nIssQEnt = <6>;
-			hwpf-nPrefetchQueueEntries = <8>;
-			hwpf-nStreams = <16>;
-			hwpf-qFullnessThrdBits = <4>;
-			hwpf-windowBits = <6>;
 			i-cache-block-size = <64>;
 			i-cache-sets = <128>;
 			i-cache-size = <32768>;
 			i-tlb-sets = <1>;
 			i-tlb-size = <32>;
 			mmu-type = "riscv,sv48";
-			next-level-cache = <&L25>;
+			next-level-cache = <&l2_cache_2>;
+			operating-points-v2 = <&d0_cpu_opp_table>;
 			reg = <0x2>;
 			riscv,isa-base = "rv64i";
-			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr", "zifencei", "zba", "zbb", "sscofpmf";
-			riscv,pmpgranularity = <4096>;
-			riscv,pmpregions = <8>;
-			sifive,buserror = <&L26>;
-			status = "okay";
-			timebase-frequency = <RTCCLK_FREQ>;
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr",
+							"zifencei", "zba", "zbb", "sscofpmf";
+			sifive,buserror = <&bus_error2>;
 			tlb-split;
-			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_2>;
-			operating-points-v2 = <&d0_cpu_opp_table>;
-			L24: interrupt-controller {
+			cpu2_intc: interrupt-controller {
 				#interrupt-cells = <1>;
 				compatible = "riscv,cpu-intc";
 				interrupt-controller;
 			};
-			L23: pmu {
-				riscv,raw-event-to-mhpmcounters = <0x0 0x0 0xffffffff 0xff 0x78
-					0x0 0x1 0xffffffff 0xfffe07ff 0x78
-					0x0 0x2 0xffffffff 0xfffe00ff 0x78
-					0x0 0x3 0xfffffffc 0xff 0x78
-					0x0 0x4 0xffffffc0 0xff 0x78
-					0x0 0x5 0xffffffff 0xfffffdff 0x78
-					0x0 0x6 0xfffffe00 0x110204ff 0x78
-					0x0 0x7 0xffffffff 0xf00000ff 0x78
-					0x0 0x8 0xfffffe04 0xff 0x78
-					0x0 0x9 0xffffffff 0xffffc0ff 0x78
-					0x0 0xa 0xffffffff 0xf00000ff 0x78
-					0x0 0xb 0xffffffff 0xfffffcff 0x78
-					0x0 0xc 0xfffffff0 0xff 0x78
-					0x0 0xd 0xffffffff 0x800000ff 0x78
-					0x0 0xe 0xffffffff 0xf80000ff 0x78
-					0x0 0xf 0xfffffffc 0xff 0x78>;
-				riscv,event-to-mhpmcounters = <0x01 0x01 0x01 0x02 0x02 0x02 0x4 0x6 0x78 0x10009 0x10009 0x78 0x10019 0x10019 0x78 0x10021 0x10021 0x78>;
-				riscv,event-to-mhpmevent = <0x4 0x0 0x202 0x5 0x0 0x4000 0x6 0x0 0x2001 0x10009 0x0 0x102 0x10019 0x0 0x1002 0x10021 0x0 0x802>;
-				compatible = "riscv,pmu0", "riscv,pmu";
-				interrupts-extended = <&L24 13>;
-			};
 		};
-		L32: cpu@3 {
+		cpu3: cpu@3 {
+			compatible = "sifive,p550", "riscv";
+			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_3>;
 			clock-frequency = <0>;
-			compatible = "eswin,eic770x", "riscv";
+			device_type = "cpu";
 			d-cache-block-size = <64>;
 			d-cache-sets = <128>;
 			d-cache-size = <32768>;
 			d-tlb-sets = <1>;
 			d-tlb-size = <32>;
-			device_type = "cpu";
-			hardware-exec-breakpoint-count = <4>;
-			hwpf-distanceBits = <6>;
-			hwpf-hitCacheThrdBits = <5>;
-			hwpf-hitMSHRThrdBits = <4>;
-			hwpf-l2pfPoolSize = <10>;
-			hwpf-nIssQEnt = <6>;
-			hwpf-nPrefetchQueueEntries = <8>;
-			hwpf-nStreams = <16>;
-			hwpf-qFullnessThrdBits = <4>;
-			hwpf-windowBits = <6>;
 			i-cache-block-size = <64>;
 			i-cache-sets = <128>;
 			i-cache-size = <32768>;
 			i-tlb-sets = <1>;
 			i-tlb-size = <32>;
 			mmu-type = "riscv,sv48";
-			next-level-cache = <&L30>;
+			next-level-cache = <&l2_cache_3>;
+			operating-points-v2 = <&d0_cpu_opp_table>;
 			reg = <0x3>;
 			riscv,isa-base = "rv64i";
-			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr", "zifencei", "zba", "zbb", "sscofpmf";
-			riscv,pmpgranularity = <4096>;
-			riscv,pmpregions = <8>;
-			sifive,buserror = <&L31>;
-			status = "okay";
-			timebase-frequency = <RTCCLK_FREQ>;
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "h", "zicsr",
+							"zifencei", "zba", "zbb", "sscofpmf";
+			sifive,buserror = <&bus_error3>;
 			tlb-split;
-			clocks = <&d0_clock EIC7700_CLK_CPU_EXT_SRC_CORE_CLK_3>;
-			operating-points-v2 = <&d0_cpu_opp_table>;
-			L29: interrupt-controller {
+			cpu3_intc: interrupt-controller {
 				#interrupt-cells = <1>;
 				compatible = "riscv,cpu-intc";
 				interrupt-controller;
 			};
-			L28: pmu {
-				riscv,raw-event-to-mhpmcounters = <0x0 0x0 0xffffffff 0xff 0x78
-					0x0 0x1 0xffffffff 0xfffe07ff 0x78
-					0x0 0x2 0xffffffff 0xfffe00ff 0x78
-					0x0 0x3 0xfffffffc 0xff 0x78
-					0x0 0x4 0xffffffc0 0xff 0x78
-					0x0 0x5 0xffffffff 0xfffffdff 0x78
-					0x0 0x6 0xfffffe00 0x110204ff 0x78
-					0x0 0x7 0xffffffff 0xf00000ff 0x78
-					0x0 0x8 0xfffffe04 0xff 0x78
-					0x0 0x9 0xffffffff 0xffffc0ff 0x78
-					0x0 0xa 0xffffffff 0xf00000ff 0x78
-					0x0 0xb 0xffffffff 0xfffffcff 0x78
-					0x0 0xc 0xfffffff0 0xff 0x78
-					0x0 0xd 0xffffffff 0x800000ff 0x78
-					0x0 0xe 0xffffffff 0xf80000ff 0x78
-					0x0 0xf 0xfffffffc 0xff 0x78>;
-				riscv,event-to-mhpmcounters = <0x01 0x01 0x01 0x02 0x02 0x02 0x4 0x6 0x78 0x10009 0x10009 0x78 0x10019 0x10019 0x78 0x10021 0x10021 0x78>;
-				riscv,event-to-mhpmevent = <0x4 0x0 0x202 0x5 0x0 0x4000 0x6 0x0 0x2001 0x10009 0x0 0x102 0x10019 0x0 0x1002 0x10021 0x0 0x802>;
-				compatible = "riscv,pmu0", "riscv,pmu";
-				interrupts-extended = <&L29 13>;
-			};
+		};
+		l2_cache_0: l2-cache0 {
+			compatible = "cache";
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			next-level-cache = <&ccache>;
+		};
+		l2_cache_1: l2-cache1 {
+			compatible = "cache";
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			next-level-cache = <&ccache>;
+		};
+		l2_cache_2: l2-cache2 {
+			compatible = "cache";
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			next-level-cache = <&ccache>;
+		};
+		l2_cache_3: l2-cache3 {
+			compatible = "cache";
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			next-level-cache = <&ccache>;
 		};
 	};
-	L50: memory@80000000 {
-		compatible = "sifive,axi4-mem-port", "sifive,axi4-port", "sifive,mem-port";
-		device_type = "memory";
-		reg = <0x0 0x80000000 0x7f 0x80000000>;
-		sifive,port-width-bytes = <32>;
+
+	pmu {
+		compatible = "riscv,pmu";
+		riscv,event-to-mhpmcounters =
+				<0x00001 0x00001 0x00000001>,
+				<0x00002 0x00002 0x00000002>,
+				<0x00004 0x00006 0x00000078>,
+				<0x10009 0x10009 0x00000078>,
+				<0x10019 0x10019 0x00000078>,
+				<0x10021 0x10021 0x00000078>;
+		riscv,event-to-mhpmevent =
+				<0x00004 0x00000000 0x00000202>,
+				<0x00005 0x00000000 0x00004000>,
+				<0x00006 0x00000000 0x00002001>,
+				<0x10009 0x00000000 0x00000102>,
+				<0x10019 0x00000000 0x00001002>,
+				<0x10021 0x00000000 0x00000802>;
+		riscv,raw-event-to-mhpmcounters =
+				<0x00000000 0x00000000 0xffffffff 0x000000ff 0x00000078>,
+				<0x00000000 0x00000001 0xffffffff 0xfffe07ff 0x00000078>,
+				<0x00000000 0x00000002 0xffffffff 0xfffe00ff 0x00000078>,
+				<0x00000000 0x00000003 0xfffffffc 0x000000ff 0x00000078>,
+				<0x00000000 0x00000004 0xffffffc0 0x000000ff 0x00000078>,
+				<0x00000000 0x00000005 0xffffffff 0xfffffdff 0x00000078>,
+				<0x00000000 0x00000006 0xfffffe00 0x110204ff 0x00000078>,
+				<0x00000000 0x00000007 0xffffffff 0xf00000ff 0x00000078>,
+				<0x00000000 0x00000008 0xfffffe04 0x000000ff 0x00000078>,
+				<0x00000000 0x00000009 0xffffffff 0xffffc0ff 0x00000078>,
+				<0x00000000 0x0000000a 0xffffffff 0xf00000ff 0x00000078>,
+				<0x00000000 0x0000000b 0xffffffff 0xfffffcff 0x00000078>,
+				<0x00000000 0x0000000c 0xfffffff0 0x000000ff 0x00000078>,
+				<0x00000000 0x0000000d 0xffffffff 0x800000ff 0x00000078>,
+				<0x00000000 0x0000000e 0xffffffff 0xf80000ff 0x00000078>,
+				<0x00000000 0x0000000f 0xfffffffc 0x000000ff 0x00000078>;
 	};
+
 	SOC: soc {
 		#address-cells = <2>;
 		#size-cells = <2>;
-		compatible = "SiFive,FU800-soc", "fu800-soc", "sifive-soc", "simple-bus";
+		compatible = "simple-bus";
 		ranges;
-		L40: authentication-controller {
-			compatible = "sifive,authentication0";
-			sifive,auth-types = "fuse";
+		plic0: interrupt-controller@c000000 {
+			compatible = "sifive,fu540-c000-plic", "sifive,plic-1.0.0";
+			reg = <0x0 0xc000000 0x0 0x4000000>;
+			#address-cells = <0>;
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			interrupts-extended =
+				<&cpu0_intc 0xffffffff>, <&cpu0_intc 9>,
+				<&cpu1_intc 0xffffffff>, <&cpu1_intc 9>,
+				<&cpu2_intc 0xffffffff>, <&cpu2_intc 9>,
+				<&cpu3_intc 0xffffffff>, <&cpu3_intc 9>;
+			riscv,ndev = <520>;
 		};
-		L51: axi4-sys-port@40000000 {
-			#address-cells = <1>;
-			#size-cells = <1>;
-			compatible = "sifive,axi4-sys-port", "sifive,axi4-port", "sifive,sys-port", "simple-external-bus", "simple-bus";
-			ranges = <0x40000000 0x0 0x40000000 0x40000000>;
-			sifive,port-width-bytes = <16>;
-		};
-		L52: axi4-sys-port@8000000000 {
-			#address-cells = <2>;
-			#size-cells = <2>;
-			compatible = "sifive,axi4-sys-port", "sifive,axi4-port", "sifive,sys-port", "simple-external-bus", "simple-bus";
-			ranges = <0x80 0x0 0x80 0x0 0x180 0x0>;
-			sifive,port-width-bytes = <16>;
-		};
-		L46: basic-bus-blocker@200000 {
-			compatible = "sifive,basic-bus-blocker1";
-			reg = <0x0 0x200000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L43: basic-bus-blocker@202000 {
-			compatible = "sifive,basic-bus-blocker1";
-			reg = <0x0 0x202000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L48: basic-bus-blocker@204000 {
-			compatible = "sifive,basic-bus-blocker1";
-			reg = <0x0 0x204000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L54: burst-bundler@10010000 {
-			compatible = "sifive,burst-bundler0";
-			reg = <0x0 0x10010000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L16: bus-error-unit@hart0 {
-			compatible = "sifive,buserror";
-			interrupt-parent = <&plic0>;
-			interrupts = <517>;
-			reg = <0x0 0x1700000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L21: bus-error-unit@hart1 {
-			compatible = "sifive,buserror";
-			interrupt-parent = <&plic0>;
-			interrupts = <518>;
-			reg = <0x0 0x1701000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L26: bus-error-unit@hart2 {
-			compatible = "sifive,buserror";
-			interrupt-parent = <&plic0>;
-			interrupts = <519>;
-			reg = <0x0 0x1702000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L31: bus-error-unit@hart3 {
-			compatible = "sifive,buserror";
-			interrupt-parent = <&plic0>;
-			interrupts = <520>;
-			reg = <0x0 0x1703000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L7: cache-controller@2010000 {
+		ccache: cache-controller@2010000 {
+			compatible = "sifive,eic7700";
 			cache-block-size = <64>;
 			cache-level = <3>;
 			cache-sets = <4096>;
 			cache-size = <4194304>;
 			cache-unified;
-			compatible = "sifive,eic7700";
 			interrupt-parent = <&plic0>;
 			interrupts = <1>, <3>, <4>, <2>;
-			next-level-cache = <&L9 &L10 &L11 &L50>;
-			reg = <0x0 0x2010000 0x0 0x4000 0x0 0x8000000 0x0 0x400000>;
-			reg-names = "control", "sideband";
-			sifive,a-mshr-count = <60>;
-			sifive,bank-count = <4>;
-			sifive,ecc-granularity = <8>;
-			sifive,max-master-id = <13>;
-			sifive,perfmon-counters = <6>;
-			numa-node-id = <0>;
+			reg = <0x0 0x2010000 0x0 0x4000>;
 		};
-
-		L34: debug-controller@0 {
-			compatible = "sifive,debug-100", "riscv,debug-100";
-			debug-attach = "jtag";
-			reg = <0x0 0x0 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L8: error-device@1000 {
-			compatible = "sifive,error0";
-			reg = <0x0 0x1000 0x0 0x3000 0x0 0x5000 0x0 0x13000 0x0 0x19000 0x0 0xe7000 0x0 0x114000 0x0 0xec000 0x0 0x201000 0x0 0x1000 0x0 0x203000 0x0 0x1000 0x0 0x205000 0x0 0x14fb000 0x0 0x1704000 0x0 0x8fc000 0x0 0x2014000 0x0 0x5fec000 0x0 0x8400000 0x0 0x3c00000 0x0 0x10000000 0x0 0x3000 0x0 0x10004000 0x0 0xc000 0x0 0x10011000 0x0 0x1f000 0x0 0x10034000 0x0 0x9fcc000 0x0 0x1a400000 0x0 0x5c00000>;
-		};
-		L9: error-device@10003000 {
-			compatible = "sifive,error0";
-			reg = <0x0 0x10003000 0x0 0x1000>;
-		};
-
-		plic0: interrupt-controller@c000000 {
-			#interrupt-cells = <1>;
-			compatible = "sifive,plic-1.0.0";
-			interrupt-controller;
-			interrupts-extended = <
-				&L14 0xffffffff &L14 9
-				&L19 0xffffffff &L19 9
-				&L24 0xffffffff &L24 9
-				&L29 0xffffffff &L29 9>;
-			reg = <0x0 0xc000000 0x0 0x4000000>;
-			reg-names = "control";
-			riscv,max-priority = <7>;
-			riscv,ndev = <520>;
-		};
-		L53: order-obliterator@10030000 {
-			compatible = "sifive,order-obliterator0";
+		bus_error0: bus-error-unit@hart0 {
+			compatible = "sifive,buserror";
 			interrupt-parent = <&plic0>;
-			interrupts = <516>;
-			reg = <0x0 0x10030000 0x0 0x4000>;
-			reg-names = "control";
+			interrupts = <517>;
+			reg = <0x0 0x1700000 0x0 0x1000>;
 		};
-		L15: pl2@104000 {
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			compatible = "sifive,pL2Cache0", "cache";
-			next-level-cache = <&L7>;
-			reg = <0x0 0x104000 0x0 0x4000>;
-			reg-names = "control";
-			sifive,ecc-granularity = <16>;
-			sifive,perfmon-counters = <6>;
+		bus_error1: bus-error-unit@hart1 {
+			compatible = "sifive,buserror";
+			interrupt-parent = <&plic0>;
+			interrupts = <518>;
+			reg = <0x0 0x1701000 0x0 0x1000>;
 		};
-		L20: pl2@108000 {
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			compatible = "sifive,pL2Cache0", "cache";
-			next-level-cache = <&L7>;
-			reg = <0x0 0x108000 0x0 0x4000>;
-			reg-names = "control";
-			sifive,ecc-granularity = <16>;
-			sifive,perfmon-counters = <6>;
+		bus_error2: bus-error-unit@hart2 {
+			compatible = "sifive,buserror";
+			interrupt-parent = <&plic0>;
+			interrupts = <519>;
+			reg = <0x0 0x1702000 0x0 0x1000>;
 		};
-		L25: pl2@10c000 {
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			compatible = "sifive,pL2Cache0", "cache";
-			next-level-cache = <&L7>;
-			reg = <0x0 0x10c000 0x0 0x4000>;
-			reg-names = "control";
-			sifive,ecc-granularity = <16>;
-			sifive,perfmon-counters = <6>;
-		};
-		L30: pl2@110000 {
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			compatible = "sifive,pL2Cache0", "cache";
-			next-level-cache = <&L7>;
-			reg = <0x0 0x110000 0x0 0x4000>;
-			reg-names = "control";
-			sifive,ecc-granularity = <16>;
-			sifive,perfmon-counters = <6>;
-		};
-		L10: rom@1a000000 {
-			compatible = "ucbbar,cacheable-zero0";
-			reg = <0x0 0x1a000000 0x0 0x400000>;
-		};
-		L11: rom@3a000000 {
-			compatible = "ucbbar,cacheable-zero0";
-			reg = <0x0 0x3a000000 0x0 0x400000>;
-		};
-		L6: subsystem_pbus_clock {
-			#clock-cells = <0>;
-			clock-frequency = <10000000>;
-			clock-output-names = "subsystem_pbus_clock";
-			compatible = "fixed-clock";
-		};
-		L61: teststatus@4000 {
-			compatible = "sifive,test0";
-			reg = <0x0 0x4000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L45: tl-address-adjuster@20000000 {
-			#address-cells = <1>;
-			#size-cells = <1>;
-			compatible = "sifive,tl-inter-sys-port", "sifive,tl-port", "simple-external-bus", "simple-bus";
-			ranges = <0x20000000 0x0 0x20000000 0x1a000000 0x3a400000 0x0 0x3a400000 0x5c00000>;
-			sifive,port-width-bytes = <8>;
-		};
-		L42: tl-inter-mem-master-port@80000000 {
-			#address-cells = <2>;
-			#size-cells = <2>;
-			compatible = "sifive,tl-inter-mem-master-port", "sifive,tl-port", "sifive,inter-mem-master-port", "simple-external-bus", "simple-bus";
-			ranges = <0x0 0x80000000 0x0 0x80000000 0x7f 0x80000000>;
-			sifive,port-width-bytes = <32>;
-		};
-		L55: trace-encoder-0@100000 {
-			compatible = "sifive,trace0";
-			reg = <0x0 0x100000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L56: trace-encoder-1@101000 {
-			compatible = "sifive,trace0";
-			reg = <0x0 0x101000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L57: trace-encoder-2@102000 {
-			compatible = "sifive,trace0";
-			reg = <0x0 0x102000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L58: trace-encoder-3@103000 {
-			compatible = "sifive,trace0";
-			reg = <0x0 0x103000 0x0 0x1000>;
-			reg-names = "control";
-		};
-		L59: trace-funnel-0@18000 {
-			compatible = "sifive,trace0";
-			reg = <0x0 0x18000 0x0 0x1000>;
-			reg-names = "control";
+		bus_error3: bus-error-unit@hart3 {
+			compatible = "sifive,buserror";
+			interrupt-parent = <&plic0>;
+			interrupts = <520>;
+			reg = <0x0 0x1703000 0x0 0x1000>;
 		};
 	};
 };
