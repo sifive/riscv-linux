@@ -1,21 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /*
  * Device Tree file for Eswin EIC7700 SoC.
  *
- * Copyright 2024, Beijing ESWIN Computing Technology Co., Ltd.. All rights reserved.
- * SPDX-License-Identifier: GPL-2.0
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, version 2.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Copyright (c) 2024, Beijing ESWIN Computing Technology Co., Ltd.
  */
 
 /dts-v1/;
@@ -49,6 +36,11 @@
 
 	cpus {
 		timebase-frequency = <RTCCLK_FREQ>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x7f 0x80000000>;
 	};
 
 	reserved-memory {
@@ -89,82 +81,8 @@
 	status = "okay";
 };
 
-&d0_pmu {
-	status = "okay";
-};
-
-&ddr0 {
-	status = "okay";
-};
-
-&ddr1 {
-	status = "okay";
-};
-
 &smmu0 {
 	status = "okay";
-};
-
-&smmu_pmu0 {
-	status = "disabled";
-};
-
-&d0_cfg_noc {
-	status = "okay";
-};
-
-&d0_llc_noc {
-	status = "okay";
-	stat,0 = "TracePort:ddr0_p0_req";
-	stat,1 = "TracePort:ddr1_p0_req";
-};
-
-&d0_sys_noc {
-	status = "okay";
-
-	stat,0 = "TracePort:ddr0_p1_req",
-		 "InitFlow:mcput_snoc_mp/I/0";
-
-	stat,1 = "TracePort:ddr0_p2_req",
-		 "InitFlow:dspt_snoc/I/0",
-		 "AddrBase:0x81000000", "AddrSize:0x30",
-		 "Opcode:RdWrLockUrg", "Status:ReqRsp", "Length:0x8000", "Urgency:0x0";
-
-	stat,2 = "TracePort:ddr1_p1_req",
-		 "Status:Req", "AddrSize:0x28";
-
-	stat,3 = "TracePort:ddr1_p2_req";
-
-	latency,0 = "TracePort:sysnoc_trans_probe_0", "AddrSize:0x0";
-	latency,1 = "TracePort:sysnoc_trans_probe_1","Mode:latency","AddrBase:0x82000000","AddrSize:0x28","Opcode:RdWr";
-
-	pending,0 = "TracePort:sysnoc_trans_probe_2", "AddrSize:0x3";
-};
-
-&d0_media_noc {
-	status = "okay";
-
-	stat,0 = "TracePort:ddr0_p3_req";
-	stat,1 = "TracePort:ddr1_p3_req";
-};
-
-&d0_realtime_noc {
-	status = "okay";
-
-	stat,0 = "TracePort:ddr0_p4_req";
-	stat,1 = "TracePort:ddr1_p4_req";
-};
-
-&d0_noc_wdt {
-	status = "okay";
-};
-
-&d0_ipc_scpu {
-	status = "okay";
-};
-
-&d0_lpcpu {
-	status = "disabled";
 };
 
 &pcie {
@@ -172,43 +90,7 @@
 	status = "okay";
 };
 
-&d0_npu{
-	status = "okay";
-};
-
-&d0_dsp_subsys {
-	status = "okay";
-};
-
-&d0_dsp0 {
-	status = "okay";
-};
-
-&d0_dsp1 {
-	status = "okay";
-};
-
-&d0_dsp2 {
-	status = "okay";
-};
-
-&d0_dsp3 {
-	status = "okay";
-};
-
 &gpu0 {
-	status = "okay";
-};
-
-&gc820 {
-	status = "okay";
-};
-
-&vdec0 {
-	status = "okay";
-};
-
-&venc0 {
 	status = "okay";
 };
 
@@ -218,14 +100,6 @@
 
 &dc {
 	status = "okay";
-};
-
-&dc_test {
-    status = "disabled";
-};
-
-&virtual_display {
-    status = "disabled";
 };
 
 &dsi_output {
@@ -257,10 +131,6 @@
 	};
 };
 
-&dw_hdmi_hdcp2 {
-    status = "okay";
-};
-
 &d0_i2s0 {
 	status = "okay";
 	d0_i2s0_port: port {
@@ -281,11 +151,6 @@
 	};
 };
 
-&d0_i2s2 {
-	/* connect WIFI module */
-	status = "disabled";
-};
-
 &d0_graphcard0 {
 	status = "okay";
 	dais = <&d0_i2s1_port>;
@@ -294,42 +159,6 @@
 &d0_graphcard1 {
 	status = "okay";
 	dais = <&d0_i2s0_port>;
-};
-
-&d0_graphcard2 {
-	status = "disabled";
-};
-
-&isp_0 {
-	status = "disabled";
-};
-
-&isp_1 {
-	status = "disabled";
-};
-
-&dewarp {
-	status = "okay";
-};
-
-&mipi_dphy_rx {
-	status = "disabled";
-};
-
-&csi_dma0 {
-	status = "disabled";
-};
-
-&csi_dma1 {
-	status = "disabled";
-};
-
-&csi2_0 {
-	status = "disabled";
-};
-
-&csi2_1 {
-	status = "disabled";
 };
 
 &sdhci_emmc {
@@ -441,26 +270,6 @@
 	status = "okay";
 };
 
-&d0_uart3 {
-	/* pin header mux with GPIO 92,93 */
-	status = "disabled";
-};
-
-&d0_uart4 {
-	/* unused */
-	status = "disabled";
-};
-
-&ssi0 {
-	/* pin header mux with GPIO 35,36,37,38,39,40 */
-	status = "disabled";
-};
-
-&ssi1 {
-	/* unused */
-	status = "disabled";
-};
-
 &bootspi {
 	/* spi flash */
 	status = "okay";
@@ -475,38 +284,6 @@
 		spi-max-frequency = <4800000>;
 		rx-sample-delay-ns = <10>;
 	};
-};
-
-&d0_mbox0 {
-	status = "okay";
-};
-
-&d0_mbox1 {
-	status = "okay";
-};
-
-&d0_mbox2 {
-	status = "okay";
-};
-
-&d0_mbox3 {
-	status = "okay";
-};
-
-&d0_mbox4 {
-	status = "okay";
-};
-
-&d0_mbox5 {
-	status = "okay";
-};
-
-&d0_mbox6 {
-	status = "okay";
-};
-
-&d0_mbox7 {
-	status = "okay";
 };
 
 &fan_control {
@@ -534,16 +311,6 @@
 	};
 };
 
-&d0_i2c1 {
-	/* pin header mux with GPIO 46,47 */
-	status = "disabled";
-};
-
-&d0_i2c2 {
-	/* mipi dsi touch ctrl con */
-	status = "disabled";
-};
-
 &d0_i2c3 {
 	/* FUSB303B cc logic */
 	status = "okay";
@@ -564,34 +331,9 @@
 	};
 };
 
-&d0_i2c4 {
-	/* unused */
-	status = "disabled";
-};
-
 &d0_i2c5 {
-	/* PCA9548 */
+	/* TCA9548 */
 	status = "okay";
-};
-
-&d0_i2c6 {
-	/* unused */
-	status = "disabled";
-};
-
-&d0_i2c7 {
-	/* unused */
-	status = "disabled";
-};
-
-&d0_i2c8 {
-	/* unused */
-	status = "disabled";
-};
-
-&d0_i2c9 {
-	/* unused */
-	status = "disabled";
 };
 
 &d0_aon_i2c0 {
@@ -605,10 +347,10 @@
 };
 
 &d0_aon_i2c1 {
-	/* PCA9450 & SiC451 & INA226 & PAC1934 */
+	/* INA226 & PAC1934 */
 	status = "okay";
 	eswin,syscfg = <&d0_sys_con 0x3C0 15>;
-	iic_hold_time = <0x40>;
+	i2c-sda-hold-time-ns = <0x40>;
 	pac1934:pac1934@10 {
 		compatible = "microchip,pac1934";
 		/*update all register data*/
@@ -663,32 +405,23 @@
 	status = "okay";
 };
 
-&timer0 {
-	status = "okay";
-};
-
-&timer1 {
-	status = "okay";
-};
-
-&timer2 {
-	status = "okay";
-};
-
-&timer3 {
-	status = "okay";
-};
-
 &pinctrl {
 	status = "okay";
 	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_gpio6_default &pinctrl_gpio7_default &pinctrl_gpio8_default &pinctrl_gpio9_default
-			&pinctrl_gpio10_default &pinctrl_gpio17_default &pinctrl_gpio35_default &pinctrl_gpio36_default
-			&pinctrl_gpio37_default &pinctrl_gpio38_default &pinctrl_gpio39_default &pinctrl_gpio40_default
-			&pinctrl_gpio41_default &pinctrl_gpio46_default &pinctrl_gpio52_default
-			&pinctrl_gpio53_default &pinctrl_gpio64_default &pinctrl_gpio65_default &pinctrl_gpio66_default
-			&pinctrl_gpio67_default &pinctrl_gpio70_default &pinctrl_gpio73_default &pinctrl_gpio83_default
-			&pinctrl_gpio86_default &pinctrl_gpio87_default &pinctrl_gpio92_default &pinctrl_gpio93_default>;
+	pinctrl-0 = <&pinctrl_gpio6_default &pinctrl_gpio7_default
+		&pinctrl_gpio8_default &pinctrl_gpio9_default
+		&pinctrl_gpio10_default &pinctrl_gpio17_default
+		&pinctrl_gpio35_default &pinctrl_gpio36_default
+		&pinctrl_gpio37_default &pinctrl_gpio38_default
+		&pinctrl_gpio39_default &pinctrl_gpio40_default
+		&pinctrl_gpio41_default &pinctrl_gpio46_default
+		&pinctrl_gpio52_default &pinctrl_gpio53_default
+		&pinctrl_gpio64_default &pinctrl_gpio65_default
+		&pinctrl_gpio66_default &pinctrl_gpio67_default
+		&pinctrl_gpio70_default &pinctrl_gpio73_default
+		&pinctrl_gpio83_default	&pinctrl_gpio86_default
+		&pinctrl_gpio87_default &pinctrl_gpio92_default
+		&pinctrl_gpio93_default>;
 
     /* pin header default function for GPIO
        SPI1 (CS0,SCLK,MOSI,MISO,D2,D3): GPIO 35,36,37,38,39,40
@@ -696,38 +429,6 @@
        UART3(TX,RX): GPIO 92,93
     */
 };
-
-/*
-GPIO USED ON CarrierBoard:
-	gpio0   : FP Audio Jack Sense(I), active low
-	gpio5   : TYPE C cc logic interrupt(I), active low
-	gpio11  : BT WAKE HOST(I), active low
-	gpio12  : PCIE present(I), active low
-	gpio14  : DSI FPC CON CTRL(J10&J11)
-	gpio15  : Wlan wake host(I), active low
-	gpio28  : RP audio jack sense(I), active low
-	gpio29  : EMMC active led ctrl(O)
-
-	gpio43  : USB3.2 Gen1 hub Resetn(O), active low
-	gpio71  : CSI fpc con ctrl(O)
-	gpio74  : CSI fpc con ctrl(O)
-	gpio77  : CSI fpc con ctrl(O)
-	gpio76  : HOST WAKE BT(O), active low
-	gpio79  : WLAN POWER ON(O), active high
-	gpio80  : CSI fpc con ctrl(O)
-	gpio82  : DSI FPC CON CTRL(J10)
-	gpio85  : DSI FPC CON CTRL(J11)
-	gpio84  : GPIO LED CTRL(O), active high
-
- GPIO USED ON SOM:
-	gpio18  : HOST WAKE WLAN(O), active low
-	gpio19  : HOST WAKE BT(O), active low
-	gpio20  : WLAN WAKE HOST(I), active low
-	gpio21  : BT WAKE HOST(I), active low
-	gpio106 : gphy0 resern(O), active low
-	gpio111 : gphy1 resern(O), active low
-
-*/
 
 &gpio0 {
 	status = "okay";
