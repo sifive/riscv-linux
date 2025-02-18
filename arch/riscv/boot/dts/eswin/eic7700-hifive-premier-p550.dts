@@ -311,6 +311,10 @@
 	};
 };
 
+&d0_i2c1 {
+	status = "okay";
+};
+
 &d0_i2c3 {
 	/* FUSB303B cc logic */
 	status = "okay";
@@ -414,14 +418,13 @@
 		&pinctrl_gpio35_default &pinctrl_gpio36_default
 		&pinctrl_gpio37_default &pinctrl_gpio38_default
 		&pinctrl_gpio39_default &pinctrl_gpio40_default
-		&pinctrl_gpio41_default &pinctrl_gpio46_default
-		&pinctrl_gpio52_default &pinctrl_gpio53_default
-		&pinctrl_gpio64_default &pinctrl_gpio65_default
-		&pinctrl_gpio66_default &pinctrl_gpio67_default
-		&pinctrl_gpio70_default &pinctrl_gpio73_default
-		&pinctrl_gpio83_default	&pinctrl_gpio86_default
-		&pinctrl_gpio87_default &pinctrl_gpio92_default
-		&pinctrl_gpio93_default>;
+		&pinctrl_gpio41_default &pinctrl_gpio52_default
+		&pinctrl_gpio53_default &pinctrl_gpio64_default
+		&pinctrl_gpio65_default &pinctrl_gpio66_default
+		&pinctrl_gpio67_default &pinctrl_gpio70_default
+		&pinctrl_gpio73_default &pinctrl_gpio83_default
+		&pinctrl_gpio86_default &pinctrl_gpio87_default
+		&pinctrl_gpio92_default &pinctrl_gpio93_default>;
 
     /* pin header default function for GPIO
        SPI1 (CS0,SCLK,MOSI,MISO,D2,D3): GPIO 35,36,37,38,39,40
