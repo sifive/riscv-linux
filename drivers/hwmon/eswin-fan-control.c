@@ -21,6 +21,8 @@
 #define FAN_PWM_DUTY           0x0
 #define FAN_PWM_PERIOD         0x1
 #define FAN_PWM_FREE	       0x2
+#define DEFAULT_PERIOD	       3000000u
+#define DEFAULT_DUTY_CYCLE     2500000u
 
 /* register map */
 #define REG_FAN_INT            0x0
@@ -139,7 +141,7 @@ static long eswin_fan_control_get_pwm_duty(const struct eswin_fan_control_data *
 	int duty;
 
 	pwm_get_state(ctl->pwm, &state);
-	duty = pwm_get_relative_duty_cycle(&state, 100);
+	duty = pwm_get_relative_duty_cycle(&state, 255);
 
 	return duty;
 }
@@ -208,7 +210,7 @@ static int eswin_fan_control_set_pwm_duty(const long val, struct eswin_fan_contr
 	struct pwm_state state;
 
 	pwm_get_state(ctl->pwm, &state);
-	pwm_set_relative_duty_cycle(&state, val, 100);
+	pwm_set_relative_duty_cycle(&state, val, 255);
 	pwm_apply_might_sleep(ctl->pwm, &state);
 
 	return 0;
@@ -220,7 +222,7 @@ static int eswin_fan_control_write_pwm(struct device *dev, u32 attr, long val)
 
 	switch (attr) {
 		case hwmon_pwm_input:
-	if((val < 0)||(val > 100))
+	if((val < 0)||(val > 255))
 		return -EINVAL;
 	else
 		return eswin_fan_control_set_pwm_duty(val, ctl);
@@ -323,6 +325,17 @@ static irqreturn_t eswin_fan_control_irq_handler(int irq, void *data)
 	}
 
 	return IRQ_HANDLED;
+}
+
+static void eswin_set_fan_ctl_param(struct eswin_fan_control_data *ctl,
+				u64 period, u64 duty_cycle)
+{
+	struct pwm_state state;
+
+	pwm_get_state(ctl->pwm, &state);
+	state.period = period;
+	state.duty_cycle = duty_cycle;
+	pwm_apply_might_sleep(ctl->pwm, &state);
 }
 
 static int eswin_fan_control_init(struct eswin_fan_control_data *ctl,
@@ -464,6 +477,8 @@ static int eswin_fan_control_probe(struct platform_device *pdev)
 		return ret;
 	}
 	pwm_enable(ctl->pwm);
+
+	eswin_set_fan_ctl_param(ctl, DEFAULT_PERIOD, DEFAULT_DUTY_CYCLE);
 
 	ret = devm_add_action_or_reset(&pdev->dev, eswin_fan_control_remove, ctl);
 	if (ret)
