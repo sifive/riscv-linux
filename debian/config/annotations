@@ -572,6 +572,7 @@ CONFIG_AD7949                                   policy<{'riscv64': 'n'}>
 CONFIG_AD799X                                   policy<{'riscv64': 'n'}>
 CONFIG_AD8366                                   policy<{'riscv64': 'n'}>
 CONFIG_AD8801                                   policy<{'riscv64': 'n'}>
+CONFIG_AD9467                                   policy<{'riscv64': 'n'}>
 CONFIG_AD9523                                   policy<{'riscv64': 'n'}>
 CONFIG_AD9832                                   policy<{'riscv64': 'n'}>
 CONFIG_AD9834                                   policy<{'riscv64': 'n'}>
@@ -670,6 +671,7 @@ CONFIG_AQTION                                   policy<{'riscv64': 'm'}>
 CONFIG_AQUANTIA_PHY                             policy<{'riscv64': 'm'}>
 CONFIG_AR5523                                   policy<{'riscv64': 'm'}>
 CONFIG_ARCH_DMA_ADDR_T_64BIT                    policy<{'riscv64': 'y'}>
+CONFIG_ARCH_DMA_DEFAULT_COHERENT                policy<{'riscv64': 'y'}>
 CONFIG_ARCH_ENABLE_HUGEPAGE_MIGRATION           policy<{'riscv64': 'y'}>
 CONFIG_ARCH_ENABLE_SPLIT_PMD_PTLOCK             policy<{'riscv64': 'y'}>
 CONFIG_ARCH_ENABLE_THP_MIGRATION                policy<{'riscv64': 'y'}>
@@ -679,14 +681,14 @@ CONFIG_ARCH_HAS_CURRENT_STACK_POINTER           policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_DEBUG_VIRTUAL                   policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_DEBUG_VM_PGTABLE                policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_DEBUG_WX                        policy<{'riscv64': 'y'}>
-CONFIG_ARCH_HAS_DMA_CLEAR_UNCACHED              policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_DMA_PREP_COHERENT               policy<{'riscv64': 'y'}>
-CONFIG_ARCH_HAS_DMA_SET_UNCACHED                policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_ELF_RANDOMIZE                   policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_FORTIFY_SOURCE                  policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_GCOV_PROFILE_ALL                policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_GIGANTIC_PAGE                   policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_KCOV                            policy<{'riscv64': 'y'}>
+CONFIG_ARCH_HAS_KERNEL_FPU_SUPPORT              policy<{'riscv64': 'y'}>
+CONFIG_ARCH_HAS_MEMBARRIER_CALLBACKS            policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_MMIOWB                          policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_NON_OVERLAPPING_ADDRESS_SPACE   policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_PMEM_API                        policy<{'riscv64': 'y'}>
@@ -703,7 +705,6 @@ CONFIG_ARCH_HAS_TEARDOWN_DMA_OPS                policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_TICK_BROADCAST                  policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_UBSAN_SANITIZE_ALL              policy<{'riscv64': 'y'}>
 CONFIG_ARCH_HAS_VDSO_DATA                       policy<{'riscv64': 'y'}>
-CONFIG_ARCH_KEEP_MEMBLOCK                       policy<{'riscv64': 'y'}>
 CONFIG_ARCH_MMAP_RND_BITS_MAX                   policy<{'riscv64': '24'}>
 CONFIG_ARCH_MMAP_RND_BITS_MIN                   policy<{'riscv64': '18'}>
 CONFIG_ARCH_MMAP_RND_COMPAT_BITS_MAX            policy<{'riscv64': '17'}>
@@ -1182,7 +1183,6 @@ CONFIG_BT_HCIUART_RTL                           policy<{'riscv64': 'y'}>
 CONFIG_BT_HCIUART_SERDEV                        policy<{'riscv64': 'y'}>
 CONFIG_BT_HCIVHCI                               policy<{'riscv64': 'm'}>
 CONFIG_BT_HIDP                                  policy<{'riscv64': 'm'}>
-CONFIG_BT_HS                                    policy<{'riscv64': 'y'}>
 CONFIG_BT_INTEL                                 policy<{'riscv64': 'm'}>
 CONFIG_BT_LE                                    policy<{'riscv64': 'y'}>
 CONFIG_BT_LEDS                                  policy<{'riscv64': 'y'}>
@@ -1432,6 +1432,7 @@ CONFIG_CPU_IDLE_GOV_TEO                         policy<{'riscv64': 'y'}>
 CONFIG_CPU_IDLE_MULTIPLE_DRIVERS                policy<{'riscv64': 'y'}>
 CONFIG_CPU_IDLE_THERMAL                         policy<{'riscv64': 'y'}>
 CONFIG_CPU_ISOLATION                            policy<{'riscv64': 'y'}>
+CONFIG_CPU_MITIGATIONS                          policy<{'riscv64': 'y'}>
 CONFIG_CPU_PM                                   policy<{'riscv64': 'y'}>
 CONFIG_CPU_RMAP                                 policy<{'riscv64': 'y'}>
 CONFIG_CPU_THERMAL                              policy<{'riscv64': 'y'}>
@@ -1583,6 +1584,7 @@ CONFIG_CRYPTO_SERPENT                           policy<{'riscv64': 'm'}>
 CONFIG_CRYPTO_SHA1                              policy<{'riscv64': 'y'}>
 CONFIG_CRYPTO_SHA256                            policy<{'riscv64': 'y'}>
 CONFIG_CRYPTO_SHA3                              policy<{'riscv64': 'y'}>
+CONFIG_CRYPTO_SIG                               policy<{'riscv64': 'y'}>
 CONFIG_CRYPTO_SIG2                              policy<{'riscv64': 'y'}>
 CONFIG_CRYPTO_SKCIPHER                          policy<{'riscv64': 'y'}>
 CONFIG_CRYPTO_SKCIPHER2                         policy<{'riscv64': 'y'}>
@@ -1745,6 +1747,7 @@ CONFIG_DMARD09                                  policy<{'riscv64': 'n'}>
 CONFIG_DMARD10                                  policy<{'riscv64': 'n'}>
 CONFIG_DMATEST                                  policy<{'riscv64': 'n'}>
 CONFIG_DMA_API_DEBUG                            policy<{'riscv64': 'n'}>
+CONFIG_DMA_BOUNCE_UNALIGNED_KMALLOC             policy<{'riscv64': 'y'}>
 CONFIG_DMA_COHERENT_POOL                        policy<{'riscv64': 'y'}>
 CONFIG_DMA_DECLARE_COHERENT                     policy<{'riscv64': 'y'}>
 CONFIG_DMA_DIRECT_REMAP                         policy<{'riscv64': 'y'}>
@@ -1754,6 +1757,7 @@ CONFIG_DMA_MAP_BENCHMARK                        policy<{'riscv64': 'n'}>
 CONFIG_DMA_NONCOHERENT_MMAP                     policy<{'riscv64': 'y'}>
 CONFIG_DMA_OF                                   policy<{'riscv64': 'y'}>
 CONFIG_DMA_OPS                                  policy<{'riscv64': 'y'}>
+CONFIG_DMA_RESTRICTED_POOL                      policy<{'riscv64': 'n'}>
 CONFIG_DMA_SHARED_BUFFER                        policy<{'riscv64': 'y'}>
 CONFIG_DMA_VIRTUAL_CHANNELS                     policy<{'riscv64': 'm'}>
 CONFIG_DM_AUDIT                                 policy<{'riscv64': 'y'}>
@@ -1817,6 +1821,8 @@ CONFIG_DRM_AMDGPU_USERPTR                       policy<{'riscv64': 'n'}>
 CONFIG_DRM_AMDGPU_WERROR                        policy<{'riscv64': 'n'}>
 CONFIG_DRM_AMD_ACP                              policy<{'riscv64': 'n'}>
 CONFIG_DRM_AMD_DC                               policy<{'riscv64': 'y'}>
+CONFIG_DRM_AMD_DC_FP                            policy<{'riscv64': 'y'}>
+CONFIG_DRM_AMD_SECURE_DISPLAY                   policy<{'riscv64': 'n'}>
 CONFIG_DRM_ANALOGIX_ANX6345                     policy<{'riscv64': 'n'}>
 CONFIG_DRM_ANALOGIX_ANX7625                     policy<{'riscv64': 'n'}>
 CONFIG_DRM_ANALOGIX_ANX78XX                     policy<{'riscv64': 'n'}>
@@ -2136,6 +2142,7 @@ CONFIG_FB_GOLDFISH                              policy<{'riscv64': 'm'}>
 CONFIG_FB_I740                                  policy<{'riscv64': 'm'}>
 CONFIG_FB_IBM_GXT4500                           policy<{'riscv64': 'n'}>
 CONFIG_FB_IMSTT                                 policy<{'riscv64': 'n'}>
+CONFIG_FB_IOMEM_FOPS                            policy<{'riscv64': 'y'}>
 CONFIG_FB_IOMEM_HELPERS                         policy<{'riscv64': 'y'}>
 CONFIG_FB_KYRO                                  policy<{'riscv64': 'm'}>
 CONFIG_FB_MATROX                                policy<{'riscv64': 'm'}>
@@ -2226,7 +2233,6 @@ CONFIG_FONT_SUN8x16                             policy<{'riscv64': 'n'}>
 CONFIG_FONT_SUPPORT                             policy<{'riscv64': 'y'}>
 CONFIG_FONT_TER16x32                            policy<{'riscv64': 'y'}>
 CONFIG_FORCEDETH                                policy<{'riscv64': 'm'}>
-CONFIG_FORCE_NR_CPUS                            policy<{'riscv64': 'n'}>
 CONFIG_FORTIFY_SOURCE                           policy<{'riscv64': 'n'}>
 CONFIG_FPGA                                     policy<{'riscv64': 'n'}>
 CONFIG_FPU                                      policy<{'riscv64': 'y'}>
@@ -2292,7 +2298,7 @@ CONFIG_GADGET_UAC1                              policy<{'riscv64': 'y'}>
 CONFIG_GADGET_UAC1_LEGACY                       policy<{'riscv64': 'n'}>
 CONFIG_GAMEPORT                                 policy<{'riscv64': 'n'}>
 CONFIG_GARP                                     policy<{'riscv64': 'm'}>
-CONFIG_GCC11_NO_ARRAY_BOUNDS                    policy<{'riscv64': 'y'}>
+CONFIG_GCC10_NO_ARRAY_BOUNDS                    policy<{'riscv64': 'y'}>
 CONFIG_GCC_SUPPORTS_DYNAMIC_FTRACE              policy<{'riscv64': 'y'}>
 CONFIG_GCC_VERSION                              policy<{'riscv64': '130200'}>
 CONFIG_GCOV_KERNEL                              policy<{'riscv64': 'n'}>
@@ -2568,6 +2574,7 @@ CONFIG_HID_MACALLY                              policy<{'riscv64': 'n'}>
 CONFIG_HID_MAGICMOUSE                           policy<{'riscv64': 'n'}>
 CONFIG_HID_MALTRON                              policy<{'riscv64': 'n'}>
 CONFIG_HID_MAYFLASH                             policy<{'riscv64': 'n'}>
+CONFIG_HID_MCP2200                              policy<{'riscv64': 'n'}>
 CONFIG_HID_MCP2221                              policy<{'riscv64': 'n'}>
 CONFIG_HID_MEGAWORLD_FF                         policy<{'riscv64': 'n'}>
 CONFIG_HID_MICROSOFT                            policy<{'riscv64': 'n'}>
@@ -2794,6 +2801,7 @@ CONFIG_IIO_TRIGGER                              policy<{'riscv64': 'n'}>
 CONFIG_IIO_TRIGGERED_EVENT                      policy<{'riscv64': 'n'}>
 CONFIG_IKCONFIG                                 policy<{'riscv64': 'n'}>
 CONFIG_IKHEADERS                                policy<{'riscv64': 'm'}>
+CONFIG_ILLEGAL_POINTER_VALUE                    policy<{'riscv64': '0xdead000000000000'}>
 CONFIG_IMA_APPRAISE_BOOTPARAM                   policy<{'riscv64': 'y'}>
 CONFIG_IMA_APPRAISE_BUILD_POLICY                policy<{'riscv64': 'n'}>
 CONFIG_IMA_APPRAISE_MODSIG                      policy<{'riscv64': 'y'}>
@@ -3906,6 +3914,7 @@ CONFIG_ND_BTT                                   policy<{'riscv64': 'm'}>
 CONFIG_ND_CLAIM                                 policy<{'riscv64': 'y'}>
 CONFIG_NE2K_PCI                                 policy<{'riscv64': 'm'}>
 CONFIG_NEED_DMA_MAP_STATE                       policy<{'riscv64': 'y'}>
+CONFIG_NEED_SG_DMA_FLAGS                        policy<{'riscv64': 'y'}>
 CONFIG_NEED_SG_DMA_LENGTH                       policy<{'riscv64': 'y'}>
 CONFIG_NET                                      policy<{'riscv64': 'y'}>
 CONFIG_NETCONSOLE                               policy<{'riscv64': 'm'}>
@@ -4700,6 +4709,7 @@ CONFIG_PCI_STUB                                 policy<{'riscv64': 'm'}>
 CONFIG_PCI_SW_SWITCHTEC                         policy<{'riscv64': 'm'}>
 CONFIG_PCNET32                                  policy<{'riscv64': 'm'}>
 CONFIG_PCPU_DEV_REFCNT                          policy<{'riscv64': 'y'}>
+CONFIG_PCP_BATCH_SCALE_MAX                      policy<{'riscv64': '5'}>
 CONFIG_PCS_LYNX                                 policy<{'riscv64': 'm'}>
 CONFIG_PCS_MTK_LYNXI                            policy<{'riscv64': 'm'}>
 CONFIG_PCS_XPCS                                 policy<{'riscv64': 'm'}>
@@ -4852,6 +4862,9 @@ CONFIG_PROC_CHILDREN                            policy<{'riscv64': 'y'}>
 CONFIG_PROC_EVENTS                              policy<{'riscv64': 'y'}>
 CONFIG_PROC_FS                                  policy<{'riscv64': 'y'}>
 CONFIG_PROC_KCORE                               policy<{'riscv64': 'y'}>
+CONFIG_PROC_MEM_ALWAYS_FORCE                    policy<{'riscv64': 'y'}>
+CONFIG_PROC_MEM_FORCE_PTRACE                    policy<{'riscv64': 'n'}>
+CONFIG_PROC_MEM_NO_FORCE                        policy<{'riscv64': 'n'}>
 CONFIG_PROC_PAGE_MONITOR                        policy<{'riscv64': 'y'}>
 CONFIG_PROC_PID_CPUSET                          policy<{'riscv64': 'y'}>
 CONFIG_PROC_SYSCTL                              policy<{'riscv64': 'y'}>
@@ -5104,21 +5117,12 @@ CONFIG_RISCV                                    policy<{'riscv64': 'y'}>
 CONFIG_RISCV_ALTERNATIVE                        policy<{'riscv64': 'y'}>
 CONFIG_RISCV_ALTERNATIVE_EARLY                  policy<{'riscv64': 'y'}>
 CONFIG_RISCV_BOOT_SPINWAIT                      policy<{'riscv64': 'n'}>
-CONFIG_RISCV_DIE0_CACHED_OFFSET                 policy<{'riscv64': '0x80000000'}>
-CONFIG_RISCV_DIE0_MEM_MAX_SIZE                  policy<{'riscv64': '0x800000000'}>
-CONFIG_RISCV_DIE0_UNCACHED_OFFSET               policy<{'riscv64': '0xc000000000'}>
-CONFIG_RISCV_DIE1_CACHED_OFFSET                 policy<{'riscv64': '0x2000000000'}>
-CONFIG_RISCV_DIE1_MEM_MAX_SIZE                  policy<{'riscv64': '0x800000000'}>
-CONFIG_RISCV_DIE1_UNCACHED_OFFSET               policy<{'riscv64': '0xe000000000'}>
 CONFIG_RISCV_DMA_NONCOHERENT                    policy<{'riscv64': 'y'}>
 CONFIG_RISCV_INTC                               policy<{'riscv64': 'y'}>
-CONFIG_RISCV_INTERLEAVE_CACHED_OFFSET           policy<{'riscv64': '0x4000000000'}>
-CONFIG_RISCV_INTERLEAVE_MEM_MAX_SIZE            policy<{'riscv64': '0x1000000000'}>
-CONFIG_RISCV_INTERLEAVE_UNCACHED_OFFSET         policy<{'riscv64': '0x10000000000'}>
 CONFIG_RISCV_ISA_C                              policy<{'riscv64': 'y'}>
 CONFIG_RISCV_ISA_FALLBACK                       policy<{'riscv64': 'y'}>
 CONFIG_RISCV_ISA_SVNAPOT                        policy<{'riscv64': 'y'}>
-CONFIG_RISCV_ISA_SVPBMT                         policy<{'riscv64': 'n'}>
+CONFIG_RISCV_ISA_SVPBMT                         policy<{'riscv64': 'y'}>
 CONFIG_RISCV_ISA_V                              policy<{'riscv64': 'y'}>
 CONFIG_RISCV_ISA_V_DEFAULT_ENABLE               policy<{'riscv64': 'y'}>
 CONFIG_RISCV_ISA_ZBB                            policy<{'riscv64': 'y'}>
@@ -5402,6 +5406,7 @@ CONFIG_SCHED_MC                                 policy<{'riscv64': 'y'}>
 CONFIG_SCHED_MM_CID                             policy<{'riscv64': 'y'}>
 CONFIG_SCHED_STACK_END_CHECK                    policy<{'riscv64': 'y'}>
 CONFIG_SCHED_TRACER                             policy<{'riscv64': 'y'}>
+CONFIG_SCREEN_INFO                              policy<{'riscv64': 'y'}>
 CONFIG_SCSI                                     policy<{'riscv64': 'y'}>
 CONFIG_SCSI_COMMON                              policy<{'riscv64': 'y'}>
 CONFIG_SCSI_CONSTANTS                           policy<{'riscv64': 'n'}>
@@ -6362,6 +6367,8 @@ CONFIG_SUSPEND                                  policy<{'riscv64': 'y'}>
 CONFIG_SUSPEND_FREEZER                          policy<{'riscv64': 'y'}>
 CONFIG_SUSPEND_SKIP_SYNC                        policy<{'riscv64': 'n'}>
 CONFIG_SWAP                                     policy<{'riscv64': 'y'}>
+CONFIG_SWIOTLB                                  policy<{'riscv64': 'y'}>
+CONFIG_SWIOTLB_DYNAMIC                          policy<{'riscv64': 'n'}>
 CONFIG_SWPHY                                    policy<{'riscv64': 'y'}>
 CONFIG_SW_SYNC                                  policy<{'riscv64': 'y'}>
 CONFIG_SX9310                                   policy<{'riscv64': 'n'}>
@@ -7345,7 +7352,7 @@ CONFIG_XZ_DEC_X86                               policy<{'riscv64': 'y'}>
 CONFIG_YAM                                      policy<{'riscv64': 'm'}>
 CONFIG_YAMAHA_YAS530                            policy<{'riscv64': 'n'}>
 CONFIG_YELLOWFIN                                policy<{'riscv64': 'm'}>
-CONFIG_Z3FOLD                                   policy<{'riscv64': 'm'}>
+CONFIG_Z3FOLD_DEPRECATED                        policy<{'riscv64': 'n'}>
 CONFIG_ZBUD                                     policy<{'riscv64': 'y'}>
 CONFIG_ZD1211RW                                 policy<{'riscv64': 'm'}>
 CONFIG_ZD1211RW_DEBUG                           policy<{'riscv64': 'n'}>
@@ -7369,6 +7376,7 @@ CONFIG_ZRAM_DEF_COMP_LZORLE                     policy<{'riscv64': 'y'}>
 CONFIG_ZRAM_DEF_COMP_ZSTD                       policy<{'riscv64': 'n'}>
 CONFIG_ZRAM_MEMORY_TRACKING                     policy<{'riscv64': 'y'}>
 CONFIG_ZRAM_MULTI_COMP                          policy<{'riscv64': 'n'}>
+CONFIG_ZRAM_TRACK_ENTRY_ACTIME                  policy<{'riscv64': 'y'}>
 CONFIG_ZRAM_WRITEBACK                           policy<{'riscv64': 'y'}>
 CONFIG_ZSMALLOC                                 policy<{'riscv64': 'y'}>
 CONFIG_ZSMALLOC_CHAIN_SIZE                      policy<{'riscv64': '8'}>
@@ -7387,6 +7395,6 @@ CONFIG_ZSWAP_COMPRESSOR_DEFAULT_ZSTD            policy<{'riscv64': 'n'}>
 CONFIG_ZSWAP_DEFAULT_ON                         policy<{'riscv64': 'n'}>
 CONFIG_ZSWAP_EXCLUSIVE_LOADS_DEFAULT_ON         policy<{'riscv64': 'n'}>
 CONFIG_ZSWAP_ZPOOL_DEFAULT                      policy<{'riscv64': '"zbud"'}>
-CONFIG_ZSWAP_ZPOOL_DEFAULT_Z3FOLD               policy<{'riscv64': 'n'}>
+CONFIG_ZSWAP_ZPOOL_DEFAULT_Z3FOLD_DEPRECATED    policy<{'riscv64': 'n'}>
 CONFIG_ZSWAP_ZPOOL_DEFAULT_ZBUD                 policy<{'riscv64': 'y'}>
 CONFIG_ZSWAP_ZPOOL_DEFAULT_ZSMALLOC             policy<{'riscv64': 'n'}>
