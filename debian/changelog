@@ -1,3 +1,15 @@
+linux-premier (6.6.77-1.3) noble; urgency=medium
+
+  * Kernel upgrade to 6.6.77
+  * Design change for memory conversion between sys and mem port
+  * Add support for kernel-mode FPU for rDNA architecture AMDGPU cards
+  * Optimize DTSI and DTS files
+  * Read default PWM period values from DT
+  * Set PWM range from 25 to 255
+  * Enabled I2C1 that is available on Header J21
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Thu, 20 Feb 2025 13:56:46 +0000
+
 linux-premier (6.6.21-10.7) noble; urgency=medium
 
   * Fixed GCC workaround config mismatch error
