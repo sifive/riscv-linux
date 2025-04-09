@@ -168,10 +168,10 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 		 * close together, so sort a copy of the section to avoid interfering.
 		 */
 		if (sechdrs[i].sh_size > scratch_size) {
-			scratch_size = sechdrs[i].sh_size;
-			scratch = kvrealloc(scratch, scratch_size, GFP_KERNEL);
+			scratch = kvrealloc(scratch, scratch_size, sechdrs[i].sh_size, GFP_KERNEL);
 			if (!scratch)
 				return -ENOMEM;
+			scratch_size = sechdrs[i].sh_size;
 		}
 
 		/* sort relocations requiring a PLT or GOT entry so duplicates are adjacent */
