@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleloader.h>
+#include <linux/sort.h>
 
 unsigned long module_emit_got_entry(struct module *mod, unsigned long val)
 {
@@ -55,19 +56,27 @@ unsigned long module_emit_plt_entry(struct module *mod, unsigned long val)
 	return (unsigned long)&plt[i];
 }
 
-static int is_rela_equal(const Elf_Rela *x, const Elf_Rela *y)
+#define cmp_3way(a, b)	((a) < (b) ? -1 : (a) > (b))
+
+static int cmp_rela(const void *a, const void *b)
 {
-	return x->r_info == y->r_info && x->r_addend == y->r_addend;
+	const Elf_Rela *x = a, *y = b;
+	int i;
+
+	/* sort by type, symbol index and addend */
+	i = cmp_3way(x->r_info, y->r_info);
+	if (i == 0)
+		i = cmp_3way(x->r_addend, y->r_addend);
+	return i;
 }
 
 static bool duplicate_rela(const Elf_Rela *rela, int idx)
 {
-	int i;
-	for (i = 0; i < idx; i++) {
-		if (is_rela_equal(&rela[i], &rela[idx]))
-			return true;
-	}
-	return false;
+	/*
+	 * Entries are sorted by type, symbol index and addend. That means
+	 * that, if a duplicate entry exists, it must be in the preceding slot.
+	 */
+	return idx > 0 && cmp_rela(rela + idx, rela + idx - 1) == 0;
 }
 
 static void count_max_entries(Elf_Rela *relas, int num,
@@ -87,11 +96,33 @@ static void count_max_entries(Elf_Rela *relas, int num,
 	}
 }
 
+static bool rela_needs_plt_got(const Elf_Rela *rela)
+{
+	unsigned int type = ELF_R_TYPE(rela->r_info);
+
+	return type == R_RISCV_CALL_PLT || type == R_RISCV_GOT_HI20;
+}
+
+/* Copy PLT and GOT relas to the scratch array. */
+static unsigned int partition_plt_got_relas(const Elf_Rela *relas, Elf_Rela *scratch,
+					    unsigned int num_rela)
+{
+	int j = 0;
+
+	for (int i = 0; i < num_rela; i++)
+		if (rela_needs_plt_got(&relas[i]))
+			scratch[j++] = relas[i];
+
+	return j;
+}
+
 int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 			      char *secstrings, struct module *mod)
 {
 	unsigned int num_plts = 0;
 	unsigned int num_gots = 0;
+	Elf_Rela *scratch = NULL;
+	size_t scratch_size = 0;
 	int i;
 
 	/*
@@ -132,8 +163,25 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 		if (!(dst_sec->sh_flags & SHF_EXECINSTR))
 			continue;
 
-		count_max_entries(relas, num_rela, &num_plts, &num_gots);
+		/*
+		 * apply_relocate_add() relies on HI20 and LO12 relocation pairs being
+		 * close together, so sort a copy of the section to avoid interfering.
+		 */
+		if (sechdrs[i].sh_size > scratch_size) {
+			scratch_size = sechdrs[i].sh_size;
+			scratch = kvrealloc(scratch, scratch_size, GFP_KERNEL);
+			if (!scratch)
+				return -ENOMEM;
+		}
+
+		/* sort relocations requiring a PLT or GOT entry so duplicates are adjacent */
+		num_rela = partition_plt_got_relas(relas, scratch, num_rela);
+		sort(scratch, num_rela, sizeof(Elf_Rela), cmp_rela, NULL);
+		count_max_entries(scratch, num_rela, &num_plts, &num_gots);
 	}
+
+	if (scratch)
+		kvfree(scratch);
 
 	mod->arch.plt.shdr->sh_type = SHT_NOBITS;
 	mod->arch.plt.shdr->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
