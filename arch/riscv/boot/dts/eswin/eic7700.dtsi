@@ -197,6 +197,16 @@
 		status = "disabled";
 	};
 
+	dev_foo: dev-foo@0 {
+		compatible = "riscv,dev-foo";
+		#size-cells = <2>;
+		dma-ranges = <0x0 0x20000000 0x0 0xc0000000 0x0 0x40000000>;
+		iommus = <&smmu0 0xff010f>;
+		tbus = <EIC7700_TBUID_0xF00>;
+		status = "okay";
+		numa-node-id = <0>;
+	};
+
 	d0_dmac0: dma-controller-hsp@0x50430000 {
 		compatible = "snps,axi-dma-1.01a";
 		reg = <0x0 0x50430000 0x0 0x10000>;

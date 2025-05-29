@@ -562,6 +562,14 @@ config TPS6594_PFSM
 	  This driver can also be built as a module.  If so, the module
 	  will be called tps6594-pfsm.
 
+config ESWIN_DUMMY_FOO
+	bool "ESWIN Dummy foo driver"
+	default n
+	help
+	  To disable SMMU for PCIE on EIC7700 HiFive Premier P550 boards.
+
+	  If unsure, say N.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
