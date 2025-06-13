@@ -1,0 +1,138 @@
+#ifndef DT_BINDINGS_MEMORY_EIC7700_SID_H
+#define DT_BINDINGS_MEMORY_EIC7700_SID_H
+
+#define EIC7700_SID_DMA0	1
+
+#define EIC7700_SID_JDEC	2
+
+#define EIC7700_SID_JENC	3
+
+/* NPU DMA*/
+#define EIC7700_SID_NPU_DMA	4
+
+/* NPU-E31 */
+#define EIC7700_SID_NPU_E31	5
+
+/* Video In */
+#define EIC7700_SID_ISP0	6
+
+//#define EIC7700_SID_ISP1	EIC7700_SID_ISP0
+
+#define EIC7700_SID_DW		8
+
+#define EIC7700_SID_DVP		9
+
+/* High Speed */
+#define EIC7700_SID_USB0	10
+
+#define EIC7700_SID_USB1	11
+
+#define EIC7700_SID_ETH0	12
+
+#define EIC7700_SID_ETH1	13
+
+#define EIC7700_SID_SATA	14
+
+#define EIC7700_SID_EMMC0	15
+
+#define EIC7700_SID_SD0		16
+
+#define EIC7700_SID_SD1		17
+
+
+/* DSP */
+#define EIC7700_SID_DSP_0	18
+#define EIC7700_SID_DSP_1	19
+#define EIC7700_SID_DSP_2	20
+#define EIC7700_SID_DSP_3	21
+
+/* CODEC */
+//#define EIC7700_SID_VDEC	EIC7700_SID_JDEC
+
+//#define EIC7700_SID_VENC	EIC7700_SID_JENC
+
+/*** AON subsystem ***/
+/* Secure CPU */
+#define EIC7700_SID_SCPU	24
+#define SCPU_SID_REG_OFFSET	0x1004
+
+/* Low power CPU */
+#define EIC7700_SID_LCPU	25
+#define LCPU_SID_REG_OFFSET	0x2004
+
+/* Always on, DMA1 */
+#define EIC7700_SID_DMA1	26
+#define DMA1_SID_REG_OFFSET	0x3004
+
+/* crypt */
+//#define EIC7700_SID_CRYPT	EIC7700_SID_SCPU
+#define CRYPT_SID_REG_OFFSET	0x4004
+
+///*** for iova mapping test ***/
+//#define EIC7700_SID_DEV_FOO_A        28
+//#define EIC7700_SID_DEV_FOO_B        29
+//#define EIC7700_SID_DEV_FOO_FOR_DIE1	30
+
+
+/*** tbu id ***/
+/* tbu_id: bit[3:0] is for major, bit[7:4] is for minor;
+	For example, tbu of dsp3 is tbu7_3, the bu 0x73. It measn tbu7_3
+*/
+#define	EIC7700_TBUID_0x0	0x0
+
+#define	EIC7700_TBUID_0x10	0x10
+#define	EIC7700_TBUID_0x11	0x11
+#define	EIC7700_TBUID_0x12	0x12
+#define	EIC7700_TBUID_0x13	0x13
+
+#define	EIC7700_TBUID_0x2	0x2
+
+#define	EIC7700_TBUID_0x3	0x3
+
+#define	EIC7700_TBUID_0x4	0x4
+
+#define	EIC7700_TBUID_0x5	0x5
+
+#define	EIC7700_TBUID_0x70	0x70
+#define	EIC7700_TBUID_0x71	0x71
+#define	EIC7700_TBUID_0x72	0x72
+#define	EIC7700_TBUID_0x73	0x73
+
+#define	EIC7700_TBUID_0xF00	0xF00	// simulation for EIC7700_SID_DEV_FOO_A/B, No real tbu attached infact
+
+
+/* For better use by devices in dts, create tbu alias for devices*/
+#define EIC7700_TBUID_ISP	EIC7700_TBUID_0x0
+#define EIC7700_TBUID_DW	EIC7700_TBUID_ISP
+
+#define EIC7700_TBUID_VDEC	EIC7700_TBUID_0x10
+#define EIC7700_TBUID_VENC	EIC7700_TBUID_0x11
+#define EIC7700_TBUID_JENC	EIC7700_TBUID_0x12
+#define EIC7700_TBUID_JDEC	EIC7700_TBUID_0x13
+
+//high speed modules share the same tbu2
+#define EIC7700_TBUID_DMA0	EIC7700_TBUID_0x2
+#define EIC7700_TBUID_USB	EIC7700_TBUID_DMA0
+#define EIC7700_TBUID_ETH	EIC7700_TBUID_DMA0
+#define EIC7700_TBUID_SATA	EIC7700_TBUID_DMA0
+#define EIC7700_TBUID_EMMC	EIC7700_TBUID_DMA0
+#define EIC7700_TBUID_SD	EIC7700_TBUID_DMA0
+
+#define EIC7700_TBUID_PCIE	EIC7700_TBUID_0x3
+
+//scpu, crypto, lpcpu, dma1 share the same tbu4
+#define EIC7700_TBUID_SCPU	EIC7700_TBUID_0x4
+#define EIC7700_TBUID_CRYPT	EIC7700_TBUID_SCPU
+#define EIC7700_TBUID_DMA1	EIC7700_TBUID_SCPU
+#define EIC7700_TBUID_LPCPU	EIC7700_TBUID_SCPU
+
+//npu
+#define EIC7700_TBUID_NPU	EIC7700_TBUID_0x5
+
+//dsp
+#define EIC7700_TBUID_DSP0	EIC7700_TBUID_0x70
+#define EIC7700_TBUID_DSP1	EIC7700_TBUID_0x71
+#define EIC7700_TBUID_DSP2	EIC7700_TBUID_0x72
+#define EIC7700_TBUID_DSP3	EIC7700_TBUID_0x73
+
+#endif
