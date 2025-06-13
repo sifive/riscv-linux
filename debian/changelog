@@ -1,3 +1,12 @@
+linux-premier (6.6.77-2.2) noble; urgency=medium
+
+  * Add PL2 and CCACHE PMU drivers
+  * Configured BLK_DEV_NVME as built-in
+  * Corrected register address of SLOW command in pac1934
+  * Map 48 GB PCIe bridge window using multiple ATU regions
+
+ -- Pinkesh Vaghela <pinkesh.vaghela@einfochips.com>  Tue, 08 Jul 2025 10:23:10 +0000
+
 linux-premier (6.6.77-1.4) noble; urgency=medium
 
   * Optimize PLT/GOT entry counting to reduce module load time
