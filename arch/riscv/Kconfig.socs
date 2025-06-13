@@ -6,6 +6,12 @@ config ARCH_ESWIN
 	  This enables support for ESWIN SoC platform hardware,
 	  including the ESWIN EIC7700 SoC.
 
+config SOC_SIFIVE_EIC7700
+	bool "ESWIN EIC7700x SoCs"
+	select IOMMU_DMA
+	help
+	  This enables support for ESWIN EIC7700X SoC platform hardware.
+
 config ARCH_MICROCHIP_POLARFIRE
 	def_bool ARCH_MICROCHIP
 
