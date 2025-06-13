@@ -141,42 +141,6 @@
 				interrupt-controller;
 			};
 		};
-		l2_cache_0: l2-cache0 {
-			compatible = "cache";
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			next-level-cache = <&ccache>;
-		};
-		l2_cache_1: l2-cache1 {
-			compatible = "cache";
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			next-level-cache = <&ccache>;
-		};
-		l2_cache_2: l2-cache2 {
-			compatible = "cache";
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			next-level-cache = <&ccache>;
-		};
-		l2_cache_3: l2-cache3 {
-			compatible = "cache";
-			cache-block-size = <64>;
-			cache-level = <2>;
-			cache-sets = <512>;
-			cache-size = <262144>;
-			cache-unified;
-			next-level-cache = <&ccache>;
-		};
 	};
 
 	pmu {
@@ -265,6 +229,60 @@
 			cache-unified;
 			interrupts = <1>, <3>, <4>, <2>;
 			reg = <0x0 0x2010000 0x0 0x4000>;
+		};
+
+		ccache_pmu: cache-pmu {
+			compatible = "sifive,ccache0", "cache";
+			reg = <0x0 0x2010000 0x0 0x4000>;
+			sifive,perfmon-counters = <6>;
+		};
+
+		l2_cache_0: pl2@104000 {
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			compatible = "sifive,pl2cache1", "cache";
+			next-level-cache = <&ccache>;
+			reg = <0x0 0x104000 0x0 0x4000>;
+			sifive,perfmon-counters = <6>;
+		};
+
+		l2_cache_1: pl2@108000 {
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			compatible = "sifive,pl2cache1", "cache";
+			next-level-cache = <&ccache>;
+			reg = <0x0 0x108000 0x0 0x4000>;
+			sifive,perfmon-counters = <6>;
+		};
+
+		l2_cache_2: pl2@10c000 {
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			compatible = "sifive,pl2cache1", "cache";
+			next-level-cache = <&ccache>;
+			reg = <0x0 0x10c000 0x0 0x4000>;
+			sifive,perfmon-counters = <6>;
+		};
+
+		l2_cache_3: pl2@110000 {
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <512>;
+			cache-size = <262144>;
+			cache-unified;
+			compatible = "sifive,pl2cache1", "cache";
+			next-level-cache = <&ccache>;
+			reg = <0x0 0x110000 0x0 0x4000>;
+			sifive,perfmon-counters = <6>;
 		};
 
 		plic: interrupt-controller@c000000 {
