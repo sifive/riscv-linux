@@ -24,7 +24,7 @@ CONFIG_BINFMT_SCRIPT                            note<'required if init is a shel
 CONFIG_BLK_DEV_DM                               policy<{'riscv64': 'y'}>
 CONFIG_BLK_DEV_DM                               note<'LP: #560717'>
 
-CONFIG_BLK_DEV_NVME                             policy<{'riscv64': 'm'}>
+CONFIG_BLK_DEV_NVME                             policy<{'riscv64': 'y'}>
 CONFIG_BLK_DEV_NVME                             note<'LP: #1759893'>
 
 CONFIG_BLK_DEV_RAM                              policy<{'riscv64': 'm'}>
@@ -4501,8 +4501,8 @@ CONFIG_NVMEM_SPMI_SDAM                          policy<{'riscv64': 'm'}>
 CONFIG_NVMEM_SYSFS                              policy<{'riscv64': 'y'}>
 CONFIG_NVMEM_U_BOOT_ENV                         policy<{'riscv64': 'm'}>
 CONFIG_NVME_AUTH                                policy<{'riscv64': 'y'}>
-CONFIG_NVME_COMMON                              policy<{'riscv64': 'm'}>
-CONFIG_NVME_CORE                                policy<{'riscv64': 'm'}>
+CONFIG_NVME_COMMON                              policy<{'riscv64': 'y'}>
+CONFIG_NVME_CORE                                policy<{'riscv64': 'y'}>
 CONFIG_NVME_FABRICS                             policy<{'riscv64': 'm'}>
 CONFIG_NVME_FC                                  policy<{'riscv64': 'm'}>
 CONFIG_NVME_HWMON                               policy<{'riscv64': 'y'}>
@@ -5783,6 +5783,8 @@ CONFIG_SI1145                                   policy<{'riscv64': 'n'}>
 CONFIG_SI7005                                   policy<{'riscv64': 'n'}>
 CONFIG_SI7020                                   policy<{'riscv64': 'n'}>
 CONFIG_SIFIVE_CCACHE                            policy<{'riscv64': 'y'}>
+CONFIG_SIFIVE_CCACHE_PMU                        policy<{'riscv64': 'y'}>
+CONFIG_SIFIVE_PL2_PMU                           policy<{'riscv64': 'y'}>
 CONFIG_SIFIVE_PLIC                              policy<{'riscv64': 'y'}>
 CONFIG_SIGNALFD                                 policy<{'riscv64': 'y'}>
 CONFIG_SIGNATURE                                policy<{'riscv64': 'y'}>
