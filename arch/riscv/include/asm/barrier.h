@@ -85,6 +85,10 @@ do {									\
 })
 #endif
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+#define wfe()	do { } while (0)
+#endif
+
 #include <asm-generic/barrier.h>
 
 #endif /* __ASSEMBLY__ */
