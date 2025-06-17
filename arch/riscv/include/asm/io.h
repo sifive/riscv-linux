@@ -52,6 +52,10 @@
 #define __io_pbw()	RISCV_FENCE(iow, o)
 #define __io_paw()	RISCV_FENCE(o, io)
 
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+#define __iomb()	mb()
+#endif
+
 /*
  * Accesses from a single hart to a single I/O address must be ordered.  This
  * allows us to use the raw read macros, but we still need to fence before and

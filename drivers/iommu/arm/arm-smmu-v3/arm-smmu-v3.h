@@ -13,6 +13,7 @@
 #include <linux/kernel.h>
 #include <linux/mmzone.h>
 #include <linux/sizes.h>
+#include <linux/mmu_notifier.h>
 
 struct arm_smmu_device;
 
@@ -763,6 +764,11 @@ struct arm_smmu_device {
 
 	struct rb_root			streams;
 	struct mutex			streams_mutex;
+#ifdef CONFIG_SOC_SIFIVE_EIC7700
+	struct regmap *regmap;
+	int     smmu_irq_clear_reg;
+#endif
+
 };
 
 struct arm_smmu_stream {
