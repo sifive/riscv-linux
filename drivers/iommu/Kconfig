@@ -11,6 +11,13 @@ config IOMMUFD_DRIVER
 	bool
 	default n
 
+config IOMMU_ESWIN
+	bool "IOMMU EIC7700 Support"
+	default n
+	help
+	  Say Y here if you want to compile device drivers for IO Memory
+	  management implementation for EIC7700
+
 menuconfig IOMMU_SUPPORT
 	bool "IOMMU Hardware Support"
 	depends on MMU
