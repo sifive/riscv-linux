@@ -722,30 +722,33 @@ static int dw_pcie_iatu_setup(struct dw_pcie_rp *pp)
 
 	i = 0;
 	resource_list_for_each_entry(entry, &pp->bridge->windows) {
+		u64 total_size = resource_size(entry->res);
+		u64 region_start = entry->res->start;
+
 		if (resource_type(entry->res) != IORESOURCE_MEM)
 			continue;
 
-		if (pci->num_ob_windows <= ++i)
-			break;
+		do {
+			u64 region_size = min(total_size, pci->region_limit + 1);
 
-		atu.index = i;
-		atu.type = PCIE_ATU_TYPE_MEM;
-		atu.cpu_addr = entry->res->start;
-		atu.pci_addr = entry->res->start - entry->offset;
+			if (pci->num_ob_windows <= ++i)
+				break;
 
-		/* Adjust iATU size if MSG TLP region was allocated before */
-		if (pp->msg_res && pp->msg_res->parent == entry->res)
-			atu.size = resource_size(entry->res) -
-					resource_size(pp->msg_res);
-		else
-			atu.size = resource_size(entry->res);
+			atu.index = i;
+			atu.type = PCIE_ATU_TYPE_MEM;
+			atu.cpu_addr = region_start;
+			atu.pci_addr = region_start - entry->offset;
+			atu.size = region_size;
 
-		ret = dw_pcie_prog_outbound_atu(pci, &atu);
-		if (ret) {
-			dev_err(pci->dev, "Failed to set MEM range %pr\n",
-				entry->res);
-			return ret;
-		}
+			ret = dw_pcie_prog_outbound_atu(pci, &atu);
+			if (ret) {
+				dev_err(pci->dev, "Failed to set MEM range %pr\n",
+						entry->res);
+				return ret;
+			}
+			region_start += region_size;
+			total_size -= region_size;
+		} while (total_size);
 	}
 
 	if (pp->io_size) {
