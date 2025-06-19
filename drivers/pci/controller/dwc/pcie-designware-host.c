@@ -668,21 +668,31 @@ static int dw_pcie_iatu_setup(struct dw_pcie_rp *pp)
 
 	i = 0;
 	resource_list_for_each_entry(entry, &pp->bridge->windows) {
+		u64 total_size = resource_size(entry->res);
+		u64 region_start = entry->res->start;
+
 		if (resource_type(entry->res) != IORESOURCE_MEM)
 			continue;
 
-		if (pci->num_ob_windows <= ++i)
-			break;
+		do {
+			u64 region_size = min(total_size, pci->region_limit + 1);
 
-		ret = dw_pcie_prog_outbound_atu(pci, i, PCIE_ATU_TYPE_MEM,
-						entry->res->start,
-						entry->res->start - entry->offset,
-						resource_size(entry->res));
-		if (ret) {
-			dev_err(pci->dev, "Failed to set MEM range %pr\n",
-				entry->res);
-			return ret;
-		}
+			if (pci->num_ob_windows <= ++i)
+				break;
+
+			ret = dw_pcie_prog_outbound_atu(pci, i, PCIE_ATU_TYPE_MEM,
+							region_start,
+							region_start - entry->offset,
+							region_size);
+			if (ret) {
+				dev_err(pci->dev, "Failed to set MEM range %pr\n",
+					entry->res);
+				return ret;
+			}
+
+			region_start += region_size;
+			total_size -= region_size;
+		} while (total_size);
 	}
 
 	if (pp->io_size) {
