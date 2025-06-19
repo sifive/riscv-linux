@@ -255,7 +255,9 @@ resource_size_t __weak pcibios_align_resource(void *data,
 					      resource_size_t size,
 					      resource_size_t align)
 {
-       return res->start;
+       resource_size_t top_down = (res->end + 1 - size) & ~(align - 1);
+
+       return max(res->start, top_down);
 }
 
 static int __pci_assign_resource(struct pci_bus *bus, struct pci_dev *dev,
