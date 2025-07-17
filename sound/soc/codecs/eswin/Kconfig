@@ -1,0 +1,20 @@
+menuconfig ESWIN_SND_SOC_CODECS
+	tristate "ESWIN CODEC drivers"
+	default n
+	help
+	  Say Y or M if you want to add support for codecs attached to
+	  the ESWIN Asoc interface. You will also need
+	  to select the audio interfaces to support below.
+
+#if ESWIN_SND_SOC_CODECS
+
+config ESWIN_SND_ES8388_CODEC
+	tristate "ESWIN Audio es8388 codec"
+	depends on ESWIN_SND_SOC_CODECS
+	default n
+	help
+	  ESWIN Audio codec,
+	  es8388 codec,
+	  this codec is internal
+
+#endif #ESWIN_SND_SOC_CODECS
