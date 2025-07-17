@@ -1,0 +1,10 @@
+menu "SND ESWIN SOC"
+
+config SND_ESWIN_DW_I2S
+	tristate "Eswin Dw I2S Device Driver"
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	help
+	 Say Y or M if you want to add support for I2S driver for
+	 Eswin dw I2S device. The device supports up to
+	 a maximum of 8 channels each for play and record.
+endmenu
