@@ -1,0 +1,10 @@
+config DRM_IMG_VOLCANIC
+	tristate "DRM support for PowerVR GPU"
+        select DRM_IMG
+	select SYNC_FILE
+	default n
+	help
+	  Driver for PowerVR Rogue graphics hardware.
+
+	  Say Y here if your SoC contains a PowerVR Volcanic GPU. For more
+	  information, see <http://www.imgtec.com/powervr/>.
