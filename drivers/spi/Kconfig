@@ -377,6 +377,12 @@ config SPI_EP93XX
 	  This enables using the Cirrus EP93xx SPI controller in master
 	  mode.
 
+config SPI_ESWIN_BOOTSPI
+	tristate "Eswin Computing Boot SPI controller"
+	help
+	  This enables using the Eswin Computing Boot SPI controller in master
+	  mode.
+
 config SPI_FALCON
 	bool "Falcon SPI controller support"
 	depends on SOC_FALCON
