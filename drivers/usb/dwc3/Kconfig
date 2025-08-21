@@ -118,6 +118,15 @@ config USB_DWC3_OF_SIMPLE
 	  Currently supports Xilinx and Qualcomm DWC USB3 IP.
 	  Say 'Y' or 'M' if you have one such device.
 
+config USB_DWC3_ESWIN
+	tristate "Eswin Platforms"
+	depends on OF
+	depends on USB=y || USB=USB_DWC3
+	default USB_DWC3
+	help
+	  Support of USB2/3 functionality in Eswin platforms.
+	  say 'Y' or 'M' if you have one such device.
+
 config USB_DWC3_ST
 	tristate "STMicroelectronics Platforms"
 	depends on (ARCH_STI || COMPILE_TEST) && OF

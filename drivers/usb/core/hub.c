@@ -1436,6 +1436,7 @@ static int hub_configure(struct usb_hub *hub,
 	unsigned unit_load;
 	unsigned full_load;
 	unsigned maxchild;
+	int try_cnt = 0;
 
 	hub->buffer = kmalloc(sizeof(*hub->buffer), GFP_KERNEL);
 	if (!hub->buffer) {
@@ -1456,6 +1457,7 @@ static int hub_configure(struct usb_hub *hub,
 		goto fail;
 	}
 
+retry:
 	/* Request the entire hub descriptor.
 	 * hub->descriptor can handle USB_MAXCHILDREN ports,
 	 * but a (non-SS) hub can/will return fewer bytes here.
@@ -1475,9 +1477,15 @@ static int hub_configure(struct usb_hub *hub,
 		ret = -ENODEV;
 		goto fail;
 	} else if (hub->descriptor->bNbrPorts == 0) {
-		message = "hub doesn't have any ports!";
-		ret = -ENODEV;
-		goto fail;
+		try_cnt++;
+		if (try_cnt < 10) {
+			mdelay(10);
+			goto retry;
+		} else {
+			message = "hub doesn't have any ports!";
+			ret = -ENODEV;
+			goto fail;
+                }
 	}
 
 	/*
