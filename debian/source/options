@@ -1,6 +1,17 @@
 # Ignore vbox symlinks, we will regenerate these at clean (LP:1426113)
 ## autoreconstruct -- begin
 # Ignore any symlinks created since the orig which are rebuilt by reconstruct.
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-07/firmware.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-07/instruction.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-07/memory.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-0d/cycle-and-instruction-count.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-0d/firmware.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-0d/instruction.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-0d/memory.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/bullet-0d/watchpoint.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/p550/firmware.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/p550/instruction.json$
+extend-diff-ignore=^tools/perf/pmu-events/arch/riscv/sifive/p550/microarch.json$
 ## autoreconstruct -- end
 
 # force "dpkg-source -I -i" behavior
