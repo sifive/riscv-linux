@@ -3539,6 +3539,12 @@ static int arm_smmu_dev_disable_feature(struct device *dev,
 
 static int arm_smmu_def_domain_type(struct device *dev)
 {
+	if(strcmp(dev->driver->name,"eic7700-eth-dwmac") == 0)
+	{
+		dev_err(dev,"Setting default domain identity for eic7700 ethernet\n");
+		return IOMMU_DOMAIN_IDENTITY;
+	}
+
 	if (dev_is_pci(dev)) {
 		struct pci_dev *pdev = to_pci_dev(dev);
 
