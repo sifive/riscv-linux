@@ -42,20 +42,14 @@ int ptep_test_and_clear_young(struct vm_area_struct *vma,
 EXPORT_SYMBOL_GPL(ptep_test_and_clear_young);
 
 #ifdef CONFIG_64BIT
-pud_t *pud_offset(p4d_t *p4d, unsigned long address)
+pud_t *pud_offset(p4d_t *p4dp, unsigned long address)
 {
-	if (pgtable_l4_enabled)
-		return p4d_pgtable(p4dp_get(p4d)) + pud_index(address);
-
-	return (pud_t *)p4d;
+	return pud_offset_lockless(p4dp, p4dp_get(p4dp), address);
 }
 
-p4d_t *p4d_offset(pgd_t *pgd, unsigned long address)
+p4d_t *p4d_offset(pgd_t *pgdp, unsigned long address)
 {
-	if (pgtable_l5_enabled)
-		return pgd_pgtable(pgdp_get(pgd)) + p4d_index(address);
-
-	return (p4d_t *)pgd;
+	return p4d_offset_lockless(pgdp, pgdp_get(pgdp), address);
 }
 #endif
 
