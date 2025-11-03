@@ -1900,7 +1900,7 @@ static vm_fault_t dax_iomap_pte_fault(struct vm_fault *vmf, unsigned long *pfnp,
 	 * the PTE we need to set up.  If so just return and the fault will be
 	 * retried.
 	 */
-	if (pmd_trans_huge(*vmf->pmd)) {
+	if (pmd_trans_huge(pmdp_get(vmf->pmd))) {
 		ret = VM_FAULT_NOPAGE;
 		goto unlock_entry;
 	}
@@ -2023,7 +2023,7 @@ static vm_fault_t dax_iomap_pmd_fault(struct vm_fault *vmf, unsigned long *pfnp,
 	 * the PMD we need to set up.  If so just return and the fault will be
 	 * retried.
 	 */
-	if (!pmd_none(*vmf->pmd) && !pmd_trans_huge(*vmf->pmd)) {
+	if (!pmd_none(pmdp_get(vmf->pmd)) && !pmd_trans_huge(pmdp_get(vmf->pmd))) {
 		ret = 0;
 		goto unlock_entry;
 	}

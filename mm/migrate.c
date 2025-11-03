@@ -542,9 +542,9 @@ void pmd_migration_entry_wait(struct mm_struct *mm, pmd_t *pmd)
 	spinlock_t *ptl;
 
 	ptl = pmd_lock(mm, pmd);
-	if (!is_pmd_migration_entry(*pmd))
+	if (!is_pmd_migration_entry(pmdp_get(pmd)))
 		goto unlock;
-	migration_entry_wait_on_locked(pmd_to_swp_entry(*pmd), ptl);
+	migration_entry_wait_on_locked(pmd_to_swp_entry(pmdp_get(pmd)), ptl);
 	return;
 unlock:
 	spin_unlock(ptl);

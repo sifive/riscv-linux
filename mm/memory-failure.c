@@ -339,20 +339,20 @@ static unsigned long dev_pagemap_mapping_shift(struct vm_area_struct *vma,
 
 	VM_BUG_ON_VMA(address == -EFAULT, vma);
 	pgd = pgd_offset(vma->vm_mm, address);
-	if (!pgd_present(*pgd))
+	if (!pgd_present(pgdp_get(pgd)))
 		return 0;
 	p4d = p4d_offset(pgd, address);
-	if (!p4d_present(*p4d))
+	if (!p4d_present(p4dp_get(p4d)))
 		return 0;
 	pud = pud_offset(p4d, address);
-	if (!pud_present(*pud))
+	if (!pud_present(pudp_get(pud)))
 		return 0;
-	if (pud_trans_huge(*pud))
+	if (pud_trans_huge(pudp_get(pud)))
 		return PUD_SHIFT;
 	pmd = pmd_offset(pud, address);
-	if (!pmd_present(*pmd))
+	if (!pmd_present(pmdp_get(pmd)))
 		return 0;
-	if (pmd_trans_huge(*pmd))
+	if (pmd_trans_huge(pmdp_get(pmd)))
 		return PMD_SHIFT;
 	pte = pte_offset_map(pmd, address);
 	if (!pte)
@@ -705,7 +705,7 @@ static int check_hwpoisoned_entry(pte_t pte, unsigned long addr, short shift,
 static int check_hwpoisoned_pmd_entry(pmd_t *pmdp, unsigned long addr,
 				      struct hwpoison_walk *hwp)
 {
-	pmd_t pmd = *pmdp;
+	pmd_t pmd = pmdp_get(pmdp);
 	unsigned long pfn;
 	unsigned long hwpoison_vaddr;
 

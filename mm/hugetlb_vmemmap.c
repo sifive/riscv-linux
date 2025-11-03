@@ -72,7 +72,7 @@ static int vmemmap_split_pmd(pmd_t *pmd, struct page *head, unsigned long start,
 	}
 
 	spin_lock(&init_mm.page_table_lock);
-	if (likely(pmd_leaf(*pmd))) {
+	if (likely(pmd_leaf(pmdp_get(pmd)))) {
 		/*
 		 * Higher order allocations from buddy allocator must be able to
 		 * be treated as indepdenent small pages (as they can be freed
@@ -106,7 +106,7 @@ static int vmemmap_pmd_entry(pmd_t *pmd, unsigned long addr,
 		walk->action = ACTION_CONTINUE;
 
 	spin_lock(&init_mm.page_table_lock);
-	head = pmd_leaf(*pmd) ? pmd_page(*pmd) : NULL;
+	head = pmd_leaf(pmdp_get(pmd)) ? pmd_page(pmdp_get(pmd)) : NULL;
 	/*
 	 * Due to HugeTLB alignment requirements and the vmemmap
 	 * pages being at the start of the hotplugged memory

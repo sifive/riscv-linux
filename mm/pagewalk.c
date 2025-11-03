@@ -109,7 +109,7 @@ static int walk_pmd_range(pud_t *pud, unsigned long addr, unsigned long end,
 	do {
 again:
 		next = pmd_addr_end(addr, end);
-		if (pmd_none(*pmd)) {
+		if (pmd_none(pmdp_get(pmd))) {
 			if (has_install)
 				err = __pte_alloc(walk->mm, pmd);
 			else if (ops->pte_hole)
@@ -143,13 +143,13 @@ again:
 			 * We are ONLY installing, so avoid unnecessarily
 			 * splitting a present huge page.
 			 */
-			if (pmd_present(*pmd) && pmd_trans_huge(*pmd))
+			if (pmd_present(pmdp_get(pmd)) && pmd_trans_huge(pmdp_get(pmd)))
 				continue;
 		}
 
 		if (walk->vma)
 			split_huge_pmd(walk->vma, pmd, addr);
-		else if (pmd_leaf(*pmd) || !pmd_present(*pmd))
+		else if (pmd_leaf(pmdp_get(pmd)) || !pmd_present(pmdp_get(pmd)))
 			continue; /* Nothing to do. */
 
 		err = walk_pte_range(pmd, addr, next, walk);
@@ -179,7 +179,7 @@ static int walk_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
 	do {
  again:
 		next = pud_addr_end(addr, end);
-		if (pud_none(*pud)) {
+		if (pud_none(pudp_get(pud))) {
 			if (has_install)
 				err = __pmd_alloc(walk->mm, pud, addr);
 			else if (ops->pte_hole)
@@ -209,16 +209,16 @@ static int walk_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
 			 * We are ONLY installing, so avoid unnecessarily
 			 * splitting a present huge page.
 			 */
-			if (pud_present(*pud) && pud_trans_huge(*pud))
+			if (pud_present(pudp_get(pud)) && pud_trans_huge(pudp_get(pud)))
 				continue;
 		}
 
 		if (walk->vma)
 			split_huge_pud(walk->vma, pud, addr);
-		else if (pud_leaf(*pud) || !pud_present(*pud))
+		else if (pud_leaf(pudp_get(pud)) || !pud_present(pudp_get(pud)))
 			continue; /* Nothing to do. */
 
-		if (pud_none(*pud))
+		if (pud_none(pudp_get(pud)))
 			goto again;
 
 		err = walk_pmd_range(pud, addr, next, walk);

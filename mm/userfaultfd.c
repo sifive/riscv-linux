@@ -1306,8 +1306,8 @@ retry:
 	}
 
 	/* Sanity checks before the operation */
-	if (pmd_none(*dst_pmd) || pmd_none(*src_pmd) ||
-	    pmd_trans_huge(*dst_pmd) || pmd_trans_huge(*src_pmd)) {
+	if (pmd_none(pmdp_get(dst_pmd)) || pmd_none(pmdp_get(src_pmd)) ||
+	    pmd_trans_huge(pmdp_get(dst_pmd)) || pmd_trans_huge(pmdp_get(src_pmd))) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1897,8 +1897,8 @@ ssize_t move_pages(struct userfaultfd_ctx *ctx, unsigned long dst_start,
 			if (move_splits_huge_pmd(dst_addr, src_addr, src_start + len) ||
 			    !pmd_none(dst_pmdval)) {
 				/* Can be a migration entry */
-				if (pmd_present(*src_pmd)) {
-					struct folio *folio = pmd_folio(*src_pmd);
+				if (pmd_present(pmdp_get(src_pmd))) {
+					struct folio *folio = pmd_folio(pmdp_get(src_pmd));
 
 					if (!is_huge_zero_folio(folio) &&
 					    !PageAnonExclusive(&folio->page)) {
@@ -1921,7 +1921,7 @@ ssize_t move_pages(struct userfaultfd_ctx *ctx, unsigned long dst_start,
 		} else {
 			long ret;
 
-			if (pmd_none(*src_pmd)) {
+			if (pmd_none(pmdp_get(src_pmd))) {
 				if (!(mode & UFFDIO_MOVE_MODE_ALLOW_SRC_HOLES)) {
 					err = -ENOENT;
 					break;

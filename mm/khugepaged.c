@@ -1191,7 +1191,7 @@ static int collapse_huge_page(struct mm_struct *mm, unsigned long address,
 		if (pte)
 			pte_unmap(pte);
 		spin_lock(pmd_ptl);
-		BUG_ON(!pmd_none(*pmd));
+		BUG_ON(!pmd_none(pmdp_get(pmd)));
 		/*
 		 * We can only use set_pmd_at when establishing
 		 * hugepmds and never for establishing regular pmds that
@@ -1228,7 +1228,7 @@ static int collapse_huge_page(struct mm_struct *mm, unsigned long address,
 	_pmd = maybe_pmd_mkwrite(pmd_mkdirty(_pmd), vma);
 
 	spin_lock(pmd_ptl);
-	BUG_ON(!pmd_none(*pmd));
+	BUG_ON(!pmd_none(pmdp_get(pmd)));
 	folio_add_new_anon_rmap(folio, vma, address, RMAP_EXCLUSIVE);
 	folio_add_lru_vma(folio, vma);
 	pgtable_trans_huge_deposit(mm, pmd, pgtable);

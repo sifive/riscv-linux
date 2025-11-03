@@ -361,11 +361,11 @@ static int mlock_pte_range(pmd_t *pmd, unsigned long addr,
 
 	ptl = pmd_trans_huge_lock(pmd, vma);
 	if (ptl) {
-		if (!pmd_present(*pmd))
+		if (!pmd_present(pmdp_get(pmd)))
 			goto out;
-		if (is_huge_zero_pmd(*pmd))
+		if (is_huge_zero_pmd(pmdp_get(pmd)))
 			goto out;
-		folio = pmd_folio(*pmd);
+		folio = pmd_folio(pmdp_get(pmd));
 		if (folio_is_zone_device(folio))
 			goto out;
 		if (vma->vm_flags & VM_LOCKED)

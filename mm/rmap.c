@@ -819,15 +819,15 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address)
 	pmd_t *pmd = NULL;
 
 	pgd = pgd_offset(mm, address);
-	if (!pgd_present(*pgd))
+	if (!pgd_present(pgdp_get(pgd)))
 		goto out;
 
 	p4d = p4d_offset(pgd, address);
-	if (!p4d_present(*p4d))
+	if (!p4d_present(p4dp_get(p4d)))
 		goto out;
 
 	pud = pud_offset(p4d, address);
-	if (!pud_present(*pud))
+	if (!pud_present(pudp_get(pud)))
 		goto out;
 
 	pmd = pmd_offset(pud, address);
@@ -1048,7 +1048,7 @@ static int page_vma_mkclean_one(struct page_vma_mapped_walk *pvmw)
 			pmd_t *pmd = pvmw->pmd;
 			pmd_t entry;
 
-			if (!pmd_dirty(*pmd) && !pmd_write(*pmd))
+			if (!pmd_dirty(pmdp_get(pmd)) && !pmd_write(pmdp_get(pmd)))
 				continue;
 
 			flush_cache_range(vma, address,

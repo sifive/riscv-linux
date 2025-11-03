@@ -530,7 +530,7 @@ again:
 			break;
 		}
 
-		if (pmd_none(*pmd))
+		if (pmd_none(pmdp_get(pmd)))
 			goto next;
 
 		_pmd = pmdp_get_lockless(pmd);
@@ -599,7 +599,7 @@ again:
 			break;
 		}
 
-		pud = READ_ONCE(*pudp);
+		pud = pudp_get(pudp);
 		if (pud_none(pud))
 			continue;
 

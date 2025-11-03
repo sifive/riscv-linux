@@ -1322,7 +1322,7 @@ static int write_protect_page(struct vm_area_struct *vma, struct folio *folio,
 
 		set_pte_at(mm, pvmw.address, pvmw.pte, entry);
 	}
-	*orig_pte = entry;
+	set_pte(orig_pte, entry);
 	err = 0;
 
 out_unlock:
