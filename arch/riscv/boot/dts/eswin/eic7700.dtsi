@@ -6,6 +6,7 @@
 /dts-v1/;
 
 #include <dt-bindings/riscv/physical-memory.h>
+#include <dt-bindings/reset/eswin,eic7700-reset.h>
 
 / {
 	#address-cells = <2>;
@@ -230,6 +231,13 @@
 			reg = <0x0 0x51828000 0x0 0x300>;
 			clocks = <&xtal24m>;
 			#clock-cells = <1>;
+			status = "disable";
+		};
+
+		reset: reset-controller@51828300 {
+			compatible = "eswin,eic7700-reset";
+			reg = <0x0 0x51828300 0x0 0x200>;
+			#reset-cells = <1>;
 			status = "disable";
 		};
 

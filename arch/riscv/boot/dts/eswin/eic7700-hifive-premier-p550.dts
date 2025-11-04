@@ -40,6 +40,10 @@
 	status = "okay";
 };
 
+&reset {
+	status = "okay";
+};
+
 &uart0 {
 	status = "okay";
 };
