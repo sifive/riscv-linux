@@ -207,7 +207,7 @@
 				<0x00000000 0x0000000f 0xfffffffc 0x000000ff 0x00000078>;
 	};
 
-	soc {
+	SOC: soc {
 		compatible = "simple-bus";
 		ranges;
 		interrupt-parent = <&plic>;
@@ -223,6 +223,14 @@
 				<&cpu1_intc 3>, <&cpu1_intc 7>,
 				<&cpu2_intc 3>, <&cpu2_intc 7>,
 				<&cpu3_intc 3>, <&cpu3_intc 7>;
+		};
+
+		clk: clock-controller@51828000 {
+			compatible = "eswin,eic7700-clock";
+			reg = <0x0 0x51828000 0x0 0x300>;
+			clocks = <&xtal24m>;
+			#clock-cells = <1>;
+			status = "disable";
 		};
 
 		ccache: cache-controller@2010000 {
