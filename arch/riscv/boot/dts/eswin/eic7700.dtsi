@@ -346,5 +346,12 @@
 				#gpio-cells = <2>;
 			};
 		};
+
+		pinctrl: pinctrl@51600080 {
+			compatible = "eswin,eic7700-pinctrl";
+			reg = <0x0 0x51600080 0x0 0x1fff80>;
+			vrgmii-supply = <&vcc_1v8>;
+			status = "disabled";
+		};
 	};
 };

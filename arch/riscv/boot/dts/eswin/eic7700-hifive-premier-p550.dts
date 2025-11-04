@@ -18,6 +18,16 @@
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
+
+	vcc_1v8: vcc1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+	};
+
 };
 
 &uart0 {
@@ -25,5 +35,9 @@
 };
 
 &uart2 {
+	status = "okay";
+};
+
+&pinctrl {
 	status = "okay";
 };
