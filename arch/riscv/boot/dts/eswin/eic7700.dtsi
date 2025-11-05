@@ -6,12 +6,12 @@
 /dts-v1/;
 
 #include <dt-bindings/riscv/physical-memory.h>
-#include <dt-bindings/reset/eswin,eic7700-reset.h>
 
 / {
 	#address-cells = <2>;
 	#size-cells = <2>;
 	riscv,physical-memory-regions =
+		<0x000 0x00000000 0x200 0x00000000 (PMA_RW | PMA_IO) 0x0>,
 		<0x000 0x80000000 0x00f 0x80000000 (PMA_RWXA | PMA_NONCOHERENT_MEMORY) 0x0>,
 		<0x0c0 0x00000000 0x010 0x00000000 (PMA_RWX | PMA_NONCACHEABLE_MEMORY | PMR_ALIAS(1)) 0x0>;
 
@@ -226,6 +226,12 @@
 				<&cpu3_intc 3>, <&cpu3_intc 7>;
 		};
 
+		hsp_sp_csr: hsp-sp-top-csr@0x50440000 {
+				compatible = "syscon";
+				#size-cells = <2>;
+				reg = <0x0 0x50440000 0x0 0x2000>;
+		};
+
 		clk: clock-controller@51828000 {
 			compatible = "eswin,eic7700-clock";
 			reg = <0x0 0x51828000 0x0 0x300>;
@@ -364,7 +370,7 @@
 		};
 
 		pinctrl: pinctrl@51600080 {
-			compatible = "eswin,eic7700-pinctrl";
+			compatible = "eswin,eic7700-pinctrl", "syscon";
 			reg = <0x0 0x51600080 0x0 0x1fff80>;
 			vrgmii-supply = <&vcc_1v8>;
 			status = "disabled";
@@ -373,12 +379,26 @@
 		sdhci_emmc: mmc@50450000 {
 			compatible = "eswin,eic7700-dwcmshc";
 			reg = <0x0 0x50450000 0x0 0x10000>;
-			interrupts = <79>;
 			clocks = <&clk 190>, <&clk 171>;
-			clock-names = "clk_xin", "clk_ahb";
+			clock-names = "core", "bus";
+			assigned-clocks = <&clk 190>;
+			assigned-clock-rates = <200000000>;
+			interrupt-parent = <&plic>;
+			interrupts = <79>;
+			resets = <&reset 75>,
+				   <&reset 72>,
+				   <&reset 88>,
+				   <&reset 92>;
+			reset-names = "txrx", "phy", "prstn", "axi";
 			bus-width = <8>;
-			#address-cells = <1>;
-			#size-cells = <0>;
+			non-removable;
+			mmc-hs400-1_8v;
+			no-sdio;
+			no-sd;
+			max-frequency = <200000000>;
+			#size-cells = <2>;
+			eswin,hsp-sp-csr = <&hsp_sp_csr 0x508 0x50c>;
+			eswin,drive-impedance-ohms = <50>;
 			status = "disabled";
 		};
 	};

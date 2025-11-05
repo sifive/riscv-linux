@@ -6,6 +6,7 @@
 /dts-v1/;
 
 #include "eic7700.dtsi"
+#include "eic7700-pinctrl.dtsi"
 
 / {
 	compatible = "sifive,hifive-premier-p550", "eswin,eic7700";
@@ -36,6 +37,143 @@
     };
 };
 
+&pinctrl {
+	status = "okay";
+
+	gpio0_pins: gpio0-pins {
+		pins = "gpio0";
+		function = "gpio";
+		input-enable;
+		bias-disable;
+	};
+
+	gpio5_pins: gpio5-pins {
+		pins = "gpio5";
+		function = "gpio";
+		input-enable;
+		bias-disable;
+	};
+
+	gpio11_pins: gpio11-pins {
+		pins = "gpio11";
+		function = "gpio";
+		input-enable;
+		bias-disable;
+	};
+
+	gpio14_pins: gpio14-pins {
+		pins = "mode_set1";
+		function = "gpio";
+		input-disable;
+		bias-pull-up;
+	};
+
+	gpio15_pins: gpio15-pins {
+		pins = "mode_set2";
+		function = "gpio";
+		input-enable;
+		bias-disable;
+	};
+
+	gpio28_pins: gpio28-pins {
+		pins = "gpio28";
+		function = "gpio";
+		input-enable;
+		bias-disable;
+	};
+
+	gpio43_pins: gpio43-pins {
+		pins = "usb1_pwren";
+		function = "gpio";
+		input-disable;
+		bias-disable;
+	};
+
+	gpio71_pins: gpio71-pins {
+		pins = "mipi_csi0_xhs";
+		function = "gpio";
+		input-disable;
+		bias-pull-up;
+	};
+
+	gpio74_pins: gpio74-pins {
+		pins = "mipi_csi1_xhs";
+		function = "gpio";
+		input-disable;
+		bias-pull-up;
+	};
+
+	gpio76_pins: gpio76-pins {
+		pins = "mipi_csi2_xvs";
+		function = "gpio";
+		input-disable;
+		bias-disable;
+	};
+
+	gpio77_pins: gpio77-pins {
+		pins = "mipi_csi2_xhs";
+		function = "gpio";
+		input-disable;
+		bias-pull-up;
+	};
+
+	gpio79_pins: gpio79-pins {
+		pins = "mipi_csi3_xvs";
+		function = "gpio";
+		input-disable;
+		bias-disable;
+	};
+
+	gpio80_pins: gpio80-pins {
+		pins = "mipi_csi3_xhs";
+		function = "gpio";
+		input-disable;
+		bias-pull-up;
+	};
+
+	gpio82_pins: gpio82-pins {
+		pins = "mipi_csi4_xvs";
+		function = "gpio";
+		input-disable;
+		bias-pull-up;
+	};
+
+	gpio84_pins: gpio84-pins {
+		pins = "mipi_csi4_mclk";
+		function = "gpio";
+		input-disable;
+		bias-disable;
+	};
+
+	gpio85_pins: gpio85-pins {
+		pins = "mipi_csi5_xvs";
+		function = "gpio";
+		input-disable;
+		bias-pull-up;
+	};
+
+	gpio94_pins: gpio94-pins {
+		pins = "s_mode";
+		function = "gpio";
+		input-disable;
+		bias-disable;
+	};
+
+	gpio106_pins: gpio106-pins {
+		pins = "gpio106";
+		function = "gpio";
+		input-disable;
+		bias-disable;
+	};
+
+	gpio111_pins: gpio111-pins {
+		pins = "gpio111";
+		function = "gpio";
+		input-disable;
+		bias-disable;
+	};
+};
+
 &clk {
 	status = "okay";
 };
@@ -49,10 +187,6 @@
 };
 
 &uart2 {
-	status = "okay";
-};
-
-&pinctrl {
 	status = "okay";
 };
 
