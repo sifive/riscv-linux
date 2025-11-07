@@ -401,5 +401,29 @@
 			eswin,drive-impedance-ohms = <50>;
 			status = "disabled";
 		};
+
+		sdio0: mmc@0x50460000{
+			compatible = "eswin,eic7700-dwcmshc";
+			reg = <0x0 0x50460000 0x0 0x10000>;
+			interrupt-parent = <&plic>;
+			interrupts = <81>;
+			clocks =<&clk 191>, <&clk 171>;
+			clock-names ="core","bus";
+			resets = <&reset 76>,
+				   <&reset 73>,
+				   <&reset 87>,
+				   <&reset 91>;
+			reset-names = "txrx","phy","prstn","axi";
+			clock-frequency = <208000000>;
+			max-frequency = <208000000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			bus-width = <4>;
+			no-sdio;
+			no-mmc;
+			eswin,hsp-sp-csr = <&hsp_sp_csr 0x608 0x60c>;
+			eswin,drive-impedance-ohms = <33>;
+			status = "disabled";
+		};
 	};
 };

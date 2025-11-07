@@ -14,6 +14,8 @@
 
 	aliases {
 		serial0 = &uart0;
+		mmc0 = &sdhci_emmc;
+		mmc1 = &sdio0;
 	};
 
 	chosen {
@@ -191,5 +193,9 @@
 };
 
 &sdhci_emmc {
+	status = "okay";
+};
+
+&sdio0 {
 	status = "okay";
 };
