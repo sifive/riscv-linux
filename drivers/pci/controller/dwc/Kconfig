@@ -93,6 +93,17 @@ config PCIE_BT1
 	  Enables support for the PCIe controller in the Baikal-T1 SoC to work
 	  in host mode. It's based on the Synopsys DWC PCIe v4.60a IP-core.
 
+config PCIE_EIC7700
+	bool "Eswin EIC7700 PCIe controller"
+	depends on ARCH_ESWIN || COMPILE_TEST
+	depends on PCI_MSI
+	select PCIE_DW_HOST
+	help
+	  Say Y here if you want PCIe controller support for the Eswin EIC7700.
+	  The PCIe controller on EIC7700 is based on DesignWare hardware,
+	  enables support for the PCIe controller in the EIC7700 SoC to work in
+	  host mode.
+
 config PCI_IMX6
 	bool
 
