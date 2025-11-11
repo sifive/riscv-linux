@@ -247,6 +247,13 @@
 			status = "disable";
 		};
 
+		sata_phy: sata-phy@50440300 {
+			compatible = "eswin,eic7700-sata-phy";
+			reg = <0x0 0x50440300 0x0 0x40>;
+			#phy-cells = <0>;
+			status = "disabled";
+		};
+
 		ccache: cache-controller@2010000 {
 			compatible = "eswin,eic7700-l3-cache", "sifive,ccache0", "cache";
 			reg = <0x0 0x2010000 0x0 0x4000>;
@@ -423,6 +430,20 @@
 			no-mmc;
 			eswin,hsp-sp-csr = <&hsp_sp_csr 0x608 0x60c>;
 			eswin,drive-impedance-ohms = <33>;
+			status = "disabled";
+		};
+		sata: sata@50420000 {
+			compatible = "eswin,eic7700-ahci", "snps,dwc-ahci";
+			reg = <0x0 0x50420000 0x0 0x10000>;
+			interrupt-parent = <&plic>;
+			interrupts = <58>;
+			clocks = <&clk 171>, <&clk 186>;
+			clock-names = "pclk", "aclk";
+			phys = <&sata_phy>;
+			phy-names = "sata-phy";
+			ports-implemented = <0x1>;
+			resets = <&reset 96>;
+			reset-names = "arst";
 			status = "disabled";
 		};
 	};
