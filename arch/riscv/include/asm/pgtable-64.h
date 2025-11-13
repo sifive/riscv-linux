@@ -8,7 +8,7 @@
 
 #include <linux/bits.h>
 #include <linux/const.h>
-#include <asm/errata_list.h>
+#include <asm/alternative-macros.h>
 
 extern bool pgtable_l4_enabled;
 extern bool pgtable_l5_enabled;
@@ -111,6 +111,8 @@ enum napot_cont_order {
 #define HUGE_MAX_HSTATE		2
 #endif
 
+#if defined(CONFIG_RISCV_ISA_SVPBMT) || defined(CONFIG_ERRATA_THEAD_MAE)
+
 /*
  * [62:61] Svpbmt Memory Type definitions:
  *
@@ -119,53 +121,152 @@ enum napot_cont_order {
  *  10 - IO     Non-cacheable, non-idempotent, strongly-ordered I/O memory
  *  11 - Rsvd   Reserved for future standard use
  */
-#define _PAGE_NOCACHE_SVPBMT	(1UL << 61)
-#define _PAGE_IO_SVPBMT		(1UL << 62)
-#define _PAGE_MTMASK_SVPBMT	(_PAGE_NOCACHE_SVPBMT | _PAGE_IO_SVPBMT)
+#define _PAGE_NOCACHE		(1UL << 61)
+#define _PAGE_IO		(2UL << 61)
+#define _PAGE_MTMASK		(3UL << 61)
 
 /*
+ * ALT_FIXUP_MT
+ *
+ * On systems that do not support any form of page-based memory type
+ * configuration, this code sequence clears the memory type bits in the PTE.
+ *
+ * On systems that support Svpbmt, the memory type bits are left alone.
+ *
+ * On systems that support XTheadMae, a Svpbmt memory type is transformed
+ * into the corresponding XTheadMae memory type.
+ *
  * [63:59] T-Head Memory Type definitions:
  * bit[63] SO - Strong Order
  * bit[62] C - Cacheable
  * bit[61] B - Bufferable
  * bit[60] SH - Shareable
  * bit[59] Sec - Trustable
- * 00110 - NC   Weakly-ordered, Non-cacheable, Bufferable, Shareable, Non-trustable
  * 01110 - PMA  Weakly-ordered, Cacheable, Bufferable, Shareable, Non-trustable
+ * 00110 - NC   Weakly-ordered, Non-cacheable, Bufferable, Shareable, Non-trustable
  * 10010 - IO   Strongly-ordered, Non-cacheable, Non-bufferable, Shareable, Non-trustable
+ *
+ * Pseudocode operating on bits [63:60]:
+ *   t0 = mt << 1
+ *   if (t0 == 0)
+ *     t0 |= 2
+ *   t0 ^= 0x5
+ *   mt ^= t0
  */
-#define _PAGE_PMA_THEAD		((1UL << 62) | (1UL << 61) | (1UL << 60))
-#define _PAGE_NOCACHE_THEAD	((1UL << 61) | (1UL << 60))
-#define _PAGE_IO_THEAD		((1UL << 63) | (1UL << 60))
-#define _PAGE_MTMASK_THEAD	(_PAGE_PMA_THEAD | _PAGE_IO_THEAD | (1UL << 59))
 
-static inline u64 riscv_page_mtmask(void)
+#define ALT_FIXUP_MT(_val)								\
+	asm(ALTERNATIVE_2("addi	t0, zero, 0x3\n\t"					\
+			  "slli	t0, t0, 61\n\t"						\
+			  "not	t0, t0\n\t"						\
+			  "and	%0, %0, t0\n\t"						\
+			  "nop\n\t"							\
+			  "nop\n\t"							\
+			  "nop",							\
+			  __nops(7),							\
+			  0, RISCV_ISA_EXT_SVPBMT, CONFIG_RISCV_ISA_SVPBMT,		\
+			  "srli	t0, %0, 59\n\t"						\
+			  "seqz	t1, t0\n\t"						\
+			  "slli	t1, t1, 1\n\t"						\
+			  "or	t0, t0, t1\n\t"						\
+			  "xori	t0, t0, 0x5\n\t"					\
+			  "slli	t0, t0, 60\n\t"						\
+			  "xor	%0, %0, t0",						\
+			  THEAD_VENDOR_ID, ERRATA_THEAD_MAE, CONFIG_ERRATA_THEAD_MAE)	\
+			  : "+r" (_val) :: "t0", "t1")
+
+#else
+
+#define _PAGE_NOCACHE		0
+#define _PAGE_IO		0
+#define _PAGE_MTMASK		0
+
+#define ALT_FIXUP_MT(_val)
+
+#endif /* CONFIG_RISCV_ISA_SVPBMT || CONFIG_ERRATA_THEAD_MAE */
+
+#if defined(CONFIG_ERRATA_THEAD_MAE)
+
+/*
+ * ALT_UNFIX_MT
+ *
+ * On systems that support Svpbmt, or do not support any form of page-based
+ * memory type configuration, the memory type bits are left alone.
+ *
+ * On systems that support XTheadMae, the XTheadMae memory type (or zero) is
+ * transformed back into the corresponding Svpbmt memory type.
+ *
+ * Pseudocode operating on bits [63:60]:
+ *   t0 = mt & 0xd
+ *   t0 ^= t0 >> 1
+ *   mt ^= t0
+ */
+
+#define ALT_UNFIX_MT(_val)								\
+	asm(ALTERNATIVE(__nops(6),							\
+			  "srli	t0, %0, 60\n\t"						\
+			  "andi	t0, t0, 0xd\n\t"					\
+			  "srli	t1, t0, 1\n\t"						\
+			  "xor	t0, t0, t1\n\t"						\
+			  "slli	t0, t0, 60\n\t"						\
+			  "xor	%0, %0, t0",						\
+			  THEAD_VENDOR_ID, ERRATA_THEAD_MAE, CONFIG_ERRATA_THEAD_MAE)	\
+			  : "+r" (_val) :: "t0", "t1")
+
+#define ptep_get ptep_get
+static inline pte_t ptep_get(pte_t *ptep)
 {
-	u64 val;
+	pte_t pte = READ_ONCE(*ptep);
 
-	ALT_SVPBMT(val, _PAGE_MTMASK);
-	return val;
+	ALT_UNFIX_MT(pte);
+
+	return pte;
 }
 
-static inline u64 riscv_page_nocache(void)
+#define pmdp_get pmdp_get
+static inline pmd_t pmdp_get(pmd_t *pmdp)
 {
-	u64 val;
+	pmd_t pmd = READ_ONCE(*pmdp);
 
-	ALT_SVPBMT(val, _PAGE_NOCACHE);
-	return val;
+	ALT_UNFIX_MT(pmd);
+
+	return pmd;
 }
 
-static inline u64 riscv_page_io(void)
+#define pudp_get pudp_get
+static inline pud_t pudp_get(pud_t *pudp)
 {
-	u64 val;
+	pud_t pud = READ_ONCE(*pudp);
 
-	ALT_SVPBMT(val, _PAGE_IO);
-	return val;
+	ALT_UNFIX_MT(pud);
+
+	return pud;
 }
 
-#define _PAGE_NOCACHE		riscv_page_nocache()
-#define _PAGE_IO		riscv_page_io()
-#define _PAGE_MTMASK		riscv_page_mtmask()
+#define p4dp_get p4dp_get
+static inline p4d_t p4dp_get(p4d_t *p4dp)
+{
+	p4d_t p4d = READ_ONCE(*p4dp);
+
+	ALT_UNFIX_MT(p4d);
+
+	return p4d;
+}
+
+#define pgdp_get pgdp_get
+static inline pgd_t pgdp_get(pgd_t *pgdp)
+{
+	pgd_t pgd = READ_ONCE(*pgdp);
+
+	ALT_UNFIX_MT(pgd);
+
+	return pgd;
+}
+
+#else
+
+#define ALT_UNFIX_MT(_val)
+
+#endif /* CONFIG_ERRATA_THEAD_MAE */
 
 static inline int pud_present(pud_t pud)
 {
@@ -195,6 +296,7 @@ static inline int pud_user(pud_t pud)
 
 static inline void set_pud(pud_t *pudp, pud_t pud)
 {
+	ALT_FIXUP_MT(pud);
 	WRITE_ONCE(*pudp, pud);
 }
 
@@ -245,17 +347,16 @@ static inline bool mm_pud_folded(struct mm_struct *mm)
 
 static inline pmd_t pfn_pmd(unsigned long pfn, pgprot_t prot)
 {
-	unsigned long prot_val = pgprot_val(prot);
-
-	ALT_THEAD_PMA(prot_val);
-
-	return __pmd((pfn << _PAGE_PFN_SHIFT) | prot_val);
+	return __pmd((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 }
 
 static inline unsigned long _pmd_pfn(pmd_t pmd)
 {
 	return __page_val_to_pfn(pmd_val(pmd));
 }
+
+#define pmd_offset_lockless(pudp, pud, address) \
+	(pud_pgtable(pud) + pmd_index(address))
 
 #define pmd_ERROR(e) \
 	pr_err("%s:%d: bad pmd %016lx.\n", __FILE__, __LINE__, pmd_val(e))
@@ -268,6 +369,7 @@ static inline unsigned long _pmd_pfn(pmd_t pmd)
 
 static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 {
+	ALT_FIXUP_MT(p4d);
 	WRITE_ONCE(*p4dp, p4d);
 }
 
@@ -327,11 +429,15 @@ static inline struct page *p4d_page(p4d_t p4d)
 
 #define pud_index(addr) (((addr) >> PUD_SHIFT) & (PTRS_PER_PUD - 1))
 
+#define pud_offset_lockless(p4dp, p4d, address) \
+	(pgtable_l4_enabled ? p4d_pgtable(p4d) + pud_index(address) : (pud_t *)(p4dp))
+
 #define pud_offset pud_offset
-pud_t *pud_offset(p4d_t *p4d, unsigned long address);
+pud_t *pud_offset(p4d_t *p4dp, unsigned long address);
 
 static inline void set_pgd(pgd_t *pgdp, pgd_t pgd)
 {
+	ALT_FIXUP_MT(pgd);
 	WRITE_ONCE(*pgdp, pgd);
 }
 
@@ -382,8 +488,11 @@ static inline struct page *pgd_page(pgd_t pgd)
 
 #define p4d_index(addr) (((addr) >> P4D_SHIFT) & (PTRS_PER_P4D - 1))
 
+#define p4d_offset_lockless(pgdp, pgd, address) \
+	(pgtable_l5_enabled ? pgd_pgtable(pgd) + p4d_index(address) : (p4d_t *)(pgdp))
+
 #define p4d_offset p4d_offset
-p4d_t *p4d_offset(pgd_t *pgd, unsigned long address);
+p4d_t *p4d_offset(pgd_t *pgdp, unsigned long address);
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 static inline pte_t pmd_pte(pmd_t pmd);

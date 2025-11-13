@@ -253,6 +253,7 @@ static inline bool pmd_leaf(pmd_t pmd)
 
 static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
 {
+	ALT_FIXUP_MT(pmd);
 	WRITE_ONCE(*pmdp, pmd);
 }
 
@@ -263,11 +264,7 @@ static inline void pmd_clear(pmd_t *pmdp)
 
 static inline pgd_t pfn_pgd(unsigned long pfn, pgprot_t prot)
 {
-	unsigned long prot_val = pgprot_val(prot);
-
-	ALT_THEAD_PMA(prot_val);
-
-	return __pgd((pfn << _PAGE_PFN_SHIFT) | prot_val);
+	return __pgd((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 }
 
 static inline unsigned long _pgd_pfn(pgd_t pgd)
@@ -343,11 +340,7 @@ static inline unsigned long pte_pfn(pte_t pte)
 /* Constructs a page table entry */
 static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
 {
-	unsigned long prot_val = pgprot_val(prot);
-
-	ALT_THEAD_PMA(prot_val);
-
-	return __pte((pfn << _PAGE_PFN_SHIFT) | prot_val);
+	return __pte((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 }
 
 #define pte_pgprot pte_pgprot
@@ -486,11 +479,7 @@ static inline int pmd_protnone(pmd_t pmd)
 /* Modify page protection bits */
 static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 {
-	unsigned long newprot_val = pgprot_val(newprot);
-
-	ALT_THEAD_PMA(newprot_val);
-
-	return __pte((pte_val(pte) & _PAGE_CHG_MASK) | newprot_val);
+	return __pte((pte_val(pte) & _PAGE_CHG_MASK) | pgprot_val(newprot));
 }
 
 #define pgd_ERROR(e) \
@@ -547,9 +536,10 @@ static inline int pte_same(pte_t pte_a, pte_t pte_b)
  * a page table are directly modified.  Thus, the following hook is
  * made available.
  */
-static inline void set_pte(pte_t *ptep, pte_t pteval)
+static inline void set_pte(pte_t *ptep, pte_t pte)
 {
-	WRITE_ONCE(*ptep, pteval);
+	ALT_FIXUP_MT(pte);
+	WRITE_ONCE(*ptep, pte);
 }
 
 void flush_icache_pte(struct mm_struct *mm, pte_t pte);
@@ -598,6 +588,7 @@ static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 {
 	pte_t pte = __pte(atomic_long_xchg((atomic_long_t *)ptep, 0));
 
+	ALT_UNFIX_MT(pte);
 	page_table_check_pte_clear(mm, pte);
 
 	return pte;
@@ -869,6 +860,7 @@ static inline pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm,
 {
 	pmd_t pmd = __pmd(atomic_long_xchg((atomic_long_t *)pmdp, 0));
 
+	ALT_UNFIX_MT(pmd);
 	page_table_check_pmd_clear(mm, pmd);
 
 	return pmd;
@@ -886,7 +878,11 @@ static inline pmd_t pmdp_establish(struct vm_area_struct *vma,
 				unsigned long address, pmd_t *pmdp, pmd_t pmd)
 {
 	page_table_check_pmd_set(vma->vm_mm, pmdp, pmd);
-	return __pmd(atomic_long_xchg((atomic_long_t *)pmdp, pmd_val(pmd)));
+	ALT_FIXUP_MT(pmd);
+	pmd = __pmd(atomic_long_xchg((atomic_long_t *)pmdp, pmd_val(pmd)));
+	ALT_UNFIX_MT(pmd);
+
+	return pmd;
 }
 
 #define pmdp_collapse_flush pmdp_collapse_flush
@@ -955,14 +951,9 @@ static inline int pudp_test_and_clear_young(struct vm_area_struct *vma,
 static inline pud_t pudp_huge_get_and_clear(struct mm_struct *mm,
 					    unsigned long address,  pud_t *pudp)
 {
-#ifdef CONFIG_SMP
-	pud_t pud = __pud(xchg(&pudp->pud, 0));
-#else
-	pud_t pud = pudp_get(pudp);
+	pud_t pud = __pud(atomic_long_xchg((atomic_long_t *)pudp, 0));
 
-	pud_clear(pudp);
-#endif
-
+	ALT_UNFIX_MT(pud);
 	page_table_check_pud_clear(mm, pud);
 
 	return pud;
@@ -985,7 +976,11 @@ static inline pud_t pudp_establish(struct vm_area_struct *vma,
 				   unsigned long address, pud_t *pudp, pud_t pud)
 {
 	page_table_check_pud_set(vma->vm_mm, pudp, pud);
-	return __pud(atomic_long_xchg((atomic_long_t *)pudp, pud_val(pud)));
+	ALT_FIXUP_MT(pud);
+	pud = __pud(atomic_long_xchg((atomic_long_t *)pudp, pud_val(pud)));
+	ALT_UNFIX_MT(pud);
+
+	return pud;
 }
 
 static inline pud_t pud_mkinvalid(pud_t pud)
