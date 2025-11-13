@@ -7721,6 +7721,13 @@ sub process {
 				ERROR("MISSING_SENTINEL", "missing sentinel in ID array\n" . "$here\n$stat\n");
 			}
 		}
+
+# check for raw dereferences of hardware page table pointers
+		if ($realfile !~ m@^arch/@ &&
+		    $line =~ /(?<!pte_t |p[mu4g]d_t |izeof\()\*\(?(vmf(\.|->))?(pte|p[mu4g]d)p?\b/) {
+			WARN("PAGE_TABLE_ACCESSORS",
+			     "Use $3p_get()/set_$3() instead of dereferencing page table pointers\n" . $herecurr);
+		}
 	}
 
 	# If we have no input at all, then there is nothing to report on
