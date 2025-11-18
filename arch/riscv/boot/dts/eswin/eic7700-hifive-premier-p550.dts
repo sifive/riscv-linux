@@ -18,6 +18,17 @@
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
+
+	xtal24m: oscillator {
+        compatible = "fixed-clock";
+        clock-frequency = <24000000>;
+        #clock-cells = <0>;
+        clock-output-names = "xtal24m";
+    };
+};
+
+&clk {
+	status = "okay";
 };
 
 &uart0 {
