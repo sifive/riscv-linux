@@ -346,5 +346,13 @@
 				#gpio-cells = <2>;
 			};
 		};
+
+		clk: clock-controller@51828000 {
+			compatible = "eswin,eic7700-clock";
+			reg = <0x0 0x51828000 0x0 0x300>;
+			clocks = <&xtal24m>;
+			#clock-cells = <1>;
+			status = "disable";
+		};
 	};
 };
