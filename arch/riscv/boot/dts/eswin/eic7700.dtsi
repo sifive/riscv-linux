@@ -354,5 +354,12 @@
 			#clock-cells = <1>;
 			status = "disable";
 		};
+
+		reset: reset-controller@51828300 {
+			compatible = "eswin,eic7700-reset";
+			reg = <0x0 0x51828300 0x0 0x200>;
+			#reset-cells = <1>;
+			status = "disable";
+		};
 	};
 };
