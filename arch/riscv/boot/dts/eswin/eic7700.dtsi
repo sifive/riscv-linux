@@ -453,5 +453,48 @@
 			vrgmii-supply = <&vcc_1v8>;
 			status = "disabled";
 		};
+
+		pcie: pcie@54000000 {
+			compatible = "eswin,eic7700-pcie";
+			reg = <0x0 0x54000000 0x0 0x4000000>,
+				<0x0 0x40000000 0x0 0x800000>,
+				<0x0 0x50000000 0x0 0x100000>;
+			reg-names = "dbi", "config", "elbi";
+			#address-cells = <3>;
+			#size-cells = <2>;
+			#interrupt-cells = <1>;
+			ranges = <0x01000000 0x0 0x40800000 0x0 0x40800000 0x0 0x800000>,
+					<0x02000000 0x0 0x41000000 0x0 0x41000000 0x0 0xf000000>,
+					<0x43000000 0x80 0x00000000 0x80 0x00000000 0x2 0x00000000>;
+			bus-range = <0x00 0xff>;
+			clocks = <&clk 144>,
+					<&clk 145>,
+					<&clk 146>,
+					<&clk 147>;
+			clock-names = "mstr", "dbi", "phy_reg", "aux";
+			resets = <&reset 97>,
+					<&reset 98>;
+			reset-names = "dbi", "pwr";
+			interrupts = <220>, <179>, <180>, <181>, <182>, <183>, <184>, <185>, <186>;
+			interrupt-names = "msi", "inta", "intb", "intc", "intd";
+			interrupt-parent = <&plic>;
+			interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+			interrupt-map = <0x0 0x0 0x0 0x1 &plic 179>,
+				<0x0 0x0 0x0 0x2 &plic 180>,
+				<0x0 0x0 0x0 0x3 &plic 181>,
+				<0x0 0x0 0x0 0x4 &plic 182>;
+			device_type = "pci";
+			status = "disabled";
+			pcie@0 {
+				reg = <0x0 0x0 0x0 0x0 0x0>;
+				#address-cells = <3>;
+				#size-cells = <2>;
+				ranges;
+				device_type = "pci";
+				num-lanes = <4>;
+				resets = <&reset 99>;
+				reset-names = "perst";
+			};
+		};
 	};
 };
