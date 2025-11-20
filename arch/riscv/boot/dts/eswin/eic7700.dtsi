@@ -250,6 +250,12 @@
 			#interrupt-cells = <1>;
 		};
 
+		hsp_sp_csr: hsp_sp_top_csr@0x50440000 {
+			compatible = "syscon";
+			#size-cells = <2>;
+			reg = <0x0 0x50440000 0x0 0x2000>;
+		};
+
 		uart0: serial@50900000 {
 			compatible = "snps,dw-apb-uart";
 			reg = <0x0 0x50900000 0x0 0x10000>;
