@@ -61,6 +61,10 @@
 	};
 };
 
+&pcie {
+    status = "okay";
+};
+
 &pinctrl {
 	status = "okay";
 
