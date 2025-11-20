@@ -5,6 +5,8 @@
 
 /dts-v1/;
 
+#define CMA_SIZE        0x20000000
+
 #include "eic7700.dtsi"
 #include "eic7700-pinctrl.dtsi"
 
@@ -22,6 +24,20 @@
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
+
+	reserved-memory {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+
+        linux,cma {
+            compatible = "shared-dma-pool";
+            reusable;
+            size = <0x0 CMA_SIZE>;
+            alignment = <0x0 0x1000>;
+            linux,cma-default;
+        };
+    };
 
 	vcc_1v8: vcc1v8 {
         compatible = "regulator-fixed";
