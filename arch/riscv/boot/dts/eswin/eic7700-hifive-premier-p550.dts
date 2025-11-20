@@ -222,6 +222,14 @@
 	status = "okay";
 };
 
+&sata {
+       status = "okay";
+};
+
+&sata_phy {
+       status = "okay";
+};
+
 &sdhci_emmc {
 	status = "okay";
 };
