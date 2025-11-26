@@ -291,6 +291,23 @@ static void i2s_stop(struct i2s_dev *i2s_drvdata,
 	}
 }
 
+static int i2s_configure_capability(struct i2s_dev *dev)
+{
+	u32 comp1 = i2s_read_reg(dev->i2s_base, I2S_COMP_PARAM_1);
+
+	dev_info(dev->dev, "eswin: setting i2s capability\n");
+
+	if (COMP1_MODE_EN(comp1)) {
+		dev_dbg(dev->dev, "eswin: i2s master mode supported\n");
+		dev->capability |= DW_I2S_MASTER;
+	} else {
+		dev_dbg(dev->dev, "eswin: i2s slave mode supported\n");
+		dev->capability |= DW_I2S_SLAVE;
+	}
+
+	return 0;
+}
+
 static int i2s_configure_res_by_dt(struct i2s_dev *dev,
 								   struct resource *res)
 {
@@ -311,13 +328,6 @@ static int i2s_configure_res_by_dt(struct i2s_dev *dev,
 		return -EINVAL;
 	}
 
-	if (COMP1_MODE_EN(comp1)) {
-		dev_dbg(dev->dev, "eswin: i2s master mode supported\n");
-		dev->capability |= DW_I2S_MASTER;
-	} else {
-		dev_dbg(dev->dev, "eswin: i2s slave mode supported\n");
-		dev->capability |= DW_I2S_SLAVE;
-	}
 	dev->fifo_th = fifo_depth / 2;
 
 	component = snd_soc_lookup_component(dev->dev, SND_DMAENGINE_PCM_DRV_NAME);
@@ -799,6 +809,8 @@ static int i2s_probe(struct platform_device *pdev)
 	}
 
 	dev_set_drvdata(&pdev->dev, i2s_drvdata);
+
+	i2s_configure_capability(i2s_drvdata);
 
 	if (of_node_name_prefix(pdev->dev.of_node, "i2s0")) {
 		i2s_drvdata->i2s_div_base = devm_ioremap(i2s_drvdata->dev, VO_TOP_CSR + VO_I2S0_DIV_NUM, 4);
