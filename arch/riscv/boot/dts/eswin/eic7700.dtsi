@@ -285,6 +285,16 @@
 			reg = <0x0 0x50440000 0x0 0x2000>;
 		};
 
+		hspcrg: clock-controller@50440000 {
+			compatible = "eswin,eic7700-hspcrg";
+			reg = <0x0 0x50440000 0x0 0x2000>;
+			clocks = <&xtal24m>, <&clk 186>, <&clk 171>, <&clk 254>,
+				   <&clk 187>;
+			clock-names = "xtal24m", "aclk", "cfg", "mmc", "sata";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
 		sdhci_emmc: mmc@50450000 {
 			compatible = "eswin,eic7700-dwcmshc";
 			reg = <0x0 0x50450000 0x0 0x10000>;
