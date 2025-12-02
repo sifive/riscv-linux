@@ -13,6 +13,7 @@
 	model = "SiFive HiFive Premier P550";
 
 	aliases {
+		ethernet0 = &gmac0;
 		mmc0 = &sdhci_emmc;
 		mmc1 = &sdio0;
 		serial0 = &uart0;
@@ -41,6 +42,23 @@
 
 &clk {
 	status = "okay";
+};
+
+&gmac0 {
+	status = "okay";
+
+	mdio {
+		compatible = "snps,dwmac-mdio";
+		status = "okay";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		phy0: ethernet-phy@0 {
+				  device_type = "ethernet-phy";
+				  reg = <0>;
+				  compatible = "ethernet-phy-id001c.c916", "realtek,rtl8211f";
+		};
+	};
 };
 
 &pinctrl {
