@@ -910,7 +910,7 @@ static int damos_va_stat_pmd_entry(pmd_t *pmd, unsigned long addr,
 	int nr;
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	if (pmd_trans_huge(*pmd)) {
+	if (pmd_trans_huge(pmdp_get(pmd))) {
 		pmd_t pmde;
 
 		ptl = pmd_trans_huge_lock(pmd, vma);

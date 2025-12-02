@@ -3611,13 +3611,13 @@ static bool filemap_map_pmd(struct vm_fault *vmf, struct folio *folio,
 	struct mm_struct *mm = vmf->vma->vm_mm;
 
 	/* Huge page is mapped? No need to proceed. */
-	if (pmd_trans_huge(*vmf->pmd)) {
+	if (pmd_trans_huge(pmdp_get(vmf->pmd))) {
 		folio_unlock(folio);
 		folio_put(folio);
 		return true;
 	}
 
-	if (pmd_none(*vmf->pmd) && folio_test_pmd_mappable(folio)) {
+	if (pmd_none(pmdp_get(vmf->pmd)) && folio_test_pmd_mappable(folio)) {
 		struct page *page = folio_file_page(folio, start);
 		vm_fault_t ret = do_set_pmd(vmf, folio, page);
 		if (!ret) {
@@ -3627,7 +3627,7 @@ static bool filemap_map_pmd(struct vm_fault *vmf, struct folio *folio,
 		}
 	}
 
-	if (pmd_none(*vmf->pmd) && vmf->prealloc_pte)
+	if (pmd_none(pmdp_get(vmf->pmd)) && vmf->prealloc_pte)
 		pmd_install(mm, vmf->pmd, &vmf->prealloc_pte);
 
 	return false;

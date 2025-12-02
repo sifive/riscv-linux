@@ -149,14 +149,14 @@ static inline void pud_init(void *addr)
 #ifndef pte_offset_kernel
 static inline pte_t *pte_offset_kernel(pmd_t *pmd, unsigned long address)
 {
-	return (pte_t *)pmd_page_vaddr(*pmd) + pte_index(address);
+	return (pte_t *)pmd_page_vaddr(pmdp_get(pmd)) + pte_index(address);
 }
 #define pte_offset_kernel pte_offset_kernel
 #endif
 
 #ifdef CONFIG_HIGHPTE
 #define __pte_map(pmd, address) \
-	((pte_t *)kmap_local_page(pmd_page(*(pmd))) + pte_index((address)))
+	((pte_t *)kmap_local_page(pmd_page(pmdp_get(pmd))) + pte_index((address)))
 #define pte_unmap(pte)	do {	\
 	kunmap_local((pte));	\
 	rcu_read_unlock();	\
@@ -178,7 +178,7 @@ void pte_free_defer(struct mm_struct *mm, pgtable_t pgtable);
 #ifndef pmd_offset
 static inline pmd_t *pmd_offset(pud_t *pud, unsigned long address)
 {
-	return pud_pgtable(*pud) + pmd_index(address);
+	return pud_pgtable(pudp_get(pud)) + pmd_index(address);
 }
 #define pmd_offset pmd_offset
 #endif
@@ -186,7 +186,7 @@ static inline pmd_t *pmd_offset(pud_t *pud, unsigned long address)
 #ifndef pud_offset
 static inline pud_t *pud_offset(p4d_t *p4d, unsigned long address)
 {
-	return p4d_pgtable(*p4d) + pud_index(address);
+	return p4d_pgtable(p4dp_get(p4d)) + pud_index(address);
 }
 #define pud_offset pud_offset
 #endif
@@ -230,7 +230,7 @@ static inline pte_t *virt_to_kpte(unsigned long vaddr)
 {
 	pmd_t *pmd = pmd_off_k(vaddr);
 
-	return pmd_none(*pmd) ? NULL : pte_offset_kernel(pmd, vaddr);
+	return pmd_none(pmdp_get(pmd)) ? NULL : pte_offset_kernel(pmd, vaddr);
 }
 
 #ifndef pmd_young
@@ -390,7 +390,7 @@ static inline int pmdp_test_and_clear_young(struct vm_area_struct *vma,
 					    unsigned long address,
 					    pmd_t *pmdp)
 {
-	pmd_t pmd = *pmdp;
+	pmd_t pmd = pmdp_get(pmdp);
 	int r = 1;
 	if (!pmd_young(pmd))
 		r = 0;
@@ -645,7 +645,7 @@ static inline pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm,
 					    unsigned long address,
 					    pmd_t *pmdp)
 {
-	pmd_t pmd = *pmdp;
+	pmd_t pmd = pmdp_get(pmdp);
 
 	pmd_clear(pmdp);
 	page_table_check_pmd_clear(mm, pmd);
@@ -658,7 +658,7 @@ static inline pud_t pudp_huge_get_and_clear(struct mm_struct *mm,
 					    unsigned long address,
 					    pud_t *pudp)
 {
-	pud_t pud = *pudp;
+	pud_t pud = pudp_get(pudp);
 
 	pud_clear(pudp);
 	page_table_check_pud_clear(mm, pud);
@@ -968,7 +968,7 @@ static inline pte_t pte_sw_mkyoung(pte_t pte)
 static inline void pmdp_set_wrprotect(struct mm_struct *mm,
 				      unsigned long address, pmd_t *pmdp)
 {
-	pmd_t old_pmd = *pmdp;
+	pmd_t old_pmd = pmdp_get(pmdp);
 	set_pmd_at(mm, address, pmdp, pmd_wrprotect(old_pmd));
 }
 #else
@@ -985,7 +985,7 @@ static inline void pmdp_set_wrprotect(struct mm_struct *mm,
 static inline void pudp_set_wrprotect(struct mm_struct *mm,
 				      unsigned long address, pud_t *pudp)
 {
-	pud_t old_pud = *pudp;
+	pud_t old_pud = pudp_get(pudp);
 
 	set_pud_at(mm, address, pudp, pud_wrprotect(old_pud));
 }
@@ -1009,7 +1009,7 @@ static inline pmd_t pmdp_collapse_flush(struct vm_area_struct *vma,
 					pmd_t *pmdp)
 {
 	BUILD_BUG();
-	return *pmdp;
+	return pmdp_get(pmdp);
 }
 #define pmdp_collapse_flush pmdp_collapse_flush
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
@@ -1037,7 +1037,7 @@ extern pgtable_t pgtable_trans_huge_withdraw(struct mm_struct *mm, pmd_t *pmdp);
 static inline pmd_t generic_pmdp_establish(struct vm_area_struct *vma,
 		unsigned long address, pmd_t *pmdp, pmd_t pmd)
 {
-	pmd_t old_pmd = *pmdp;
+	pmd_t old_pmd = pmdp_get(pmdp);
 	set_pmd_at(vma->vm_mm, address, pmdp, pmd);
 	return old_pmd;
 }
@@ -1287,9 +1287,9 @@ void pmd_clear_bad(pmd_t *);
 
 static inline int pgd_none_or_clear_bad(pgd_t *pgd)
 {
-	if (pgd_none(*pgd))
+	if (pgd_none(pgdp_get(pgd)))
 		return 1;
-	if (unlikely(pgd_bad(*pgd))) {
+	if (unlikely(pgd_bad(pgdp_get(pgd)))) {
 		pgd_clear_bad(pgd);
 		return 1;
 	}
@@ -1298,9 +1298,9 @@ static inline int pgd_none_or_clear_bad(pgd_t *pgd)
 
 static inline int p4d_none_or_clear_bad(p4d_t *p4d)
 {
-	if (p4d_none(*p4d))
+	if (p4d_none(p4dp_get(p4d)))
 		return 1;
-	if (unlikely(p4d_bad(*p4d))) {
+	if (unlikely(p4d_bad(p4dp_get(p4d)))) {
 		p4d_clear_bad(p4d);
 		return 1;
 	}
@@ -1309,9 +1309,9 @@ static inline int p4d_none_or_clear_bad(p4d_t *p4d)
 
 static inline int pud_none_or_clear_bad(pud_t *pud)
 {
-	if (pud_none(*pud))
+	if (pud_none(pudp_get(pud)))
 		return 1;
-	if (unlikely(pud_bad(*pud))) {
+	if (unlikely(pud_bad(pudp_get(pud)))) {
 		pud_clear_bad(pud);
 		return 1;
 	}
@@ -1320,9 +1320,9 @@ static inline int pud_none_or_clear_bad(pud_t *pud)
 
 static inline int pmd_none_or_clear_bad(pmd_t *pmd)
 {
-	if (pmd_none(*pmd))
+	if (pmd_none(pmdp_get(pmd)))
 		return 1;
-	if (unlikely(pmd_bad(*pmd))) {
+	if (unlikely(pmd_bad(pmdp_get(pmd)))) {
 		pmd_clear_bad(pmd);
 		return 1;
 	}
@@ -1798,7 +1798,7 @@ static inline int pud_trans_unstable(pud_t *pud)
 {
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && \
 	defined(CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD)
-	pud_t pudval = READ_ONCE(*pud);
+	pud_t pudval = pudp_get(pud);
 
 	if (pud_none(pudval) || pud_trans_huge(pudval))
 		return 1;

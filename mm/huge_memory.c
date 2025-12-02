@@ -1254,7 +1254,7 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	}
 
 	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
-	if (unlikely(!pmd_none(*vmf->pmd))) {
+	if (unlikely(!pmd_none(pmdp_get(vmf->pmd)))) {
 		goto unlock_release;
 	} else {
 		ret = check_stable_address_space(vma->vm_mm);
@@ -1367,7 +1367,7 @@ vm_fault_t do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		}
 		vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
 		ret = 0;
-		if (pmd_none(*vmf->pmd)) {
+		if (pmd_none(pmdp_get(vmf->pmd))) {
 			ret = check_stable_address_space(vma->vm_mm);
 			if (ret) {
 				spin_unlock(vmf->ptl);
@@ -1420,16 +1420,16 @@ static vm_fault_t insert_pmd(struct vm_area_struct *vma, unsigned long addr,
 	}
 
 	ptl = pmd_lock(mm, pmd);
-	if (!pmd_none(*pmd)) {
+	if (!pmd_none(pmdp_get(pmd))) {
 		const unsigned long pfn = fop.is_folio ? folio_pfn(fop.folio) :
 					  fop.pfn;
 
 		if (write) {
-			if (pmd_pfn(*pmd) != pfn) {
-				WARN_ON_ONCE(!is_huge_zero_pmd(*pmd));
+			if (pmd_pfn(pmdp_get(pmd)) != pfn) {
+				WARN_ON_ONCE(!is_huge_zero_pmd(pmdp_get(pmd)));
 				goto out_unlock;
 			}
-			entry = pmd_mkyoung(*pmd);
+			entry = pmd_mkyoung(pmdp_get(pmd));
 			entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
 			if (pmdp_set_access_flags(vma, addr, pmd, entry, 1))
 				update_mmu_cache_pmd(vma, addr, pmd);
@@ -1544,14 +1544,14 @@ static vm_fault_t insert_pud(struct vm_area_struct *vma, unsigned long addr,
 		return VM_FAULT_SIGBUS;
 
 	ptl = pud_lock(mm, pud);
-	if (!pud_none(*pud)) {
+	if (!pud_none(pudp_get(pud))) {
 		const unsigned long pfn = fop.is_folio ? folio_pfn(fop.folio) :
 					  fop.pfn;
 
 		if (write) {
-			if (WARN_ON_ONCE(pud_pfn(*pud) != pfn))
+			if (WARN_ON_ONCE(pud_pfn(pudp_get(pud)) != pfn))
 				goto out_unlock;
-			entry = pud_mkyoung(*pud);
+			entry = pud_mkyoung(pudp_get(pud));
 			entry = maybe_pud_mkwrite(pud_mkdirty(entry), vma);
 			if (pudp_set_access_flags(vma, addr, pud, entry, 1))
 				update_mmu_cache_pud(vma, addr, pud);
@@ -1647,7 +1647,7 @@ void touch_pmd(struct vm_area_struct *vma, unsigned long addr,
 {
 	pmd_t _pmd;
 
-	_pmd = pmd_mkyoung(*pmd);
+	_pmd = pmd_mkyoung(pmdp_get(pmd));
 	if (write)
 		_pmd = pmd_mkdirty(_pmd);
 	if (pmdp_set_access_flags(vma, addr & HPAGE_PMD_MASK,
@@ -1698,7 +1698,7 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	spin_lock_nested(src_ptl, SINGLE_DEPTH_NESTING);
 
 	ret = -EAGAIN;
-	pmd = *src_pmd;
+	pmd = pmdp_get(src_pmd);
 
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
 	if (unlikely(is_swap_pmd(pmd))) {
@@ -1709,9 +1709,9 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 			entry = make_readable_migration_entry(
 							swp_offset(entry));
 			pmd = swp_entry_to_pmd(entry);
-			if (pmd_swp_soft_dirty(*src_pmd))
+			if (pmd_swp_soft_dirty(pmdp_get(src_pmd)))
 				pmd = pmd_swp_mksoft_dirty(pmd);
-			if (pmd_swp_uffd_wp(*src_pmd))
+			if (pmd_swp_uffd_wp(pmdp_get(src_pmd)))
 				pmd = pmd_swp_mkuffd_wp(pmd);
 			set_pmd_at(src_mm, addr, src_pmd, pmd);
 		}
@@ -1785,7 +1785,7 @@ void touch_pud(struct vm_area_struct *vma, unsigned long addr,
 {
 	pud_t _pud;
 
-	_pud = pud_mkyoung(*pud);
+	_pud = pud_mkyoung(pudp_get(pud));
 	if (write)
 		_pud = pud_mkdirty(_pud);
 	if (pudp_set_access_flags(vma, addr & HPAGE_PUD_MASK,
@@ -1806,7 +1806,7 @@ int copy_huge_pud(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	spin_lock_nested(src_ptl, SINGLE_DEPTH_NESTING);
 
 	ret = -EAGAIN;
-	pud = *src_pud;
+	pud = pudp_get(src_pud);
 	if (unlikely(!pud_trans_huge(pud)))
 		goto out_unlock;
 
@@ -1833,7 +1833,7 @@ void huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
 	bool write = vmf->flags & FAULT_FLAG_WRITE;
 
 	vmf->ptl = pud_lock(vmf->vma->vm_mm, vmf->pud);
-	if (unlikely(!pud_same(*vmf->pud, orig_pud)))
+	if (unlikely(!pud_same(pudp_get(vmf->pud), orig_pud)))
 		goto unlock;
 
 	touch_pud(vmf->vma, vmf->address, vmf->pud, write);
@@ -1847,7 +1847,7 @@ void huge_pmd_set_accessed(struct vm_fault *vmf)
 	bool write = vmf->flags & FAULT_FLAG_WRITE;
 
 	vmf->ptl = pmd_lock(vmf->vma->vm_mm, vmf->pmd);
-	if (unlikely(!pmd_same(*vmf->pmd, vmf->orig_pmd)))
+	if (unlikely(!pmd_same(pmdp_get(vmf->pmd), vmf->orig_pmd)))
 		goto unlock;
 
 	touch_pmd(vmf->vma, vmf->address, vmf->pmd, write);
@@ -1912,7 +1912,7 @@ vm_fault_t do_huge_pmd_wp_page(struct vm_fault *vmf)
 
 	spin_lock(vmf->ptl);
 
-	if (unlikely(!pmd_same(*vmf->pmd, orig_pmd))) {
+	if (unlikely(!pmd_same(pmdp_get(vmf->pmd), orig_pmd))) {
 		spin_unlock(vmf->ptl);
 		return 0;
 	}
@@ -1930,7 +1930,7 @@ vm_fault_t do_huge_pmd_wp_page(struct vm_fault *vmf)
 		spin_unlock(vmf->ptl);
 		folio_lock(folio);
 		spin_lock(vmf->ptl);
-		if (unlikely(!pmd_same(*vmf->pmd, orig_pmd))) {
+		if (unlikely(!pmd_same(pmdp_get(vmf->pmd), orig_pmd))) {
 			spin_unlock(vmf->ptl);
 			folio_unlock(folio);
 			folio_put(folio);
@@ -2108,7 +2108,7 @@ bool madvise_free_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	if (!ptl)
 		goto out_unlocked;
 
-	orig_pmd = *pmd;
+	orig_pmd = pmdp_get(pmd);
 	if (is_huge_zero_pmd(orig_pmd))
 		goto out;
 
@@ -2296,8 +2296,8 @@ bool move_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 	 * should have released it; but move_page_tables() might have already
 	 * inserted a page table, if racing against shmem/file collapse.
 	 */
-	if (!pmd_none(*new_pmd)) {
-		VM_BUG_ON(pmd_trans_huge(*new_pmd));
+	if (!pmd_none(pmdp_get(new_pmd))) {
+		VM_BUG_ON(pmd_trans_huge(pmdp_get(new_pmd)));
 		return false;
 	}
 
@@ -2313,7 +2313,7 @@ bool move_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 		pmd = pmdp_huge_get_and_clear(mm, old_addr, old_pmd);
 		if (pmd_present(pmd))
 			force_flush = true;
-		VM_BUG_ON(!pmd_none(*new_pmd));
+		VM_BUG_ON(!pmd_none(pmdp_get(new_pmd)));
 
 		if (pmd_move_must_withdraw(new_ptl, old_ptl, vma)) {
 			pgtable_t pgtable;
@@ -2363,12 +2363,12 @@ int change_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		return 0;
 
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
-	if (is_swap_pmd(*pmd)) {
-		swp_entry_t entry = pmd_to_swp_entry(*pmd);
+	if (is_swap_pmd(pmdp_get(pmd))) {
+		swp_entry_t entry = pmd_to_swp_entry(pmdp_get(pmd));
 		struct folio *folio = pfn_swap_entry_folio(entry);
 		pmd_t newpmd;
 
-		VM_BUG_ON(!is_pmd_migration_entry(*pmd));
+		VM_BUG_ON(!is_pmd_migration_entry(pmdp_get(pmd)));
 		if (is_writable_migration_entry(entry)) {
 			/*
 			 * A protection check is difficult so
@@ -2379,17 +2379,17 @@ int change_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 			else
 				entry = make_readable_migration_entry(swp_offset(entry));
 			newpmd = swp_entry_to_pmd(entry);
-			if (pmd_swp_soft_dirty(*pmd))
+			if (pmd_swp_soft_dirty(pmdp_get(pmd)))
 				newpmd = pmd_swp_mksoft_dirty(newpmd);
 		} else {
-			newpmd = *pmd;
+			newpmd = pmdp_get(pmd);
 		}
 
 		if (uffd_wp)
 			newpmd = pmd_swp_mkuffd_wp(newpmd);
 		else if (uffd_wp_resolve)
 			newpmd = pmd_swp_clear_uffd_wp(newpmd);
-		if (!pmd_same(*pmd, newpmd))
+		if (!pmd_same(pmdp_get(pmd), newpmd))
 			set_pmd_at(mm, addr, pmd, newpmd);
 		goto unlock;
 	}
@@ -2403,13 +2403,13 @@ int change_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		 * data is likely to be read-cached on the local CPU and
 		 * local/remote hits to the zero page are not interesting.
 		 */
-		if (is_huge_zero_pmd(*pmd))
+		if (is_huge_zero_pmd(pmdp_get(pmd)))
 			goto unlock;
 
-		if (pmd_protnone(*pmd))
+		if (pmd_protnone(pmdp_get(pmd)))
 			goto unlock;
 
-		folio = pmd_folio(*pmd);
+		folio = pmd_folio(pmdp_get(pmd));
 		toptier = node_is_toptier(folio_nid(folio));
 		/*
 		 * Skip scanning top tier node if normal numa
@@ -2540,7 +2540,7 @@ int move_pages_huge_pmd(struct mm_struct *mm, pmd_t *dst_pmd, pmd_t *src_pmd, pm
 	struct mmu_notifier_range range;
 	int err = 0;
 
-	src_pmdval = *src_pmd;
+	src_pmdval = pmdp_get(src_pmd);
 	src_ptl = pmd_lockptr(mm, src_pmd);
 
 	lockdep_assert_held(src_ptl);
@@ -2602,8 +2602,8 @@ int move_pages_huge_pmd(struct mm_struct *mm, pmd_t *dst_pmd, pmd_t *src_pmd, pm
 
 	dst_ptl = pmd_lockptr(mm, dst_pmd);
 	double_pt_lock(src_ptl, dst_ptl);
-	if (unlikely(!pmd_same(*src_pmd, src_pmdval) ||
-		     !pmd_same(*dst_pmd, dst_pmdval))) {
+	if (unlikely(!pmd_same(pmdp_get(src_pmd), src_pmdval) ||
+		     !pmd_same(pmdp_get(dst_pmd), dst_pmdval))) {
 		err = -EAGAIN;
 		goto unlock_ptls;
 	}
@@ -2669,7 +2669,7 @@ spinlock_t *__pmd_trans_huge_lock(pmd_t *pmd, struct vm_area_struct *vma)
 {
 	spinlock_t *ptl;
 	ptl = pmd_lock(vma->vm_mm, pmd);
-	if (likely(is_swap_pmd(*pmd) || pmd_trans_huge(*pmd)))
+	if (likely(is_swap_pmd(pmdp_get(pmd)) || pmd_trans_huge(pmdp_get(pmd))))
 		return ptl;
 	spin_unlock(ptl);
 	return NULL;
@@ -2686,7 +2686,7 @@ spinlock_t *__pud_trans_huge_lock(pud_t *pud, struct vm_area_struct *vma)
 	spinlock_t *ptl;
 
 	ptl = pud_lock(vma->vm_mm, pud);
-	if (likely(pud_trans_huge(*pud)))
+	if (likely(pud_trans_huge(pudp_get(pud))))
 		return ptl;
 	spin_unlock(ptl);
 	return NULL;
@@ -2738,7 +2738,7 @@ static void __split_huge_pud_locked(struct vm_area_struct *vma, pud_t *pud,
 	VM_BUG_ON(haddr & ~HPAGE_PUD_MASK);
 	VM_BUG_ON_VMA(vma->vm_start > haddr, vma);
 	VM_BUG_ON_VMA(vma->vm_end < haddr + HPAGE_PUD_SIZE, vma);
-	VM_BUG_ON(!pud_trans_huge(*pud));
+	VM_BUG_ON(!pud_trans_huge(pudp_get(pud)));
 
 	count_vm_event(THP_SPLIT_PUD);
 
@@ -2771,7 +2771,7 @@ void __split_huge_pud(struct vm_area_struct *vma, pud_t *pud,
 				(address & HPAGE_PUD_MASK) + HPAGE_PUD_SIZE);
 	mmu_notifier_invalidate_range_start(&range);
 	ptl = pud_lock(vma->vm_mm, pud);
-	if (unlikely(!pud_trans_huge(*pud)))
+	if (unlikely(!pud_trans_huge(pudp_get(pud))))
 		goto out;
 	__split_huge_pud_locked(vma, pud, range.start);
 
@@ -2844,7 +2844,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 	VM_BUG_ON(haddr & ~HPAGE_PMD_MASK);
 	VM_BUG_ON_VMA(vma->vm_start > haddr, vma);
 	VM_BUG_ON_VMA(vma->vm_end < haddr + HPAGE_PMD_SIZE, vma);
-	VM_BUG_ON(!is_pmd_migration_entry(*pmd) && !pmd_trans_huge(*pmd));
+	VM_BUG_ON(!is_pmd_migration_entry(pmdp_get(pmd)) && !pmd_trans_huge(pmdp_get(pmd)));
 
 	count_vm_event(THP_SPLIT_PMD);
 
@@ -2879,7 +2879,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		return;
 	}
 
-	if (is_huge_zero_pmd(*pmd)) {
+	if (is_huge_zero_pmd(pmdp_get(pmd))) {
 		/*
 		 * FIXME: Do we want to invalidate secondary mmu by calling
 		 * mmu_notifier_arch_invalidate_secondary_tlbs() see comments below
@@ -2892,11 +2892,11 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		return __split_huge_zero_page_pmd(vma, haddr, pmd);
 	}
 
-	pmd_migration = is_pmd_migration_entry(*pmd);
+	pmd_migration = is_pmd_migration_entry(pmdp_get(pmd));
 	if (unlikely(pmd_migration)) {
 		swp_entry_t entry;
 
-		old_pmd = *pmd;
+		old_pmd = pmdp_get(pmd);
 		entry = pmd_to_swp_entry(old_pmd);
 		page = pfn_swap_entry_to_page(entry);
 		write = is_writable_migration_entry(entry);
@@ -3052,7 +3052,7 @@ void split_huge_pmd_locked(struct vm_area_struct *vma, unsigned long address,
 			   pmd_t *pmd, bool freeze)
 {
 	VM_WARN_ON_ONCE(!IS_ALIGNED(address, HPAGE_PMD_SIZE));
-	if (pmd_trans_huge(*pmd) || is_pmd_migration_entry(*pmd))
+	if (pmd_trans_huge(pmdp_get(pmd)) || is_pmd_migration_entry(pmdp_get(pmd)))
 		__split_huge_pmd_locked(vma, pmd, address, freeze);
 }
 
@@ -3140,7 +3140,7 @@ static bool __discard_anon_folio_pmd_locked(struct vm_area_struct *vma,
 {
 	struct mm_struct *mm = vma->vm_mm;
 	int ref_count, map_count;
-	pmd_t orig_pmd = *pmdp;
+	pmd_t orig_pmd = pmdp_get(pmdp);
 
 	if (pmd_dirty(orig_pmd))
 		folio_set_dirty(folio);
